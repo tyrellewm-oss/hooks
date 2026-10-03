@@ -1,11 +1,11 @@
 # Trenches launchpad: page content (devnet build)
 
-Final page strings, made from the disclosure copy in `concepts/hook_launchpad_feasibility_v0.md` (Research, experiment framing) and updated for NEO's three requirements, QA review b6ffd85 (H-2, M-5, M-6), the graduation finding (`docs/replay_results_v0.md`) and the fee model in `sdk/launch.ts` (version v0-devnet-2026-10-04e):
+Final page strings, made from the disclosure copy in `concepts/hook_launchpad_feasibility_v0.md` (Research, experiment framing) and updated for NEO's three requirements, QA review b6ffd85 (H-2, M-5, M-6), the graduation finding (`docs/replay_results_v0.md`) and the fee model in `sdk/launch.ts` (version v0-devnet-2026-10-04f):
 - the cap is described as per token account (not per wallet) and splittable, never with the banned bundle term;
 - the pool vault and migration path are exempt;
 - the lift-only switch is disclosed, and every use is announced;
 - the cap ends at graduation or after {CAP_RAMP}, whichever comes first; after that, including pool buys right after migration, there is no cap;
-- the anti-sniper fee applies on the curve only; after migration only the pool's flat {POOL_FEE} fee applies. No fee numbers are hard-coded.
+- the anti-sniper fee applies on the curve only; after migration only the pool's trading fee applies (base {POOL_FEE}, can rise when volatility is high). No fee numbers are hard-coded.
 
 The machine-readable copy is `page_content.json`; keep the two in sync. Placeholders are in `{BRACES}` and must all be filled before render (AC-25). The QA copy check (AC-27) must pass on this text.
 
@@ -23,7 +23,7 @@ The machine-readable copy is `page_content.json`; keep the two in sync. Placehol
 3. ☐ The rule: while the token is on the bonding curve, each token account can hold at most {CAP_START} of supply, rising to {CAP_END}. The cap ends at graduation or after {CAP_RAMP}, whichever comes first. A buy that would push a token account over the cap fails. The cap is per token account, not per wallet: one wallet can hold several token accounts, and anyone can split across wallets, so this slows snipers down but does not stop them.
 4. ☐ Selling back into the curve is never blocked by the rule. The pool vault and the graduation (migration) path are exempt from the cap.
 5. ☐ Keys: program upgrades are controlled by {MULTISIG}. The same key has one switch that can only lift the rule (raise or remove the cap), never add or tighten it. Every use of the switch is announced at {ANNOUNCE_CHANNEL}.
-6. ☐ When the curve completes (graduation), the rule is removed automatically and the token becomes a plain token. After that, including buys from the pool right after migration, there is no cap: only the pool's flat {POOL_FEE} trading fee applies (no anti-sniper fee), plus normal trading.
+6. ☐ When the curve completes (graduation), the rule is removed automatically and the token becomes a plain token. After that, including buys from the pool right after migration, there is no cap: only the pool's trading fee applies: base {POOL_FEE}, can rise when volatility is high (no anti-sniper fee), plus normal trading.
 7. ☐ This is not an investment. Nobody promises any price, gain or future work. Trading fees go to {FEE_SPLIT}.
 8. ☐ I am not in a restricted jurisdiction ({RESTRICTED_LIST}) and I am not using a VPN to get around it.
 
@@ -34,11 +34,11 @@ Button: **I understand - enable trading**
 
 - Status: DEVNET TEST - no real value. Unaudited experiment. Source: {REPO_COMMIT}. Program: {PROGRAM_ID}.
 - Rule (curve only): each token account can hold at most {CAP_START} of supply, rising to {CAP_END}. The cap ends at graduation or after {CAP_RAMP}, whichever comes first. Fixed at launch. It can't be tightened; it can only be lifted (see Admin power).
-- Not protected against: one wallet holding several token accounts, or one person using many wallets (the cap is per token account, not per wallet); buys after the cap ends (at graduation or after {CAP_RAMP}, whichever comes first), which have no cap; buys from the pool right after migration, where only the pool's flat {POOL_FEE} trading fee applies (no anti-sniper fee); bugs; the price going to zero.
+- Not protected against: one wallet holding several token accounts, or one person using many wallets (the cap is per token account, not per wallet); buys after the cap ends (at graduation or after {CAP_RAMP}, whichever comes first), which have no cap; buys from the pool right after migration, where only the pool's trading fee applies: base {POOL_FEE}, can rise when volatility is high (no anti-sniper fee); bugs; the price going to zero.
 - Always allowed: selling back into the curve. The pool vault and the graduation (migration) path are exempt from the cap.
 - Admin power: {MULTISIG} can (1) upgrade the program and (2) use a one-way switch that only raises or removes the cap. Every switch use emits an on-chain event and is announced at {ANNOUNCE_CHANNEL}. Switch history: {SWITCH_HISTORY}.
 - At graduation: the hook is removed by Meteora DBC, and the token trades as a plain Token-2022 token on DAMM v2 with no cap.
-- Fees: on the bonding curve only, an anti-sniper fee starts at {SNIPER_FEE_START} and falls to {SNIPER_FEE_END} over {SNIPER_FEE_DURATION}, then stays at {SNIPER_FEE_END} until graduation. This fee applies to every buyer, not only bots: buying in the first {SNIPER_FEE_DURATION} costs more, so if you don't want to pay it, wait until it reaches {SNIPER_FEE_END}. After migration, only the pool's flat {POOL_FEE} trading fee applies (no anti-sniper fee). Meteora takes its protocol share; the rest goes to {FEE_SPLIT}.
+- Fees: on the bonding curve only, an anti-sniper fee starts at {SNIPER_FEE_START} and falls to {SNIPER_FEE_END} over {SNIPER_FEE_DURATION}, then stays at {SNIPER_FEE_END} until graduation. This fee applies to every buyer, not only bots: buying in the first {SNIPER_FEE_DURATION} costs more, so if you don't want to pay it, wait until it reaches {SNIPER_FEE_END}. After migration, only the pool's trading fee applies: base {POOL_FEE}, can rise when volatility is high (no anti-sniper fee). Meteora takes its protocol share; the rest goes to {FEE_SPLIT}.
 - Our tokens: this beta only launches tokens made by the studio. They are never promoted in any content or alerts, and the team does not trade them.
 
 ## Why did my trade fail? (AC-26)
@@ -85,6 +85,6 @@ Button: **I understand - enable trading**
 | `{SNIPER_FEE_START}` | anti-sniper fee at launch, curve only. Source: launch config feeStartBps (sdk/launch.ts). Display: % (bps/100, e.g. '50%') |
 | `{SNIPER_FEE_END}` | curve fee after the schedule ends, until graduation. Source: feeEndBps. Display: % (bps/100) |
 | `{SNIPER_FEE_DURATION}` | length of the anti-sniper fee schedule. Source: feeDurationSlots. Display: human time at ~0.4 s/slot, e.g. 'about 1 minute' |
-| `{POOL_FEE}` | flat trading fee of the DAMM v2 pool after migration (no anti-sniper fee schedule). Source: the DBC config's migration fee option (MigrationFeeOption, e.g. FixedBps25). Display: % (bps/100) |
+| `{POOL_FEE}` | base trading fee of the DAMM v2 pool after migration (no anti-sniper fee schedule). The pool's dynamic fee is on, so the charged fee can be higher when volatility is high; copy must say "base" and "can rise" unless the config turns dynamic fee off. Source: the DBC config's migration fee option (MigrationFeeOption, e.g. FixedBps25). Display: % (bps/100) |
 
 All six program errors are keyed: WalletCapExceeded (cap hit); NotTransferring and InvalidMint (wallet didn't add the hook's extra accounts, same text as HookNotSupported); Unauthorized and InvalidCapSchedule (admin/launcher-only, not caused by a trade); ConfigFrozen (shown only on re-init or a repeated switch use, never as a trade-retry message). HookNotSupported, HighEarlyFee, SlippageOrBalance and SellFailed are UI-side classifications; Unknown is the fallback. Placeholder names {WALLET_BALANCE}/{WALLET_CAP} are kept for compatibility but refer to the token account. Fee placeholders (v03d): {SNIPER_FEE_START}, {SNIPER_FEE_END}, {SNIPER_FEE_DURATION} (curve only) and {POOL_FEE} (after migration) replace {CLIFF_FEE}, {FEE_PERIOD} and {BASE_FEE}.
