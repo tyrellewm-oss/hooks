@@ -1,0 +1,12 @@
+[package]
+name = "cap-math"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.84"
+description = "Pure, no_std cap schedule math for the trenches-hook rising per-token-account cap (no Solana deps)."
+license = "MIT"
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1"

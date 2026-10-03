@@ -1,0 +1,429 @@
+//! trenches-hook: DEVNET-ONLY, UNAUDITED experiment.
+//!
+//! A Token-2022 transfer hook with exactly ONE rule: a rising per-token-account cap
+//! while the token is on the Meteora DBC bonding curve.
+//! - Checks only the DESTINATION token account's post-transfer balance.
+//! - Never checks the source. Exempt destinations (DBC pool vaults via the DBC
+//!   pool authority, DAMM v2 pool authority; no manual exemptions) always pass,
+//!   so selling back into the curve is never blocked by this program.
+//! - Per-mint config is written once and is immutable. The only mutable rule
+//!   state is the lift-only switch (global allow-all, per-mint lift, per-mint raise).
+//! - No fees, no custody, no withdraw, no pause, no CPI into Token-2022.
+use anchor_lang::prelude::*;
+use anchor_lang::solana_program::program::set_return_data;
+use anchor_lang::system_program;
+use anchor_spl::token_2022::spl_token_2022::{
+    self,
+    extension::{
+        transfer_hook::{TransferHook as TransferHookExt, TransferHookAccount},
+        BaseStateWithExtensions, StateWithExtensions,
+    },
+    state::{Account as TokenAccountState, Mint as MintState},
+};
+use spl_discriminator::SplDiscriminate;
+use spl_tlv_account_resolution::{account::ExtraAccountMeta, seeds::Seed, state::ExtraAccountMetaList};
+use spl_transfer_hook_interface::instruction::ExecuteInstruction;
+
+pub mod constants;
+pub mod errors;
+pub mod state;
+
+use constants::*;
+use errors::HookError;
+use state::*;
+
+declare_id!("FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz");
+
+#[program]
+pub mod trenches_hook {
+    use super::*;
+
+    /// One-time: set the lift-switch authority. Only the program's upgrade
+    /// authority can call it, and only once (re-init -> ConfigFrozen).
+    pub fn initialize_global(ctx: Context<InitializeGlobal>, authority: Pubkey) -> Result<()> {
+        require_keys_neq!(authority, Pubkey::default(), HookError::Unauthorized);
+        let bump = ctx.bumps.global;
+        create_pda_once(
+            &ctx.accounts.payer.to_account_info(),
+            &ctx.accounts.global.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &[GLOBAL_SEED, &[bump]],
+            8 + Global::INIT_SPACE,
+        )?;
+        let g = Global { authority, lifted: false, bump };
+        write_account(&ctx.accounts.global.to_account_info(), &g)?;
+        msg!("trenches-hook: global initialized, lift authority={}", authority);
+        Ok(())
+    }
+
+    /// Per-mint setup (the transfer-hook InitializeExtraAccountMetaList step):
+    /// writes the immutable cap config, the lift state and the extra-account-meta
+    /// list. Signed by the launcher (global authority). Runs once per mint.
+    pub fn initialize_extra_account_meta_list(
+        ctx: Context<InitializeExtraAccountMetaList>,
+        args: InitConfigArgs,
+    ) -> Result<()> {
+        let mint_key = ctx.accounts.mint.key();
+        // Mint must be a Token-2022 mint whose TransferHook points at this program.
+        let supply = {
+            let info = ctx.accounts.mint.to_account_info();
+            require_keys_eq!(*info.owner, spl_token_2022::ID, HookError::InvalidMint);
+            let data = info.try_borrow_data()?;
+            let mint = StateWithExtensions::<MintState>::unpack(&data).map_err(|_| error!(HookError::InvalidMint))?;
+            let ext = mint.get_extension::<TransferHookExt>().map_err(|_| error!(HookError::InvalidMint))?;
+            let pid: Option<Pubkey> = ext.program_id.into();
+            require!(pid == Some(crate::ID), HookError::InvalidMint);
+            mint.base.supply
+        };
+        // Reference supply = the mint's actual supply at init (must be minted first).
+        require!(supply > 0 && args.supply_ref == supply, HookError::InvalidCapSchedule);
+        // QA H-1: no caller-supplied exemptions. The only exempt receivers are the
+        // DBC and DAMM v2 pool authority PDAs (constants, derived from the Meteora
+        // program ids). The field stays in the args/account layout but must be empty.
+        if !args.exempt_owners.is_empty() {
+            msg!("InvalidCapSchedule: exempt_owners must be empty (no manual exemptions)");
+            return err!(HookError::InvalidCapSchedule);
+        }
+
+        let steps: Vec<cap_math::Step> = args
+            .steps
+            .iter()
+            .map(|s| cap_math::Step { slot_offset: s.slot_offset, max_bps: s.max_bps })
+            .collect();
+        let launch_slot = Clock::get()?.slot;
+        let cc = cap_math::CapConfig::new(launch_slot, supply, &steps, args.uncapped_after)
+            .map_err(|_| error!(HookError::InvalidCapSchedule))?;
+        cap_math::validate(&cc, build_limits()).map_err(|e| {
+            msg!("InvalidCapSchedule: {:?}", e);
+            error!(HookError::InvalidCapSchedule)
+        })?;
+
+        // --- create the three PDAs (fails with ConfigFrozen if any already exists)
+        let payer = ctx.accounts.payer.to_account_info();
+        let sys = ctx.accounts.system_program.to_account_info();
+        let metas = extra_metas()?;
+        let meta_size = ExtraAccountMetaList::size_of(metas.len())?;
+        create_pda_once(&payer, &ctx.accounts.extra_account_meta_list, &sys,
+            &[EXTRA_METAS_SEED, mint_key.as_ref(), &[ctx.bumps.extra_account_meta_list]], meta_size)?;
+        create_pda_once(&payer, &ctx.accounts.config, &sys,
+            &[CONFIG_SEED, mint_key.as_ref(), &[ctx.bumps.config]], 8 + MintConfig::INIT_SPACE)?;
+        create_pda_once(&payer, &ctx.accounts.lift, &sys,
+            &[LIFT_SEED, mint_key.as_ref(), &[ctx.bumps.lift]], 8 + LiftState::INIT_SPACE)?;
+
+        {
+            let mut data = ctx.accounts.extra_account_meta_list.try_borrow_mut_data()?;
+            ExtraAccountMetaList::init::<ExecuteInstruction>(&mut data, &metas)?;
+        }
+        let mut exempt = [Pubkey::default(); MAX_EXEMPT];
+        exempt[..args.exempt_owners.len()].copy_from_slice(&args.exempt_owners);
+        let mut st = [StepData::default(); cap_math::MAX_STEPS];
+        for (i, s) in cc.active_steps().iter().enumerate() {
+            st[i] = StepData { slot_offset: s.slot_offset, max_bps: s.max_bps };
+        }
+        let cfg = MintConfig {
+            mint: mint_key,
+            launch_slot,
+            supply_ref: supply,
+            steps: st,
+            step_count: cc.step_count,
+            uncapped_after: args.uncapped_after,
+            exempt_owners: exempt,
+            exempt_count: args.exempt_owners.len() as u8,
+            test_slots_build: cfg!(feature = "test-slots"),
+            launcher: ctx.accounts.authority.key(),
+            bump: ctx.bumps.config,
+        };
+        write_account(&ctx.accounts.config, &cfg)?;
+        write_account(&ctx.accounts.lift, &LiftState { mint: mint_key, lifted: false, raised_floor_bps: 0, bump: ctx.bumps.lift })?;
+        msg!("trenches-hook: config frozen for mint={} launch_slot={} supply={} test_slots_build={}",
+            mint_key, launch_slot, supply, cfg.test_slots_build);
+        log_schedule(&cfg);
+        Ok(())
+    }
+
+    /// Transfer-hook Execute. The ONE rule: destination post-transfer balance <= cap.
+    #[instruction(discriminator = ExecuteInstruction::SPL_DISCRIMINATOR_SLICE)]
+    pub fn transfer_hook(ctx: Context<TransferHook>, _amount: u64) -> Result<()> {
+        let mint_key = ctx.accounts.mint.key();
+        // Mint: Token-2022, hook points at us.
+        {
+            let info = ctx.accounts.mint.to_account_info();
+            require_keys_eq!(*info.owner, spl_token_2022::ID, HookError::InvalidMint);
+            let data = info.try_borrow_data()?;
+            let mint = StateWithExtensions::<MintState>::unpack(&data).map_err(|_| error!(HookError::InvalidMint))?;
+            let ext = mint.get_extension::<TransferHookExt>().map_err(|_| error!(HookError::InvalidMint))?;
+            let pid: Option<Pubkey> = ext.program_id.into();
+            require!(pid == Some(crate::ID), HookError::InvalidMint);
+        }
+        // Source: Token-2022 account of this mint, currently transferring
+        // (rejects direct invocation of the hook outside a real transfer).
+        {
+            let info = ctx.accounts.source_token.to_account_info();
+            require_keys_eq!(*info.owner, spl_token_2022::ID, HookError::InvalidMint);
+            let data = info.try_borrow_data()?;
+            let src = StateWithExtensions::<TokenAccountState>::unpack(&data).map_err(|_| error!(HookError::NotTransferring))?;
+            require_keys_eq!(src.base.mint, mint_key, HookError::InvalidMint);
+            let ext = src.get_extension::<TransferHookAccount>().map_err(|_| error!(HookError::NotTransferring))?;
+            require!(bool::from(ext.transferring), HookError::NotTransferring);
+        }
+        // Destination: Token-2022 account of this mint (post-transfer state).
+        let (dest_owner, dest_balance) = {
+            let info = ctx.accounts.destination_token.to_account_info();
+            require_keys_eq!(*info.owner, spl_token_2022::ID, HookError::InvalidMint);
+            let data = info.try_borrow_data()?;
+            let dst = StateWithExtensions::<TokenAccountState>::unpack(&data).map_err(|_| error!(HookError::InvalidMint))?;
+            require_keys_eq!(dst.base.mint, mint_key, HookError::InvalidMint);
+            (dst.base.owner, dst.base.amount)
+        };
+        let cfg = &ctx.accounts.config;
+        let exempt = is_exempt(cfg, &dest_owner);
+        let slot = Clock::get()?.slot;
+        let cap = cap_math::effective_cap(&cfg.cap_config(), &ctx.accounts.lift.to_lift(), ctx.accounts.global.lifted, slot);
+        match cap_math::decide(exempt, cap, dest_balance) {
+            cap_math::Decision::Allow => Ok(()),
+            cap_math::Decision::Reject { cap } => {
+                let next = cap_math::next_change(&cfg.cap_config(), slot);
+                msg!(
+                    "WalletCapExceeded: token_account={} owner={} balance={} cap={} slot={} next_change={:?}",
+                    ctx.accounts.destination_token.key(), dest_owner, dest_balance, cap, slot, next
+                );
+                err!(HookError::WalletCapExceeded)
+            }
+        }
+    }
+
+    /// Lift-only switch (global): every transfer of every mint is allowed from now on. One-way.
+    pub fn lift_global(ctx: Context<LiftGlobal>) -> Result<()> {
+        let g = &mut ctx.accounts.global;
+        require!(!g.lifted, HookError::ConfigFrozen);
+        g.lifted = true;
+        let slot = Clock::get()?.slot;
+        msg!("RestrictionsLifted: scope=global slot={} signer={}", slot, ctx.accounts.authority.key());
+        emit!(RestrictionsLifted {
+            scope: SCOPE_GLOBAL, mint: Pubkey::default(), old_floor_bps: 0, new_floor_bps: cap_math::BPS_DENOM,
+            lifted: true, slot, signer: ctx.accounts.authority.key(),
+        });
+        Ok(())
+    }
+
+    /// Lift-only switch (per mint): remove this mint's cap. One-way.
+    pub fn lift_mint_cap(ctx: Context<LiftMint>) -> Result<()> {
+        let lift = &mut ctx.accounts.lift;
+        let old = lift.to_lift();
+        let new = cap_math::apply_lift(&old).map_err(|_| error!(HookError::ConfigFrozen))?;
+        lift.lifted = new.lifted;
+        let slot = Clock::get()?.slot;
+        msg!("RestrictionsLifted: scope=mint mint={} lifted=true slot={} signer={}", lift.mint, slot, ctx.accounts.authority.key());
+        emit!(RestrictionsLifted {
+            scope: SCOPE_MINT_LIFT, mint: lift.mint, old_floor_bps: old.raised_floor_bps, new_floor_bps: cap_math::BPS_DENOM,
+            lifted: true, slot, signer: ctx.accounts.authority.key(),
+        });
+        Ok(())
+    }
+
+    /// Lift-only switch (per mint): raise the minimum cap to `new_floor_bps`.
+    /// Must be strictly higher than any earlier raise; can never lower.
+    pub fn raise_mint_cap(ctx: Context<LiftMint>, new_floor_bps: u16) -> Result<()> {
+        let lift = &mut ctx.accounts.lift;
+        let old = lift.to_lift();
+        let new = cap_math::apply_raise(&old, new_floor_bps).map_err(|_| error!(HookError::ConfigFrozen))?;
+        lift.lifted = new.lifted;
+        lift.raised_floor_bps = new.raised_floor_bps;
+        let slot = Clock::get()?.slot;
+        msg!("RestrictionsLifted: scope=mint-raise mint={} old_floor_bps={} new_floor_bps={} slot={} signer={}",
+            lift.mint, old.raised_floor_bps, new_floor_bps, slot, ctx.accounts.authority.key());
+        emit!(RestrictionsLifted {
+            scope: SCOPE_MINT_RAISE, mint: lift.mint, old_floor_bps: old.raised_floor_bps, new_floor_bps,
+            lifted: new.lifted, slot, signer: ctx.accounts.authority.key(),
+        });
+        Ok(())
+    }
+
+    /// Read-only view (simulate it): logs and returns the active schedule, the
+    /// build profile (test_slots_build) and the current effective cap.
+    pub fn view_schedule(ctx: Context<ViewSchedule>) -> Result<()> {
+        let cfg = &ctx.accounts.config;
+        let slot = Clock::get()?.slot;
+        let cap = cap_math::effective_cap(&cfg.cap_config(), &ctx.accounts.lift.to_lift(), ctx.accounts.global.lifted, slot);
+        log_schedule(cfg);
+        msg!("view: slot={} effective_cap={:?} mint_lifted={} raised_floor_bps={} global_lifted={}",
+            slot, cap, ctx.accounts.lift.lifted, ctx.accounts.lift.raised_floor_bps, ctx.accounts.global.lifted);
+        let view = ScheduleView {
+            mint: cfg.mint, launch_slot: cfg.launch_slot, supply_ref: cfg.supply_ref,
+            steps: cfg.steps[..cfg.step_count as usize].to_vec(), uncapped_after: cfg.uncapped_after,
+            test_slots_build: cfg.test_slots_build, program_built_with_test_slots: cfg!(feature = "test-slots"),
+            slot, effective_cap: cap, mint_lifted: ctx.accounts.lift.lifted,
+            raised_floor_bps: ctx.accounts.lift.raised_floor_bps, global_lifted: ctx.accounts.global.lifted,
+        };
+        set_return_data(&view.try_to_vec()?);
+        Ok(())
+    }
+}
+
+pub fn build_limits() -> cap_math::Limits {
+    if cfg!(feature = "test-slots") { cap_math::TEST_SLOTS_LIMITS } else { cap_math::RELEASE_LIMITS }
+}
+
+pub fn is_exempt(cfg: &MintConfig, dest_owner: &Pubkey) -> bool {
+    *dest_owner == DBC_POOL_AUTHORITY
+        || *dest_owner == DAMM_V2_POOL_AUTHORITY
+        || cfg.exempt_owners[..(cfg.exempt_count as usize).min(MAX_EXEMPT)].contains(dest_owner) // always empty since QA H-1 fix
+}
+
+pub fn extra_metas() -> Result<Vec<ExtraAccountMeta>> {
+    // Execute account order: 0 source, 1 mint, 2 destination, 3 owner, 4 extra-metas list,
+    // then 5 config, 6 lift, 7 global (all PDAs of this program, read-only).
+    Ok(vec![
+        ExtraAccountMeta::new_with_seeds(&[Seed::Literal { bytes: CONFIG_SEED.to_vec() }, Seed::AccountKey { index: 1 }], false, false)?,
+        ExtraAccountMeta::new_with_seeds(&[Seed::Literal { bytes: LIFT_SEED.to_vec() }, Seed::AccountKey { index: 1 }], false, false)?,
+        ExtraAccountMeta::new_with_seeds(&[Seed::Literal { bytes: GLOBAL_SEED.to_vec() }], false, false)?,
+    ])
+}
+
+fn log_schedule(cfg: &MintConfig) {
+    msg!("schedule: mint={} launch_slot={} supply_ref={} uncapped_after={} test_slots_build={}",
+        cfg.mint, cfg.launch_slot, cfg.supply_ref, cfg.uncapped_after, cfg.test_slots_build);
+    for s in &cfg.steps[..cfg.step_count as usize] {
+        msg!("schedule step: offset={} max_bps={}", s.slot_offset, s.max_bps);
+    }
+    let l = build_limits();
+    msg!("build: profile={} min_step_slots={} min_ramp_slots={}",
+        if cfg!(feature = "test-slots") { "TEST-SLOTS(local only)" } else { "release" }, l.min_step_slots, l.min_ramp_slots);
+}
+
+/// Create a PDA owned by this program exactly once. If it is already owned by
+/// this program -> ConfigFrozen. Handles pre-funded (griefed) system accounts.
+fn create_pda_once<'info>(
+    payer: &AccountInfo<'info>,
+    target: &AccountInfo<'info>,
+    system: &AccountInfo<'info>,
+    seeds: &[&[u8]],
+    space: usize,
+) -> Result<()> {
+    if *target.owner == crate::ID || !target.data_is_empty() {
+        return err!(HookError::ConfigFrozen);
+    }
+    require_keys_eq!(*target.owner, system_program::ID, HookError::ConfigFrozen);
+    let rent = Rent::get()?.minimum_balance(space);
+    let signer: &[&[&[u8]]] = &[seeds];
+    let have = target.lamports();
+    if have < rent {
+        system_program::transfer(
+            CpiContext::new(system.clone(), system_program::Transfer { from: payer.clone(), to: target.clone() }),
+            rent - have,
+        )?;
+    }
+    system_program::allocate(
+        CpiContext::new_with_signer(system.clone(), system_program::Allocate { account_to_allocate: target.clone() }, signer),
+        space as u64,
+    )?;
+    system_program::assign(
+        CpiContext::new_with_signer(system.clone(), system_program::Assign { account_to_assign: target.clone() }, signer),
+        &crate::ID,
+    )?;
+    Ok(())
+}
+
+fn write_account<T: AccountSerialize>(info: &AccountInfo, v: &T) -> Result<()> {
+    let mut data = info.try_borrow_mut_data()?;
+    let mut cursor: &mut [u8] = &mut data;
+    v.try_serialize(&mut cursor)?;
+    Ok(())
+}
+
+// ---------------- accounts
+
+#[derive(Accounts)]
+pub struct InitializeGlobal<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: created here once (PDA ["global"]).
+    #[account(mut, seeds = [GLOBAL_SEED], bump)]
+    pub global: UncheckedAccount<'info>,
+    #[account(constraint = program.programdata_address()? == Some(program_data.key()) @ HookError::Unauthorized)]
+    pub program: Program<'info, crate::program::TrenchesHook>,
+    #[account(constraint = program_data.upgrade_authority_address == Some(payer.key()) @ HookError::Unauthorized)]
+    pub program_data: Account<'info, ProgramData>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeExtraAccountMetaList<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// Launcher: must be the global authority (beta: our own launches only).
+    pub authority: Signer<'info>,
+    #[account(seeds = [GLOBAL_SEED], bump = global.bump, has_one = authority @ HookError::Unauthorized)]
+    pub global: Account<'info, Global>,
+    /// CHECK: validated in the handler (Token-2022 mint with TransferHook -> this program).
+    pub mint: UncheckedAccount<'info>,
+    /// CHECK: created here once (PDA ["extra-account-metas", mint]).
+    #[account(mut, seeds = [EXTRA_METAS_SEED, mint.key().as_ref()], bump)]
+    pub extra_account_meta_list: AccountInfo<'info>,
+    /// CHECK: created here once (PDA ["config", mint]).
+    #[account(mut, seeds = [CONFIG_SEED, mint.key().as_ref()], bump)]
+    pub config: AccountInfo<'info>,
+    /// CHECK: created here once (PDA ["lift", mint]).
+    #[account(mut, seeds = [LIFT_SEED, mint.key().as_ref()], bump)]
+    pub lift: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct TransferHook<'info> {
+    /// CHECK: validated in handler (Token-2022 account, mint, transferring flag).
+    pub source_token: UncheckedAccount<'info>,
+    /// CHECK: validated in handler.
+    pub mint: UncheckedAccount<'info>,
+    /// CHECK: validated in handler.
+    pub destination_token: UncheckedAccount<'info>,
+    /// CHECK: source owner/delegate; not used by the rule (source side is never checked).
+    pub owner: UncheckedAccount<'info>,
+    /// CHECK: PDA check only.
+    #[account(seeds = [EXTRA_METAS_SEED, mint.key().as_ref()], bump)]
+    pub extra_account_meta_list: UncheckedAccount<'info>,
+    #[account(seeds = [CONFIG_SEED, mint.key().as_ref()], bump = config.bump, has_one = mint @ HookError::InvalidMint)]
+    pub config: Account<'info, MintConfig>,
+    #[account(seeds = [LIFT_SEED, mint.key().as_ref()], bump = lift.bump, has_one = mint @ HookError::InvalidMint)]
+    pub lift: Account<'info, LiftState>,
+    #[account(seeds = [GLOBAL_SEED], bump = global.bump)]
+    pub global: Account<'info, Global>,
+}
+
+#[derive(Accounts)]
+pub struct LiftGlobal<'info> {
+    pub authority: Signer<'info>,
+    #[account(mut, seeds = [GLOBAL_SEED], bump = global.bump, has_one = authority @ HookError::Unauthorized)]
+    pub global: Account<'info, Global>,
+}
+
+#[derive(Accounts)]
+pub struct LiftMint<'info> {
+    pub authority: Signer<'info>,
+    #[account(seeds = [GLOBAL_SEED], bump = global.bump, has_one = authority @ HookError::Unauthorized)]
+    pub global: Account<'info, Global>,
+    #[account(mut, seeds = [LIFT_SEED, lift.mint.as_ref()], bump = lift.bump)]
+    pub lift: Account<'info, LiftState>,
+}
+
+#[derive(Accounts)]
+pub struct ViewSchedule<'info> {
+    pub config: Account<'info, MintConfig>,
+    #[account(seeds = [LIFT_SEED, config.mint.as_ref()], bump = lift.bump)]
+    pub lift: Account<'info, LiftState>,
+    #[account(seeds = [GLOBAL_SEED], bump = global.bump)]
+    pub global: Account<'info, Global>,
+}
+
+#[event]
+pub struct RestrictionsLifted {
+    /// 0 = global allow-all, 1 = per-mint lift, 2 = per-mint raise.
+    pub scope: u8,
+    /// Mint (Pubkey::default() for global).
+    pub mint: Pubkey,
+    pub old_floor_bps: u16,
+    pub new_floor_bps: u16,
+    pub lifted: bool,
+    pub slot: u64,
+    pub signer: Pubkey,
+}

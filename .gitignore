@@ -1,0 +1,48 @@
+# secrets / keys (never commit)
+.devnet-keys/
+.local-keys/
+*.keypair.json
+*-keypair.json
+*_keypair.json
+keypair*.json
+id.json
+deployer.json
+.env
+.env.*
+!.env.example
+*.pem
+# build
+target/
+node_modules/
+dist/
+.anchor/
+test-ledger/
+*.so
+# local working files
+PROGRESS.log
+*.tmp
+# QA owns qa/ on its own branch (qa/devnet-v0); its local artefacts are not part of this package
+qa/
+
+# extra secret/log patterns (QA, Oct 4)
+*.log
+*.key
+id_rsa*
+wallet*.json
+
+# replay fixtures: Research's raw CSVs stay outside the repo forever (NEO, Oct 4)
+replay_fixtures_v0/
+**/replay_fixtures*/
+tests/fixtures/**/*.csv
+
+# e2e screenshots (local output, never committed)
+artifacts/
+
+# public repo: internal notes and LOCAL run records are kept in local history only
+/launches/
+/txlog/
+/docs/INTERNAL_TOOLCHAIN.*
+/docs/screens/
+/prs
+/MORNING_REPORT.*
+/STATUS.*

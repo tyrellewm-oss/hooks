@@ -1,0 +1,23 @@
+body { font-family: system-ui, sans-serif; margin: 0; background: #0f1115; color: #e6e6e6; }
+a { color: #8ab4ff; }
+.banner-hard { background: #b00020; color: #fff; font-weight: 800; text-align: center; padding: 8px; letter-spacing: .05em; }
+.banner { background: #3a2a00; color: #ffd27a; padding: 8px 16px; text-align: center; }
+header { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid #222; }
+.brand { font-weight: 700; color: #fff; text-decoration: none; }
+.badge { background: #ffb300; color: #000; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+.cluster { margin-left: auto; font-family: monospace; color: #9aa; }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.card { background: #171a21; border: 1px solid #262b36; border-radius: 8px; padding: 14px 16px; margin: 12px 0; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+h2 { margin: 4px 0 10px; font-size: 1.1rem; }
+.mono { font-family: monospace; font-size: .85rem; word-break: break-all; }
+label { display: block; margin: 6px 0; }
+input, select, button { background: #0f1115; color: #e6e6e6; border: 1px solid #333; border-radius: 4px; padding: 6px 8px; }
+button { cursor: pointer; background: #2a5bd7; border-color: #2a5bd7; font-weight: 600; }
+button:disabled { background: #333; border-color: #333; color: #777; cursor: not-allowed; }
+.ok { color: #6fdc8c; } .fail { color: #ff6b6b; } .muted { color: #8a8f98; }
+.explainer { border-left: 3px solid #ff6b6b; padding-left: 10px; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; } td, th { border-bottom: 1px solid #262b36; padding: 4px 6px; text-align: left; font-size: .9rem; }
+footer { color: #8a8f98; font-size: .8rem; padding: 16px; text-align: center; border-top: 1px solid #222; }
+.checklist label { display: flex; gap: 8px; align-items: flex-start; }

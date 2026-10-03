@@ -1,0 +1,33 @@
+[package]
+name = "trenches-hook"
+version = "0.1.0"
+description = "DEVNET-ONLY experiment: Token-2022 transfer hook enforcing one rule, a rising per-token-account cap during the DBC bonding curve. Unaudited."
+edition = "2021"
+rust-version = "1.84"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "trenches_hook"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+# LOCAL ONLY: lowers the minimum step/ramp length to 1-2 slots so the cap rises
+# within seconds on solana-test-validator. NEVER enable for a devnet build (AC-5).
+test-slots = []
+
+[dependencies]
+anchor-lang = "0.32.1"
+anchor-spl = { version = "0.32.1", default-features = false, features = ["token", "token_2022", "token_2022_extensions"] }
+spl-transfer-hook-interface = "0.10"
+spl-tlv-account-resolution = "0.10"
+spl-discriminator = "0.4"
+cap-math = { path = "../../crates/cap-math" }

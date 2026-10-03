@@ -1,0 +1,19 @@
+[toolchain]
+anchor_version = "0.32.2"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+trenches_hook = "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz"
+
+[programs.devnet]
+trenches_hook = "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz"
+
+[provider]
+cluster = "localnet"
+wallet = ".local-keys/local.json"
+
+[scripts]
+test = "echo 'use: pnpm test (see README)'"
