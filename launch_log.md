@@ -25,7 +25,7 @@ Times are ICT (UTC+7), Sunday Oct 4, 2026. Cluster: Solana devnet (genesis `EtWT
 | Program ID | [`FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz`](https://explorer.solana.com/address/FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz?cluster=devnet) |
 | ProgramData | `DnaLcoznENi7obxvVPMv6GJjmhKC3o5485f9etNS2hoT`, data length 393,592, last deployed slot 507156100 |
 | Upgrade authority | `9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu` (throwaway devnet key; also the lift-switch authority in `global`) |
-| Deploy tx (~05:57) | [`3B68U43f…`](https://explorer.solana.com/tx/3B68U43fm6BFHt4SJtVx4Mw87gwN75e3WjgH4jpMkN19eJpTP6szfKSckvHNJwUbbMqFSUyW6dFv8XeqhrZ9aZxh?cluster=devnet) (buffer `A4Ppv3L9uzA2HFPeX6fmzDpVvJqm8BFp2RFNcfN1bEqG`; first write attempt hit RPC "Max retries exceeded", the resumed deploy succeeded) |
+| Deploy tx (05:55:15 ICT, blockTime) | [`3B68U43f…`](https://explorer.solana.com/tx/3B68U43fm6BFHt4SJtVx4Mw87gwN75e3WjgH4jpMkN19eJpTP6szfKSckvHNJwUbbMqFSUyW6dFv8XeqhrZ9aZxh?cluster=devnet) (buffer `A4Ppv3L9uzA2HFPeX6fmzDpVvJqm8BFp2RFNcfN1bEqG`; first write attempt hit RPC "Max retries exceeded", the resumed deploy succeeded) |
 | **`solana program dump` sha256** | `02d402bc2e2db90d69c6eb7155483364d7afca1cc500c010a90e5de36927bead` (dump is 393,592 bytes, no padding; trimmed-to-.so-length sha256 is the same) → **matches the built .so** |
 
 ## 3. Global and launch
