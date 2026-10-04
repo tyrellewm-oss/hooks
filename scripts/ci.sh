@@ -12,6 +12,8 @@ if [ "${CI_PROGRAM_HOST:-0}" = 1 ]; then
 step "program host unit tests (exempt PDAs derive from Meteora program ids; needs ~1.5 GB disk)"
 cargo test -q -p trenches-hook --lib 2>&1 | grep 'test result'; [ "${PIPESTATUS[0]}" = 0 ] || fail=1
 else echo; echo "== program host unit tests skipped (set CI_PROGRAM_HOST=1; last run 2026-10-03 22:5x ICT: 2 passed)"; fi
+step "parse check: every .ts under sdk/ scripts/ app/ keeper/ tests/ parses (esbuild transform)"
+node scripts/parse_check.mjs | tail -3; [ "${PIPESTATUS[0]}" = 0 ] || fail=1
 step "LOCAL litesvm integration + TS parity tests (needs target/deploy/*.so from scripts/build.sh)"
 # --test-timeout: a hung or spinning test file is cancelled and counts as a failure (fail fast, never a silent hang)
 out=$(node --import tsx --test --test-timeout=60000 tests/*.test.ts 2>&1); rc=$?; [ $rc = 0 ] || fail=1
