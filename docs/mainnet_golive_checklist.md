@@ -20,7 +20,7 @@ This checklist describes what a go-live **would** need. Every transaction below 
 | G7 | Monitoring and the R4 stop rule: who watches the keeper, the alerts, and who can pause it | King | open |
 
 ## 1. Decisions King must make first (no defaults; agents don't guess)
-1. **Keys M1–M4:** who holds the program upgrade authority (multisig + timelock?), the Global admin (lift) key, the fee claimer / treasury, and the keeper hot keys (gas, claim signer).
+1. **Keys M1–M4:** King's key decision. This checklist names each signer **by role**, not by M-number, because the M1–M4 → role mapping is King's to define. The roles: **upgrade authority** (multisig + timelock?), **Global admin** (lift key), **fee claimer / treasury**, and **keeper hot keys** (gas, claim signer). The launch key is decision 2.
 2. **Launch-key custody:** a hot key, or King signing each launch. 8.3 requires it to differ from the admin, upgrade and fee-claimer keys and from every keeper key.
 3. **Mint keypair:** generated on King's side. Agents only ever see the public key.
 4. **Fee / curve / supply preset** (`research/fee_curve_supply_options.md`) and **flat vs dynamic pool fee** after migration.
@@ -40,15 +40,16 @@ The post-check runs read-only after it lands.
 
 | # | Transaction | Signer(s) | QA pre-check | Post-check |
 |---|---|---|---|---|
-| T1 | Write the program buffer from the **verified** release build (test-slots OFF) | upgrade authority (M1) | `.so` sha256 == the `solana-verify` hash (G3) | the buffer hash matches |
-| T2 | Deploy the program from the buffer; set the upgrade authority to the multisig | M1 | program id == the planned pin (G5) | ProgramData authority == multisig; `qa-schedule` VERDICT release |
-| T3 | `initialize_global(admin)` | upgrade authority | admin == the M-key decision, != the launch key | Global 42 bytes, `authority` == admin |
+| T1 | Write the program buffer from the **verified** release build (test-slots OFF) | upgrade authority (buffer authority) | `.so` sha256 == the `solana-verify` hash (G3) | the buffer hash matches |
+| T2 | Deploy the program from the buffer | upgrade authority | program id == the planned pin (G5); buffer hash == T1 | program executable; `qa-schedule` VERDICT release |
+| T2b | Only if the deploying key isn't already the multisig: `set-upgrade-authority` to the multisig (a separate tx) | the deploying upgrade authority | new authority == the multisig address King picked | ProgramData authority == multisig |
+| T3 | `initialize_global(admin)` | upgrade authority | admin == King's Global-admin key, != the launch key | Global 42 bytes, `authority` == admin |
 | T4 | `migrate_global_v2(launch_authority)` (payer may differ) | admin + payer | launch key != admin / upgrade / fee claimer / keeper keys (four-role rule) | Global 74 bytes; bytes 0..42 unchanged; tail == launch key |
-| T5 | DBC partner config with transfer hook (fee / curve / supply preset) | partner payer, config keypair | preset == King's pick (decision 4); `feeClaimer` per M-keys; `launchConfigChecks` clean | the config account is owned by DBC and matches |
+| T5 | DBC partner config with transfer hook (fee / curve / supply preset) | partner payer, config keypair | preset == King's pick (decision 4); `feeClaimer` == King's fee-claimer key; `launchConfigChecks` clean | the config account is owned by DBC and matches |
 | T6 | Create pool + hook config (one tx), mint keypair from King | payer, **launch key**, mint keypair (King) | pre-send simulation: mint TransferHook == the pinned program + DBC signer; `buildCreatePoolTx` launch-key check | pool / mint / hook checks (blocker #7); `MintConfig.launcher` == the launch key |
 | T7 | Registry PR: add the mainnet mint to `keeper/registry.json` | repo PR (Agent A/B review, King merges) | exact mint string | site and keeper see only the registry mint |
-| T8 | Keeper setup: treasury / dev wSOL and token accounts | keeper gas | owners per M-keys; `dev_payout` == decision 5 | accounts exist with the right owners |
-| T9 | Keeper runs (recurring): claim → 15/85 split → price check → capped buyback → burn | keeper keys (hot, per M2) | `run` dry run first; price checks (#5) pass; max per run == decision 6 | every run reconciles; burn verified; public log written |
+| T8 | Keeper setup: treasury / dev wSOL and token accounts | keeper gas | owners == King's treasury / keeper keys; `dev_payout` == decision 5 | accounts exist with the right owners |
+| T9 | Keeper runs (recurring): claim → 15/85 split → price check → capped buyback → burn | keeper hot keys (gas, claim signer, treasury), per decision 1 | `run` dry run first; price checks (#5) pass; max per run == decision 6 | every run reconciles; burn verified; public log written |
 
 Not on the list: `lift_global`, `lift_mint_cap`, `raise_mint_cap`, `set_launch_authority` and `rotate_admin`. These are emergency or rotation actions only. Each one is a separate, explicit King decision.
 
@@ -57,7 +58,7 @@ Not on the list: `lift_global`, `lift_mint_cap`, `raise_mint_cap`, `set_launch_a
 - **#5 price source:** with a single-pool token, Jupiter prices from our own pool, so it catches a stale or broken read, not a pump. A pump held for the whole 30-min window gets through (the defence is the window plus the max per run). min_out per spec §3.7 was confirmed by King. Missing or stale sampler → refuse, then pause after the warm-up ceiling.
 - **8.3:** a devnet launch is refused until the devnet Global is migrated (fail closed). The same applies on mainnet: T4 before T6.
 - **8.3b:** `rotate_admin` does not rotate the BPF upgrade authority.
-- **Unaudited; no verifiable build yet** (G2, G3). The upgrade authority can replace the program: the multisig + timelock decision is part of M1.
+- **Unaudited; no verifiable build yet** (G2, G3). The upgrade authority can replace the program: the multisig + timelock decision for the upgrade authority is part of decision 1.
 - The page signs with backend throwaway keys today (AC-21 / H-7). It needs **browser-wallet signing before any hosted or public page.**
 
 ## 4. Sign-off record (to fill in at go-live)
