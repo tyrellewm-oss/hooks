@@ -103,6 +103,32 @@ pub mod trenches_hook {
         Ok(())
     }
 
+    /// 8.3b, admin-only: rotate the Global admin key at bytes 8..40. Those 32 bytes are the only write.
+    /// Legal only after 8.3's migration, with a set launch key. Refuses the zero key, the current admin, and the
+    /// launch key. Does not change the program upgrade authority.
+    pub fn rotate_admin(ctx: Context<RotateAdmin>, new_authority: Pubkey) -> Result<()> {
+        let g = ctx.accounts.global.to_account_info();
+        let (canonical, _) = Pubkey::find_program_address(&[GLOBAL_SEED], &crate::ID);
+        require_keys_eq!(g.key(), canonical, HookError::Unauthorized);
+        require_keys_eq!(*g.owner, crate::ID, HookError::Unauthorized);
+        let (admin, launch) = {
+            let d = g.try_borrow_data()?;
+            require!(d.len() >= 8 && &d[..8] == Global::DISCRIMINATOR, HookError::Unauthorized);
+            require!(d.len() == GLOBAL_V2_LEN, HookError::ConfigFrozen);
+            let admin = Pubkey::try_from(&d[8..40]).map_err(|_| error!(HookError::Unauthorized))?;
+            let launch = launch_authority_of(&d).ok_or(error!(HookError::ConfigFrozen))?;
+            (admin, launch)
+        };
+        require!(ctx.accounts.authority.key() == admin, HookError::Unauthorized);
+        require_keys_neq!(new_authority, Pubkey::default(), HookError::ConfigFrozen);
+        require_keys_neq!(new_authority, admin, HookError::ConfigFrozen);
+        require_keys_neq!(new_authority, launch, HookError::ConfigFrozen);
+        // 32 bytes at offset 8 only. Not write_account: a full serialize would be the clobber mutant.
+        g.try_borrow_mut_data()?[8..40].copy_from_slice(new_authority.as_ref());
+        msg!("trenches-hook: admin rotated to={}", new_authority);
+        Ok(())
+    }
+
     /// Per-mint setup (the transfer-hook InitializeExtraAccountMetaList step):
     /// writes the immutable cap config, the lift state and the extra-account-meta
     /// list. Signed by the launch key (Global bytes 42..74, 8.3), never the admin. Runs once per mint.
@@ -422,6 +448,16 @@ pub struct InitializeExtraAccountMetaList<'info> {
     #[account(mut, seeds = [LIFT_SEED, mint.key().as_ref()], bump)]
     pub lift: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RotateAdmin<'info> {
+    /// Must equal Global bytes 8..40 (checked in the handler).
+    pub authority: Signer<'info>,
+    /// CHECK: checked by hand (canonical PDA, owner, discriminator). Not Account<Global>: that account
+    /// reserializes on exit, and this instruction must write bytes 8..40 only.
+    #[account(mut)]
+    pub global: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

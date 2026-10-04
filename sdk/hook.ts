@@ -54,6 +54,7 @@ export const IX = {
   viewSchedule: disc('global', 'view_schedule'),
   migrateGlobalV2: disc('global', 'migrate_global_v2'),
   setLaunchAuthority: disc('global', 'set_launch_authority'),
+  rotateAdmin: disc('global', 'rotate_admin'),
 };
 export const ACC = { Global: disc('account', 'Global'), MintConfig: disc('account', 'MintConfig'), LiftState: disc('account', 'LiftState') };
 export const EVT = { RestrictionsLifted: disc('event', 'RestrictionsLifted') };
@@ -125,6 +126,13 @@ export class HookClient {
   /** 8.3, admin-only: rotate the launch key. */
   setLaunchAuthority(authority: PublicKey, newLaunchAuthority: PublicKey) {
     return new TransactionInstruction({ programId: this.programId, data: Buffer.concat([IX.setLaunchAuthority, newLaunchAuthority.toBuffer()]), keys: [
+      { pubkey: authority, isSigner: true, isWritable: false },
+      { pubkey: this.globalPda(), isSigner: false, isWritable: true },
+    ] });
+  }
+  /** 8.3b, admin-only: rotate the Global admin key. `next` is the new admin. Chain checks live in the program. */
+  rotateAdmin(authority: PublicKey, next: PublicKey) {
+    return new TransactionInstruction({ programId: this.programId, data: Buffer.concat([IX.rotateAdmin, next.toBuffer()]), keys: [
       { pubkey: authority, isSigner: true, isWritable: false },
       { pubkey: this.globalPda(), isSigner: false, isWritable: true },
     ] });
