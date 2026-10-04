@@ -1,6 +1,9 @@
 // QA mainnet blocker #3: the DAMM v2 migration config env override is a devnet-only knob. On any cluster whose genesis
 // hash is not devnet's it must equal the pinned mainnet value, and a mismatch is refused before any tx is built. Offline.
 import { test } from 'node:test';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
 import { Keypair, Connection } from '@solana/web3.js';
 import { DEVNET_GENESIS, MAINNET_GENESIS, TESTNET_GENESIS, classifyCluster, isLocalhostRpc } from '../sdk/cluster.js';
@@ -14,6 +17,8 @@ import { fixtureMint } from './mint_hook_fixture.js';
 
 const LOCAL_GENESIS = Keypair.generate().publicKey.toBase58();   // a local validator has its own random genesis
 const other = () => Keypair.generate().publicKey.toBase58();
+/** A temp mint registry listing `mint` on the local cluster (the committed one has no local mints). */
+const localRegistry = (mint: string) => { const p = join(mkdtempSync(join(tmpdir(), 'reg-')), 'registry.json'); writeFileSync(p, JSON.stringify({ local: [mint] })); return p; };
 const env = (v?: string) => (v === undefined ? {} : { DAMM_V2_MIGRATION_CONFIG: v }) as NodeJS.ProcessEnv;
 
 test('no override → pinned per-cluster value (devnet, mainnet, local)', () => {
@@ -190,7 +195,7 @@ test('migrate() via a cluster object: localhost URL + unknown genesis accepts th
 test('keeper on cluster "local": needs localhost URL + unknown genesis; remote URL or a known genesis is refused', async () => {
   const { readFileSync } = await import('node:fs');
   const cfg = { ...JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')), cluster: 'local', pinned_pubkeys: undefined };
-  const start = (rpcEndpoint: string, genesis: string) => startKeeper(cfg, [], { loadKey: () => Keypair.generate(), log: () => {}, registry: new Set([cfg.main_mint]),   // local mints are not in the committed registry
+  const start = (rpcEndpoint: string, genesis: string) => startKeeper(cfg, [], { loadKey: () => Keypair.generate(), log: () => {}, registryPath: localRegistry(cfg.main_mint),   // local mints are not in the committed registry
     connect: async () => ({ rpcEndpoint, getGenesisHash: async () => genesis, getAccountInfo: async () => { throw new Error('reached cluster check'); } }) as any });
   await assert.rejects(start('https://rpc.example.com', LOCAL_GENESIS), (e: any) => e instanceof KeyRuleRefusal && /not a local validator/.test(e.message));
   await assert.rejects(start('http://127.0.0.1:8899', TESTNET_GENESIS), (e: any) => e instanceof KeyRuleRefusal && /not a local validator/.test(e.message));
