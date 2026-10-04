@@ -86,7 +86,7 @@ export function preflightOffline(cfg: KeeperConfig, keys: KeySet, registryPath: 
   const keeperKeys = Object.fromEntries(KEEPER_KEY_ROLES.map(r => [r, roleKey(keys, r).publicKey.toBase58()]));
   for (const [role, pk] of Object.entries(keeperKeys))
     if (pk === cfg.dev_payout) throw new KeyRuleRefusal(`refusing to start: dev_payout is the keeper's '${role}' key; the dev payout must be a separate wallet`);
-  const warnings = keeperStartChecks(cfg.cluster, keeperKeys, { upgradeAuthority: cfg.hook_upgrade_authority, liftAuthority: cfg.hook_lift_authority }, { forceFailSwap: !!cfg.force_fail_swap });
+  const warnings = keeperStartChecks(cfg.cluster, keeperKeys, { upgradeAuthority: cfg.hook_upgrade_authority, liftAuthority: cfg.hook_lift_authority, launchAuthority: cfg.hook_launch_authority }, { forceFailSwap: !!cfg.force_fail_swap });
   if (cfg.cluster !== 'devnet' && cfg.cluster !== 'local') throw new KeyRuleRefusal(`refusing to start: this keeper build is devnet-only (cluster=${cfg.cluster})`);
   if (cfg.pinned_pubkeys) for (const role of KEEPER_KEY_ROLES) {
     const pk = cfg.pinned_pubkeys[role];
@@ -110,10 +110,10 @@ export async function startKeeper(cfg: KeeperConfig, overrides: string[], deps: 
     await assertClusterAccounts(conn, { hookProgram: new PublicKey(cfg.hook_program), dbcConfigs: cfg.sources.flatMap(s => (s.kind === 'dbc' ? [new PublicKey(s.config)] : [])) });
   } catch (e: any) { throw e instanceof ClusterCheckRefusal ? new KeyRuleRefusal(e.message) : e; }
   // pinned authorities must match the chain (they feed the §12a check)
-  let upg: string | null, lift: string | null;
-  try { ({ upgradeAuthority: upg, liftAuthority: lift } = await readHookAuthorities(conn, new PublicKey(cfg.hook_program))); }
+  let upg: string | null, lift: string | null, launch: string | null;
+  try { ({ upgradeAuthority: upg, liftAuthority: lift, launchAuthority: launch } = await readHookAuthorities(conn, new PublicKey(cfg.hook_program))); }
   catch (e: any) { throw new KeyRuleRefusal(`refusing: cannot read hook authorities (${e?.message ?? e})`); }
-  if (upg !== cfg.hook_upgrade_authority || lift !== cfg.hook_lift_authority) throw new KeyRuleRefusal(`refusing: pinned hook authorities do not match chain (upgrade ${upg}, lift ${lift})`);
+  if (upg !== cfg.hook_upgrade_authority || lift !== cfg.hook_lift_authority || launch !== cfg.hook_launch_authority) throw new KeyRuleRefusal(`refusing: pinned hook authorities do not match chain (upgrade ${upg}, lift ${lift}, launch ${launch})`);
   const keeper = new Keeper(cfg, overrides, conn, keys, warnings, deps.log ?? console.log);
   for (const w of warnings) keeper.log(w);   // FW-17: through Keeper.log, which redacts
   if (deps.registryPath) keeper.registryPath = deps.registryPath;
@@ -254,7 +254,7 @@ export class Keeper {
     // pinned hook program (genesis resolver; cfg.hook_program must equal it) and the pinned DBC signer (a match on one of our keys is named in the error). After graduation: both unset. Anything else, or any
     // read failure, fails closed and auto-pauses.
     try {
-      const forbidden: Record<string, string | null> = { hook_upgrade_authority: c.hook_upgrade_authority, hook_lift_authority: c.hook_lift_authority, dev_payout: c.dev_payout };
+      const forbidden: Record<string, string | null> = { hook_upgrade_authority: c.hook_upgrade_authority, hook_lift_authority: c.hook_lift_authority, hook_launch_authority: c.hook_launch_authority, dev_payout: c.dev_payout };
       for (const [role, kp] of Object.entries(this.keys)) forbidden[role] = (kp as Keypair).publicKey.toBase58();
       // compare against the pinned resolver (genesis-based, like launch()), not against cfg.hook_program
       let pinned: HookProgramResolution;

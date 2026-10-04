@@ -18,10 +18,11 @@ const arg = (k: string, d?: string) => { const i = argv.indexOf(k); return i >= 
   const lp = new Launchpad(c);
   const deployer = loadOrCreate('devnet', 'deployer'), A = loadOrCreate('devnet', 'buyerA'), G = loadOrCreate('devnet', 'fw_gas');
   const T = loadOrCreate('devnet', 'fw15_treasury');
+  const launchKey = loadOrCreate('devnet', 'launch');   // 8.3: the devnet launch key (Global must be migrated to it)
   // dev payout: a pubkey only, named by the operator (--dev-payout). The keeper never signs as dev.
   const D = { publicKey: new PublicKey(devPayout) };
   const sched = resolveSchedule(undefined, 'devnet');
-  const rec = await lp.launch(deployer, { name: 'Flywheel FW15 Test', symbol: 'FW15', steps: sched.steps, uncappedAfter: sched.uncappedAfter, migrationQuoteThresholdSol: 1 });
+  const rec = await lp.launch(deployer, { name: 'Flywheel FW15 Test', symbol: 'FW15', steps: sched.steps, uncappedAfter: sched.uncappedAfter, migrationQuoteThresholdSol: 1 }, launchKey);
   console.log(JSON.stringify({ mint: rec.mint, pool: rec.pool, config: rec.config }));
   // buy 0.5% of supply (under the 1% opening cap), max 0.03 SOL in; anti-sniper fee phase → partner fee > min_claim; curve stays unfilled
   const tokens = (1_000_000_000n * 1_000_000n * 50n) / 10_000n;

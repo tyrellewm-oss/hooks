@@ -2,6 +2,7 @@
 // pause = zero RPC/tx (FW-13) and mid-run pause before every send (U-4), window idempotency, fail-closed log write (FW-14), public log hygiene (FW-17).
 // No network: every Connection here is a trap that throws on any use.
 import { test } from 'node:test';
+import { launchCall } from './launch_key.js';
 import assert from 'node:assert/strict';
 import { Keypair, Connection, PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
 import { TOKEN_2022_PROGRAM_ID, NATIVE_MINT } from '@solana/spl-token';
@@ -101,18 +102,18 @@ async function quiet<T>(f: () => Promise<T>): Promise<{ r: Promise<T>; warns: st
 for (const [label, which] of [['FW-24a: feeClaimer = upgrade authority', 'upgrade'], ['FW-24b: feeClaimer = lift authority', 'lift'], ['§12a: upgrade == lift', 'both']] as const) {
   test(`${label}: a Cluster NAMED "mainnet" on devnet genesis → devnet rules (warn, reaches the build); the name never decides`, async () => {
     const deployer = Keypair.generate(); const { fake, n } = launchFake('mainnet', LG.devnet);
-    const { r, warns } = await quiet(() => Launchpad.prototype.launch.call(fake, deployer, sameKeyOpts(deployer, which)));
+    const { r, warns } = await quiet(() => launchCall(fake, deployer, sameKeyOpts(deployer, which)));
     await assert.rejects(r, /tx built/); assert.equal(n.built, 1);
     assert.ok(warns.some(x => /accepted throwaway exception on devnet/.test(x)), warns.join('\n'));
   });
   test(`${label}: reverse, a Cluster NAMED "devnet" on mainnet genesis → refused before any build and before any account read (hook gate first)`, async () => {
     const deployer = Keypair.generate(); const { fake, n } = launchFake('devnet', LG.mainnet);
-    await assert.rejects(Launchpad.prototype.launch.call(fake, deployer, sameKeyOpts(deployer, which)), HookProgramPinRefusal);
+    await assert.rejects(launchCall(fake, deployer, sameKeyOpts(deployer, which)), HookProgramPinRefusal);
     assert.equal(n.built, 0); assert.equal(n.reads, 0);
   });
   test(`${label}: NAMED "mainnet" on mainnet genesis with o.authorities → the hook gate refuses first (not the §12a check), 0 builds`, async () => {
     const deployer = Keypair.generate(); const { fake, n } = launchFake('mainnet', LG.mainnet);
-    await assert.rejects(Launchpad.prototype.launch.call(fake, deployer, sameKeyOpts(deployer, which)), (e: any) => e instanceof HookProgramPinRefusal && !(e instanceof KeyRuleRefusal));
+    await assert.rejects(launchCall(fake, deployer, sameKeyOpts(deployer, which)), (e: any) => e instanceof HookProgramPinRefusal && !(e instanceof KeyRuleRefusal));
     assert.equal(n.built, 0);
   });
 }
@@ -120,7 +121,7 @@ test('§12a on a local validator (localhost + unknown genesis) named "mainnet" �
   const prev = process.env.HOOK_PROGRAM_ID; const h = Keypair.generate().publicKey.toBase58(); process.env.HOOK_PROGRAM_ID = h;
   try {
     const deployer = Keypair.generate(); const { fake, n } = launchFake('mainnet', Keypair.generate().publicKey.toBase58(), 'http://127.0.0.1:8899');
-    const { r, warns } = await quiet(() => Launchpad.prototype.launch.call(fake, deployer, sameKeyOpts(deployer, 'both')));
+    const { r, warns } = await quiet(() => launchCall(fake, deployer, sameKeyOpts(deployer, 'both')));
     await assert.rejects(r, /tx built/); assert.equal(n.built, 1);
     assert.ok(warns.some(x => /accepted throwaway exception on local/.test(x)), 'local rules warn (accepted throwaway exception on local)');
   } finally { if (prev === undefined) delete process.env.HOOK_PROGRAM_ID; else process.env.HOOK_PROGRAM_ID = prev; }
@@ -134,7 +135,7 @@ test('§12a classes: testnet and unknown refuse like mainnet (only devnet/local 
   for (const c of ['devnet', 'local']) assert.equal(launchConfigChecks(c, Keypair.generate().publicKey.toBase58(), { upgradeAuthority: k, liftAuthority: k }).length, 1);
 });
 test('FW-24: distinct claimer passes the check on mainnet; unknown authorities refuse', () => {
-  assert.deepEqual(launchConfigChecks('mainnet', Keypair.generate().publicKey.toBase58(), { upgradeAuthority: Keypair.generate().publicKey.toBase58(), liftAuthority: Keypair.generate().publicKey.toBase58() }), []);
+  assert.deepEqual(launchConfigChecks('mainnet', Keypair.generate().publicKey.toBase58(), { upgradeAuthority: Keypair.generate().publicKey.toBase58(), liftAuthority: Keypair.generate().publicKey.toBase58(), launchAuthority: Keypair.generate().publicKey.toBase58() }), []);
   assert.throws(() => launchConfigChecks('mainnet', 'x', { upgradeAuthority: null, liftAuthority: 'y' }), KeyRuleRefusal);
   assert.throws(() => keeperStartChecks('mainnet', {}, { upgradeAuthority: null, liftAuthority: null }), KeyRuleRefusal);
 });
@@ -150,7 +151,7 @@ test('FW-25: devnet TDT shared key 9DVu… → visible warnings, no refusal', ()
 });
 test('non-devnet clusters are refused even with clean keys (devnet-only build)', () => {
   const k = keys();
-  assert.throws(() => preflightOffline(cfgWith({ cluster: 'mainnet', hook_upgrade_authority: Keypair.generate().publicKey.toBase58(), hook_lift_authority: Keypair.generate().publicKey.toBase58() }), k), /devnet-only/);
+  assert.throws(() => preflightOffline(cfgWith({ cluster: 'mainnet', hook_upgrade_authority: Keypair.generate().publicKey.toBase58(), hook_lift_authority: Keypair.generate().publicKey.toBase58(), hook_launch_authority: Keypair.generate().publicKey.toBase58() }), k), /devnet-only/);
 });
 
 // ---------------- keeper behaviour without network
@@ -337,7 +338,7 @@ test('U-4: pause before the swap, pool spot moves while paused → resume re-quo
 
 // QA follow-up (issue 2): §12a also requires the hook upgrade authority and the lift authority to be different keys.
 test('§12a: upgrade authority = lift authority → refused off devnet (launch builder and keeper start), warned on devnet/local, distinct keys pass', () => {
-  const same = Keypair.generate().publicKey.toBase58(), u = Keypair.generate().publicKey.toBase58(), l = Keypair.generate().publicKey.toBase58();
+  const same = Keypair.generate().publicKey.toBase58(), u = Keypair.generate().publicKey.toBase58(), l = Keypair.generate().publicKey.toBase58(), la = Keypair.generate().publicKey.toBase58();
   const claimer = Keypair.generate().publicKey.toBase58(), keeperKeys = { claim_signer: claimer, treasury: Keypair.generate().publicKey.toBase58() };
   const re = /upgrade authority and lift authority are the same key/;
   assert.throws(() => launchConfigChecks('mainnet', claimer, { upgradeAuthority: same, liftAuthority: same }), (e: any) => e instanceof KeyRuleRefusal && re.test(e.message));
@@ -348,8 +349,8 @@ test('§12a: upgrade authority = lift authority → refused off devnet (launch b
     const kw = keeperStartChecks(c, keeperKeys, { upgradeAuthority: same, liftAuthority: same });
     assert.equal(kw.length, 1); assert.match(kw[0], re);
   }
-  assert.deepEqual(launchConfigChecks('mainnet', claimer, { upgradeAuthority: u, liftAuthority: l }), []);
-  assert.deepEqual(keeperStartChecks('mainnet', keeperKeys, { upgradeAuthority: u, liftAuthority: l }), []);
+  assert.deepEqual(launchConfigChecks('mainnet', claimer, { upgradeAuthority: u, liftAuthority: l, launchAuthority: la }), []);
+  assert.deepEqual(keeperStartChecks('mainnet', keeperKeys, { upgradeAuthority: u, liftAuthority: l, launchAuthority: la }), []);
   assert.deepEqual(launchConfigChecks('devnet', claimer, { upgradeAuthority: u, liftAuthority: l }), []);
 });
 test('§12a same-authority rule end to end: keeper start on mainnet with upgrade = lift refuses before connecting; the devnet TDT config still starts its preflight with warnings', async () => {

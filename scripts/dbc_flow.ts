@@ -44,10 +44,12 @@ async function demo(c: Cluster) {
   const A = loadOrCreate(c.name, 'buyerA'), B = loadOrCreate(c.name, 'buyerB');
   const walletSol = Number(arg('--wallet-sol', c.name === 'devnet' ? '0.6' : '5'));
   await fund(c, deployer, A.publicKey, walletSol); await fund(c, deployer, B.publicKey, walletSol + Number(arg('--threshold', '1')) * 1.3);
-  const g = await lp.ensureGlobal(deployer, deployer.publicKey);
-  console.log(`[${c.label}] hook ${lp.hook.programId.toBase58()} lift authority ${g.authority.toBase58()} (throwaway test key)`);
+  const launchKey = loadOrCreate(c.name, 'launch');   // 8.3: a separate throwaway launch key (never the admin)
+  const g0 = await lp.ensureGlobal(deployer, deployer.publicKey);
+  const g = await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);
+  console.log(`[${c.label}] hook ${lp.hook.programId.toBase58()} lift authority ${g0.authority.toBase58()} launch authority ${g.launchAuthority?.toBase58()} (throwaway test keys)`);
   const threshold = Number(arg('--threshold', '1'));
-  const rec = await lp.launch(deployer, { name: 'Trenches Devnet Test', symbol: 'TDT', steps: STEPS, uncappedAfter: UNCAPPED, migrationQuoteThresholdSol: threshold });
+  const rec = await lp.launch(deployer, { name: 'Trenches Devnet Test', symbol: 'TDT', steps: STEPS, uncappedAfter: UNCAPPED, migrationQuoteThresholdSol: threshold }, launchKey);
   const pool = new PublicKey(rec.pool), mint = new PublicKey(rec.mint);
   const st0 = await lp.status(mint);
   console.log(JSON.stringify(st0, null, 1));
@@ -98,8 +100,10 @@ async function liftDemo(c: Cluster) {
   const lp = new Launchpad(c);
   const deployer = loadOrCreate(c.name, deployerName(c.name));
   if (c.name === 'local') await fund(c, deployer, deployer.publicKey, 20);
+  const launchKey = loadOrCreate(c.name, 'launch');   // 8.3: a separate throwaway launch key (never the admin)
   await lp.ensureGlobal(deployer, deployer.publicKey);
-  const rec = await lp.launch(deployer, { name: 'Trenches Lift Test', symbol: 'TLT', steps: STEPS, uncappedAfter: UNCAPPED, migrationQuoteThresholdSol: Number(arg('--threshold', '1')) });
+  await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);
+  const rec = await lp.launch(deployer, { name: 'Trenches Lift Test', symbol: 'TLT', steps: STEPS, uncappedAfter: UNCAPPED, migrationQuoteThresholdSol: Number(arg('--threshold', '1')) }, launchKey);
   const mint = new PublicKey(rec.mint);
   const r1 = await sendTx(c, new Transaction().add(lp.hook.raiseMintCap(deployer.publicKey, mint, 300)), [deployer], 'AC-11/12 lift-only switch: raise TLT cap floor to 3% (event)');
   const r2 = await sendTx(c, new Transaction().add(lp.hook.raiseMintCap(deployer.publicKey, mint, 200)), [deployer], 'AC-11 lift-only switch: try to LOWER floor to 2% - EXPECTED FAIL ConfigFrozen');

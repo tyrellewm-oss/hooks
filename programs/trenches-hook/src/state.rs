@@ -11,6 +11,21 @@ pub struct Global {
     pub bump: u8,
 }
 
+/// Global as created by `initialize_global`: discriminator + authority + lifted + bump = 42 bytes.
+pub const GLOBAL_V1_LEN: usize = 8 + Global::INIT_SPACE;
+/// Global after `migrate_global_v2` (8.3): v1 + `launch_authority` at bytes 42..74.
+/// The field is deliberately NOT in the `Global` struct: every transfer loads `Account<Global>`, and a 42-byte
+/// account would stop deserializing (all transfers fail) until the migration lands. Read it with `launch_authority_of`.
+pub const GLOBAL_V2_LEN: usize = GLOBAL_V1_LEN + 32;
+
+/// The launch key stored at bytes 42..74 of Global, or None when the account is shorter than 74 bytes (not
+/// migrated) or the bytes are all zero (never a valid launch key).
+pub fn launch_authority_of(global_data: &[u8]) -> Option<Pubkey> {
+    let b = global_data.get(GLOBAL_V1_LEN..GLOBAL_V2_LEN)?;
+    if b.iter().all(|x| *x == 0) { return None; }
+    Pubkey::try_from(b).ok()
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, InitSpace, PartialEq, Eq)]
 pub struct StepData {
     pub slot_offset: u64,

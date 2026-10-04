@@ -29,6 +29,7 @@
   "hook_program": "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz",
   "hook_upgrade_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
   "hook_lift_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
+  "hook_launch_authority": null,
   "max_swap_lamports_per_run": "500000000",
   "max_slippage_bps": 100,
   "max_price_impact_bps": 200,

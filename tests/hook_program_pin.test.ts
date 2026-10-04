@@ -3,6 +3,7 @@
 // mainnet/testnet → override must equal the pin, and there is no pin yet, so both refuse; unknown → refuse.
 // Never a fallback to the devnet id. The gate runs before any tx is built. Offline.
 import { test } from 'node:test';
+import { launchCall } from './launch_key.js';
 import assert from 'node:assert/strict';
 import { Keypair, PublicKey } from '@solana/web3.js';
 import { DEVNET_GENESIS, MAINNET_GENESIS, TESTNET_GENESIS } from '../sdk/cluster.js';
@@ -77,7 +78,7 @@ function fakeLp(genesis: string, url: string | undefined, accts: Map<string, any
 const exe = { owner: new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111'), executable: true, data: Buffer.alloc(36) };
 const auth = { upgradeAuthority: other(), liftAuthority: other() };
 const calls: [string, (lp: any) => Promise<unknown>][] = [
-  ['launch', lp => Launchpad.prototype.launch.call(lp, Keypair.generate(), { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities: auth } as any)],
+  ['launch', lp => launchCall(lp, Keypair.generate(), { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities: auth } as any)],
   ['swap', lp => Launchpad.prototype.swap.call(lp, Keypair.generate(), Keypair.generate().publicKey, 'buy', 1n, 'p', 1n)],
   ['buyExactIn', lp => Launchpad.prototype.buyExactIn.call(lp, Keypair.generate(), Keypair.generate().publicKey, 1n, 'p')],
   ['ensureGlobal', lp => Launchpad.prototype.ensureGlobal.call(lp, Keypair.generate(), Keypair.generate().publicKey)],

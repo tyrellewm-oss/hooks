@@ -9,7 +9,7 @@ import { decodeMintConfig } from '../sdk/hook.js';
 const SUPPLY = 1_000_000_000n;
 test('test-slots build: 5-slot ramp accepted, flagged in config, cap rises per slot', { skip: !existsSync(TEST_SLOTS_SO) && 'run scripts/build.sh first' }, () => {
   const env = new Env(TEST_SLOTS_SO);
-  const launcher = Keypair.generate(); env.fund(launcher.publicKey); assert.ok(env.initGlobal(launcher.publicKey).ok);
+  const launcher = Keypair.generate(), admin = Keypair.generate(); env.fund(launcher.publicKey); env.fund(admin.publicKey); assert.ok(env.initGlobalV2(admin, launcher).ok);   // 8.3: separate admin and launch keys
   const curve = Keypair.generate(); env.fund(curve.publicKey);
   const { mint, decimals } = env.createHookMint({ supply: SUPPLY, holderOwner: curve.publicKey });
   const r = env.send([env.hook.initializeExtraAccountMetaList({ payer: env.payer.publicKey, authority: launcher.publicKey, mint,

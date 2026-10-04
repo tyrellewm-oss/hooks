@@ -3,6 +3,7 @@
 // DAMM v2. Missing accounts and RPC errors refuse. Configs are data accounts, so executable is NOT checked on them.
 // Offline: every connection here is a fake.
 import { test } from 'node:test';
+import { launchCall } from './launch_key.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Keypair, PublicKey, Connection } from '@solana/web3.js';
@@ -117,10 +118,10 @@ test('launch(): a non-executable hook program refuses before create_config is bu
   const hook = new PublicKey(HOOK_PROGRAM_ID_DEVNET); const n = { built: 0 };
   const authorities = { upgradeAuthority: pk().toBase58(), liftAuthority: pk().toBase58() };
   const lp = fakeLaunchpad(new Map([[hook.toBase58(), { ...program(), executable: false }]]), pk(), hook, n);
-  await assert.rejects(Launchpad.prototype.launch.call(lp as any, Keypair.generate(), { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities } as any), refused(/not executable/));
+  await assert.rejects(launchCall(lp as any, Keypair.generate(), { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities } as any), refused(/not executable/));
   assert.equal(n.built, 0);
   const ok = fakeLaunchpad(new Map([[hook.toBase58(), program()]]), pk(), hook, n);
-  await assert.rejects(Launchpad.prototype.launch.call(ok as any, Keypair.generate(), { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities } as any), /tx built/);
+  await assert.rejects(launchCall(ok as any, Keypair.generate(), { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities } as any), /tx built/);
   assert.equal(n.built, 1);
 });
 

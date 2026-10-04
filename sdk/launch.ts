@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { HookClient, DEFAULT_PROGRAM_ID, DBC_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, readHookAuthorities, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
 import { type Cluster, type ClusterName, type ClusterClass, explorerTx, nowIct, classifyCluster } from './cluster.js';
-import { launchConfigChecks, type Authorities } from './keyrules.js';
+import { launchConfigChecks, KeyRuleRefusal, type Authorities } from './keyrules.js';
 import { assertClusterAccounts, checkDammV2Config, ClusterCheckRefusal } from './cluster_check.js';
 import { MintHookRefusal, mintHookAuthorityFor, assertPinNotOurs, assertMintHook, readMintTransferHook, mintHookProblems, graduationPhase, poolTxBaseMint, simulateMintTransferHook, sameMessageExceptBlockhash, type GraduationPhase, type MintHookExpectation, type MintTransferHook } from './mint_hook.js';
 
@@ -131,7 +131,7 @@ export interface LaunchOpts {
   creatorTradingFeePercentage?: number;            // creator share of the non-protocol trading fee (0-100)
   migrationFeeOption?: MigrationFeeOption;         // DAMM v2 pool fee after migration (FixedBps25 = 0.25%)
   percentageSupplyOnMigration?: number;            // % of supply reserved for the DAMM v2 pool at migration (integer 1..49, default 20 -> 80% sold on the curve)
-  authorities?: Authorities;                       // hook upgrade + lift authority for the §12a preflight (read from chain if omitted)
+  authorities?: Authorities;                       // hook upgrade + lift + launch authority for the §12a preflight (read from chain if omitted)
 }
 /** Default % of supply that goes to the migration pool (behaviour unchanged from the hard-coded 20). */
 export const DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION = 20;
@@ -245,16 +245,26 @@ export async function mintHookFlag(lp: { c: any; hook: HookClient; dbc: any; req
   }
 }
 
+/** 8.3: the hook launch signer must be the on-chain launch key (Global bytes 42..74) and never the lift (admin) key.
+ *  Throws KeyRuleRefusal before anything is built. The payer is the launch signer only if it IS the launch key. */
+export function assertLaunchSigner(launchAuthority: PublicKey, auth: Authorities): void {
+  const k = launchAuthority.toBase58();
+  if (!auth.launchAuthority) throw new KeyRuleRefusal('refusing to build the launch tx: the hook launch authority is not set on chain (Global not migrated: run scripts/launch_authority.ts migrate)');
+  if (k !== auth.launchAuthority) throw new KeyRuleRefusal(`refusing to build the launch tx: launch signer ${k} is not the on-chain launch authority ${auth.launchAuthority}`);
+  if (auth.liftAuthority && k === auth.liftAuthority) throw new KeyRuleRefusal(`refusing to build the launch tx: launch signer ${k} is the hook lift (admin) authority`);
+}
 /** Build the create-pool tx (DBC create pool + hook initialize_extra_account_meta_list, one tx) from PUBLIC keys only.
- *  Nothing here signs: the mint key is not needed to build or to simulate (blocker #7). */
-export async function buildCreatePoolTx(lp: { dbc: any; hook: HookClient }, o: LaunchOpts, keys: { payer: PublicKey; config: PublicKey; mint: PublicKey }): Promise<Transaction> {
+ *  Nothing here signs: the mint key is not needed to build or to simulate (blocker #7). The hook launch signer is
+ *  `keys.launchAuthority` (8.3), checked against the chain's `auth` first. */
+export async function buildCreatePoolTx(lp: { dbc: any; hook: HookClient }, o: LaunchOpts, keys: { payer: PublicKey; config: PublicKey; mint: PublicKey; launchAuthority: PublicKey }, auth: Authorities): Promise<Transaction> {
+  assertLaunchSigner(keys.launchAuthority, auth);   // before any build
   const poolTx: Transaction = await lp.dbc.creator.createPoolWithTransferHook({
     name: o.name, symbol: o.symbol, uri: o.uri ?? 'https://example.invalid/devnet-test.json', payer: keys.payer, poolCreator: keys.payer,
     config: keys.config, baseMint: keys.mint, transferHookProgram: lp.hook.programId,
   } as any);
   const supplyRef = BigInt(o.totalSupply ?? 1_000_000_000) * 1_000_000n;
   // Same tx: hook config is frozen in the pool-creation slot, so the ramp starts exactly at launch.
-  poolTx.add(lp.hook.initializeExtraAccountMetaList({ payer: keys.payer, authority: keys.payer, mint: keys.mint, steps: o.steps, uncappedAfter: o.uncappedAfter, supplyRef }));
+  poolTx.add(lp.hook.initializeExtraAccountMetaList({ payer: keys.payer, authority: keys.launchAuthority, mint: keys.mint, steps: o.steps, uncappedAfter: o.uncappedAfter, supplyRef }));
   poolTx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }));
   return poolTx;
 }
@@ -298,11 +308,11 @@ export class Launchpad {
 
   configParams(o: LaunchOpts) { return curveConfigParams(o); }
 
-  /** Hook upgrade authority (ProgramData) and lift authority (Global PDA), via the shared reader (throws AuthorityReadError). */
+  /** Hook upgrade authority (ProgramData), lift and launch authority (Global PDA), via the shared reader (throws AuthorityReadError). */
   async hookAuthorities(): Promise<Authorities> {
     await gateHook(this);
     const a = await readHookAuthorities(this.c.connection, this.hook.programId);
-    return { upgradeAuthority: a.upgradeAuthority, liftAuthority: a.liftAuthority };
+    return { upgradeAuthority: a.upgradeAuthority, liftAuthority: a.liftAuthority, launchAuthority: a.launchAuthority };
   }
 
   /** Blocker #7 helpers (module functions, so they also run with the test fakes' `this`). */
@@ -310,8 +320,26 @@ export class Launchpad {
   assertPoolMintHook(pool: PublicKey, want: GraduationPhase | 'any' = 'any', forbidden: Record<string, string | null | undefined> = {}) { return assertPoolMintHook(this, pool, want, forbidden); }
   mintHookFlag(mint: PublicKey, pool?: PublicKey) { return mintHookFlag(this, mint, pool); }
 
-  /** Partner config (transfer hook -> our program) + pool + hook config, by `deployer` (partner = creator = launcher in the beta). */
-  async launch(deployer: Keypair, o: LaunchOpts): Promise<LaunchRecord> {
+  /** 8.3, devnet/local tools: migrate Global to v2 with `launch` as the launch key (admin signs and pays) unless it
+   *  already is; refuses a different existing launch key and any cluster other than devnet/local. */
+  async ensureLaunchAuthority(admin: Keypair, launch: PublicKey) {
+    const gate = await gateHook(this);
+    if (gate.clusterClass !== 'devnet' && gate.clusterClass !== 'local') throw new KeyRuleRefusal(`refusing: launch-authority migration is devnet/local only (cluster class ${gate.clusterClass})`);
+    const read = async () => { const a = await this.c.connection.getAccountInfo(this.hook.globalPda()); if (!a) throw new Error('hook Global not initialized'); return decodeGlobal(a.data); };
+    const g = await read();
+    if (g.launchAuthority) {
+      if (!g.launchAuthority.equals(launch)) throw new KeyRuleRefusal(`refusing: the on-chain launch authority is ${g.launchAuthority.toBase58()}, not ${launch.toBase58()} (rotate with scripts/launch_authority.ts)`);
+      return g;
+    }
+    if (launch.equals(g.authority) || launch.equals(PublicKey.default)) throw new KeyRuleRefusal('refusing: the launch key must not be the admin key or the zero key');
+    const r = await sendTx(this.c, new Transaction().add(this.hook.migrateGlobalV2(admin.publicKey, admin.publicKey, launch)), [admin], 'hook: migrate_global_v2 (set launch authority)');
+    if (!r.ok) throw new Error('migrate_global_v2 failed');
+    return read();
+  }
+
+  /** Partner config (transfer hook -> our program) + pool + hook config. `deployer` pays and is partner = creator;
+   *  the hook config is signed by `launchKey`, which must be the on-chain launch key (8.3), never the admin. */
+  async launch(deployer: Keypair, o: LaunchOpts, launchKey: Keypair): Promise<LaunchRecord> {
     // hook gate first (also when o.authorities is given): the hook program id pinned by genesis, executable here. Its
     // genesis class (not the Cluster's name) decides warn-vs-refuse in the §12a checks below.
     const gate = await gateHook(this);
@@ -319,11 +347,12 @@ export class Launchpad {
     // §12a preflight (FW-24): feeClaimer (= deployer here) must differ from the hook upgrade and lift authorities, and
     // upgrade != lift. Throws off devnet/local (by genesis class) before any tx is built; warns on devnet/local.
     // the gate runs once per launch(): its result is reused below (authorities read, mint hook expectation)
-    const auth = o.authorities ?? (({ upgradeAuthority, liftAuthority }) => ({ upgradeAuthority, liftAuthority }))(await readHookAuthorities(this.c.connection, gate.programId));
+    const auth = o.authorities ?? (({ upgradeAuthority, liftAuthority, launchAuthority }) => ({ upgradeAuthority, liftAuthority, launchAuthority }))(await readHookAuthorities(this.c.connection, gate.programId));
+    assertLaunchSigner(launchKey.publicKey, auth);   // 8.3: before any tx is built
     for (const w of launchConfigChecks(gate.clusterClass, deployer.publicKey.toBase58(), auth)) console.warn(w);
     // blocker #7: the pinned DBC signer that will hold the new mint's TransferHook authority resolves for this genesis
     // class and is none of our keys. Refuses before any tx is built. (The program_id comparison runs on the mint itself.)
-    const mintHookForbidden = { dev: deployer.publicKey.toBase58(), upgrade: auth.upgradeAuthority, lift: auth.liftAuthority, ...(o.keeperKeys ?? {}) };
+    const mintHookForbidden = { dev: deployer.publicKey.toBase58(), upgrade: auth.upgradeAuthority, lift: auth.liftAuthority, launch: auth.launchAuthority ?? null, ...(o.keeperKeys ?? {}) };
     const mintHook = await mintHookExpectationFor(this, mintHookForbidden, gate);
     const { config: configKp, mint: mintKp } = launchKeypairsFor(gate.clusterClass);
     const txs: Record<string, string> = {};
@@ -340,13 +369,13 @@ export class Launchpad {
     txs.createConfig = r1.sig; if (!r1.ok) throw new Error('create config failed: ' + r1.err);
 
     // Built once from public keys only (the DBC IDL marks base_mint as a signer, but only the send needs that signature).
-    const poolTx = await buildCreatePoolTx(this, o, { payer: deployer.publicKey, config: configKp.publicKey, mint: mintKp.publicKey });
+    const poolTx = await buildCreatePoolTx(this, o, { payer: deployer.publicKey, config: configKp.publicKey, mint: mintKp.publicKey, launchAuthority: launchKey.publicKey }, auth);
     const pool = deriveDbcPoolAddress(NATIVE_MINT, mintKp.publicKey, configKp.publicKey);
     // blocker #7 pre-send check: simulate these exact unsigned bytes; refuse before any signature on a wrong mint hook.
     const sim = await preSendMintHookCheck(this.c.connection, poolTx, deployer.publicKey, mintKp.publicKey, mintHook);
     // Signing step: the bytes signed must equal the simulated bytes apart from the blockhash (sendTx fetches a fresh one).
     const sameBytes = (m: Buffer) => { if (!sameMessageExceptBlockhash(sim.messageBytes, m)) throw new MintHookRefusal('refusing to sign: the create-pool tx differs from the simulated tx (beyond the blockhash)'); };
-    const r2 = await sendTx(this.c, poolTx, [deployer, mintKp], `dbc: initialize_virtual_pool_with_token2022_transfer_hook + hook: initialize_extra_account_meta_list (${o.symbol})`, undefined, sameBytes);
+    const r2 = await sendTx(this.c, poolTx, [deployer, mintKp, ...(launchKey.publicKey.equals(deployer.publicKey) ? [] : [launchKey])], `dbc: initialize_virtual_pool_with_token2022_transfer_hook + hook: initialize_extra_account_meta_list (${o.symbol})`, undefined, sameBytes);
     txs.createPoolAndHookConfig = r2.sig; if (!r2.ok) throw new Error('create pool failed: ' + r2.err);
 
     const rec: LaunchRecord = {
@@ -445,7 +474,7 @@ export class Launchpad {
       const cc = toCapConfig(cfg);
       const cap = effectiveCap(cc, lift, g.lifted, BigInt(slot));
       Object.assign(out, { launchSlot: cfg.launchSlot.toString(), steps: cfg.steps.map(s => ({ slotOffset: s.slotOffset.toString(), maxBps: s.maxBps })), uncappedAfter: cfg.uncappedAfter.toString(),
-        testSlotsBuild: cfg.testSlotsBuild, exemptOwners: cfg.exemptOwners.map(k => k.toBase58()), launcher: cfg.launcher.toBase58(), liftAuthority: g.authority.toBase58(),
+        testSlotsBuild: cfg.testSlotsBuild, exemptOwners: cfg.exemptOwners.map(k => k.toBase58()), launcher: cfg.launcher.toBase58(), liftAuthority: g.authority.toBase58(), launchAuthority: g.launchAuthority?.toBase58() ?? null,
         globalLifted: g.lifted, mintLifted: lift.lifted, raisedFloorBps: lift.raisedFloorBps, currentCap: cap === null ? null : cap.toString(),
         nextChange: (() => { if (cap === null) return null; const n = nextChange(cc, BigInt(slot)); return n ? { slot: n.slot.toString(), bps: n.bps } : null; })() });
     }

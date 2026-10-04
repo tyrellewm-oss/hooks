@@ -25,6 +25,7 @@ for (const v of [process.env.DEVNET_RPC, process.env.LOCAL_RPC]) if (v) assertNo
 const c = await resolveCluster(parseClusterArg(argv));
 const lp = new Launchpad(c);
 const deployer = loadOrCreate(c.name, deployerName(c.name));
+const launchKey = loadOrCreate(c.name, 'launch');   // 8.3: separate throwaway launch key (devnet/local only)
 const wallets: Record<string, ReturnType<typeof loadOrCreate>> = { A: loadOrCreate(c.name, 'buyerA'), B: loadOrCreate(c.name, 'buyerB') };
 let commit = 'unknown'; try { commit = execSync('git rev-parse --short HEAD').toString().trim(); } catch {}
 
@@ -118,7 +119,8 @@ http.createServer(async (req, res) => {
       try { percentageSupplyOnMigration = resolvePercentageSupplyOnMigration(b.percentageSupplyOnMigration); }
       catch (e: any) { return send(res, 400, { error: e.message }); }
       await lp.ensureGlobal(deployer, deployer.publicKey);
-      const rec = await lp.launch(deployer, { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration });
+      await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);   // 8.3: launches are signed by the launch key, never the admin
+      const rec = await lp.launch(deployer, { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration }, launchKey);
       return send(res, 200, createReply(rec));   // ticket 8.5b: registered: false + note; the registry is never written
     }
     if (url.pathname === '/capMath.js') return send(res, 200, capMathJs, 'text/javascript');

@@ -59,6 +59,20 @@ export class Env {
   initGlobal(authority: PublicKey) {
     return this.send([this.hook.initializeGlobal(this.upgradeAuth.publicKey, authority)], [this.upgradeAuth]);
   }
+  /** 8.3: admin-only Global migration (42 -> 74 bytes) that sets the launch key; the env payer pays the rent increase. */
+  migrateGlobal(admin: Keypair, launchAuthority: PublicKey) {
+    return this.send([this.hook.migrateGlobalV2(this.payer.publicKey, admin.publicKey, launchAuthority)], [this.payer, admin]);
+  }
+  /** Global as a fresh deploy sets it up after 8.3: init (admin) then migrate (launch key). */
+  initGlobalV2(admin: Keypair, launch: Keypair) {
+    const a = this.initGlobal(admin.publicKey); if (!a.ok) return a;
+    return this.migrateGlobal(admin, launch.publicKey);
+  }
+  /** Overwrite an account (tests only: load recorded devnet bytes, or forge a state the program must refuse). */
+  setAccountData(k: PublicKey, data: Buffer, owner: PublicKey = this.hook.programId, lamports?: bigint) {
+    const rent = this.svm.minimumBalanceForRentExemption(BigInt(data.length));
+    this.svm.setAccount(k, { lamports: Number(lamports ?? rent), data, owner, executable: false });
+  }
 
   /** Token-2022 mint with TransferHook -> our program, full supply minted to `holderOwner`'s ATA, mint authority then set to None. */
   createHookMint(opts: { supply: bigint; decimals?: number; holderOwner: PublicKey; hookProgram?: PublicKey }) {
