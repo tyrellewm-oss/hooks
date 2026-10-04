@@ -11,8 +11,9 @@
     { "kind": "dbc", "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK", "config": "5MRwHkx7nmEFWUHjBjb8Y4XLFPvmtr9nxZ6beHt3Ja1h", "base_mint": "3Ut8PuPt3G21GBth84SdqjWxMAoSp5yjSfQFKM9aMmtE" },
     { "kind": "damm_v2", "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr", "position": "Hres84VYhpqTnAiZToLx7g4tmTvZRZ7uY9yAW6bBQApm", "position_nft_mint": "FuCnASAbesuTS5gyKvz8yPCYQ3j6g31MUiNx1p6nfJFD" }
   ],
-  "keys": { "claim_signer": "deployer", "treasury": "fw_treasury", "dev": "fw_dev", "gas": "fw_gas" },
-  "pinned_pubkeys": { "claim_signer": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu", "treasury": "8NF4657Gtsmxj9skWsQP15jX62hTV4HfiaW1yXuSAvbL", "dev": "74KbNAK9d3GAKSMKqA7fVzkLGcTcJStS9T3jiKmDs4nn", "gas": "D7ZmAZ9dpVBVFkR268dMnu1uPVKFUF9ZFJDZdXzdCbGt" },
+  "keys": { "claim_signer": "deployer", "treasury": "fw_treasury", "gas": "fw_gas" },
+  "pinned_pubkeys": { "claim_signer": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu", "treasury": "8NF4657Gtsmxj9skWsQP15jX62hTV4HfiaW1yXuSAvbL", "gas": "D7ZmAZ9dpVBVFkR268dMnu1uPVKFUF9ZFJDZdXzdCbGt" },
+  "dev_payout": "74KbNAK9d3GAKSMKqA7fVzkLGcTcJStS9T3jiKmDs4nn",
   "hook_program": "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz",
   "hook_upgrade_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
   "hook_lift_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",

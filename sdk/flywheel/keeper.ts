@@ -9,7 +9,7 @@ import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk
 import { utils as anchorUtils } from '@coral-xyz/anchor';
 const bs58 = anchorUtils.bytes.bs58;
 import { splitFees, minOut, spotOutBtoA, deviationBps, planSwap, runIdFor, historyWarning, fmtSol, fmtTokens, pctOf } from './math.js';
-import type { KeeperConfig, SourceDbc, SourceDamm } from './config.js';
+import { checkKeyConfig, KEEPER_KEY_ROLES, type KeeperConfig, type KeeperKeyRole, type SourceDbc, type SourceDamm } from './config.js';
 import { Store, durableWrite, ser } from './store.js';
 import { keeperStartChecks, KeyRuleRefusal } from '../keyrules.js';
 import { assertClusterAccounts, ClusterCheckRefusal } from '../cluster_check.js';
@@ -60,21 +60,28 @@ export class FailClosed extends Error { constructor(public code: string, msg: st
 export class PausedMidrun extends FailClosed { constructor(public stage: string, public by: string) { super('paused_midrun', `paused (${by}) before ${stage}; nothing sent`); } }
 
 // ---------------------------------------------------------------- startup (pure first, then network)
-export interface KeySet { claim: Keypair; treasury: Keypair; dev: Keypair; gas: Keypair }
+/** The keys the keeper signs with (KEEPER_KEY_ROLES). No dev key: the dev payout is a pubkey in the config. */
+export interface KeySet { claim: Keypair; treasury: Keypair; gas: Keypair }
+const roleKey = (ks: KeySet, role: KeeperKeyRole): Keypair => (role === 'claim_signer' ? ks.claim : ks[role]);
 export interface StartDeps { loadKey: (name: string) => Keypair; connect: (cfg: KeeperConfig) => Promise<Connection>; log?: (s: string) => void }
 /** Refusals that need no network (FW-22, FW-23). Throws KeyRuleRefusal; returns warnings (FW-25 on devnet). */
 export function preflightOffline(cfg: KeeperConfig, keys: KeySet): string[] {
-  const keeperKeys = { claim_signer: keys.claim.publicKey.toBase58(), treasury: keys.treasury.publicKey.toBase58(), gas: keys.gas.publicKey.toBase58() };
+  checkKeyConfig(cfg);
+  // every loaded key goes through the §12a separation checks (built from the role list, so none can be skipped)
+  const keeperKeys = Object.fromEntries(KEEPER_KEY_ROLES.map(r => [r, roleKey(keys, r).publicKey.toBase58()]));
+  for (const [role, pk] of Object.entries(keeperKeys))
+    if (pk === cfg.dev_payout) throw new KeyRuleRefusal(`refusing to start: dev_payout is the keeper's '${role}' key; the dev payout must be a separate wallet`);
   const warnings = keeperStartChecks(cfg.cluster, keeperKeys, { upgradeAuthority: cfg.hook_upgrade_authority, liftAuthority: cfg.hook_lift_authority }, { forceFailSwap: !!cfg.force_fail_swap });
   if (cfg.cluster !== 'devnet' && cfg.cluster !== 'local') throw new KeyRuleRefusal(`refusing to start: this keeper build is devnet-only (cluster=${cfg.cluster})`);
-  if (cfg.pinned_pubkeys) for (const [role, pk] of Object.entries(cfg.pinned_pubkeys)) {
-    const k = (keys as any)[role === 'claim_signer' ? 'claim' : role] as Keypair | undefined;
-    if (pk && k && k.publicKey.toBase58() !== pk) throw new KeyRuleRefusal(`refusing to start: key '${role}' does not match pinned pubkey`);
+  if (cfg.pinned_pubkeys) for (const role of KEEPER_KEY_ROLES) {
+    const pk = cfg.pinned_pubkeys[role];
+    if (pk && roleKey(keys, role).publicKey.toBase58() !== pk) throw new KeyRuleRefusal(`refusing to start: key '${role}' does not match pinned pubkey`);
   }
   return warnings;
 }
 export async function startKeeper(cfg: KeeperConfig, overrides: string[], deps: StartDeps): Promise<Keeper> {
-  const keys: KeySet = { claim: deps.loadKey(cfg.keys.claim_signer), treasury: deps.loadKey(cfg.keys.treasury), dev: deps.loadKey(cfg.keys.dev), gas: deps.loadKey(cfg.keys.gas) };
+  checkKeyConfig(cfg);   // before any key file is opened: a dev keypair path is refused, never loaded
+  const keys: KeySet = { claim: deps.loadKey(cfg.keys.claim_signer), treasury: deps.loadKey(cfg.keys.treasury), gas: deps.loadKey(cfg.keys.gas) };
   const warnings = preflightOffline(cfg, keys);           // throws before any connection exists
   const conn = await deps.connect(cfg);
   const genesis = await conn.getGenesisHash();
@@ -108,7 +115,7 @@ export class Keeper {
     const T = keys.treasury.publicKey;
     this.tWsol = getAssociatedTokenAddressSync(NATIVE_MINT, T, false, TOKEN_PROGRAM_ID);
     this.tMain = getAssociatedTokenAddressSync(this.mint, T, false, this.mainProg);
-    this.dWsol = getAssociatedTokenAddressSync(NATIVE_MINT, keys.dev.publicKey, false, TOKEN_PROGRAM_ID);
+    this.dWsol = getAssociatedTokenAddressSync(NATIVE_MINT, new PublicKey(cfg.dev_payout), false, TOKEN_PROGRAM_ID);   // payout destination only
     const f = process.env.FW_FAULT ?? '';
     if (f === 'rpc_down') {   // devnet fault injection: every RPC after startup fails (FW-14)
       if (cfg.cluster !== 'devnet') throw new KeyRuleRefusal('test knobs are devnet-only');

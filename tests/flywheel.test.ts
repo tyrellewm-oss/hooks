@@ -18,7 +18,7 @@ import { Launchpad } from '../sdk/launch.js';
 
 const base = JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')) as KeeperConfig;
 const trapConn = () => new Proxy({}, { get: (_t, p) => { if (p === 'then') return undefined; throw new Error(`network used: ${String(p)}`); } }) as unknown as Connection;
-const keys = (): KeySet => ({ claim: Keypair.generate(), treasury: Keypair.generate(), dev: Keypair.generate(), gas: Keypair.generate() });
+const keys = (): KeySet => ({ claim: Keypair.generate(), treasury: Keypair.generate(), gas: Keypair.generate() });
 const cfgWith = (o: Partial<KeeperConfig>): KeeperConfig => ({ ...base, pinned_pubkeys: undefined, ...o });
 
 // ---------------- math

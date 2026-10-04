@@ -22,7 +22,7 @@ const T0 = Date.UTC(2026, 9, 4, 2, 0), W = 300_000;
 /** Fake chain + keeper wired like the CLI: mode 'send' uses the chain directly, 'dry_run' goes through dryRunConnection on a state copy. */
 function setup(opts: { simErr?: (stage: string) => unknown } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fw-dry-'));
-  const ks: KeySet = { claim: Keypair.generate(), treasury: Keypair.generate(), dev: Keypair.generate(), gas: Keypair.generate() };
+  const ks: KeySet = { claim: Keypair.generate(), treasury: Keypair.generate(), gas: Keypair.generate() };
   const dbcSrc = base.sources.find(x => x.kind === 'dbc')!;
   const cfg: KeeperConfig = { ...base, pinned_pubkeys: undefined, state_dir: join(dir, 'state'), public_log: join(dir, 'pub.json'), sources: [dbcSrc], max_swap_lamports_per_run: '1000000', min_claim_lamports: '1000000' };
   const probe = new Keeper(cfg, [], trapConn(), ks, [], () => {});
@@ -40,7 +40,7 @@ function setup(opts: { simErr?: (stage: string) => unknown } = {}) {
     getBalance: async (pk: PublicKey) => (pk.equals(ks.gas.publicKey) ? 1_000_000_000 : 0),
     getAccountInfo: async (pk: PublicKey) => {
       if (pk.equals(tW)) return tokenAcc(tW, NATIVE_MINT, ks.treasury.publicKey, TOKEN_PROGRAM_ID);
-      if (pk.equals(dW)) return tokenAcc(dW, NATIVE_MINT, ks.dev.publicKey, TOKEN_PROGRAM_ID);
+      if (pk.equals(dW)) return tokenAcc(dW, NATIVE_MINT, new PublicKey(cfg.dev_payout), TOKEN_PROGRAM_ID);
       if (pk.equals(tM)) return tokenAcc(tM, mint, ks.treasury.publicKey, TOKEN_2022_PROGRAM_ID);
       if (pk.equals(mint)) { const data = Buffer.alloc(MINT_SIZE); MintLayout.encode({ mintAuthorityOption: 0, mintAuthority: PublicKey.default, supply, decimals: cfg.main_decimals, isInitialized: true, freezeAuthorityOption: 0, freezeAuthority: PublicKey.default } as any, data); return { data, owner: TOKEN_2022_PROGRAM_ID, lamports: 1, executable: false, rentEpoch: 0 }; }
       return null;

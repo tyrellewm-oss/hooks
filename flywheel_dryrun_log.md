@@ -10,9 +10,9 @@ Public logs (HookedPad `/api/flywheel` shape + `runs[]`, `paused`, `state`): `fl
 |---|---|---|
 | claim signer (DBC fee_claimer + DAMM v2 position NFT owner) | `9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu` | also the hook **upgrade authority** and **lift authority** |
 | treasury (claim receiver; signs dev transfer, swap, burn) | `8NF4657Gtsmxj9skWsQP15jX62hTV4HfiaW1yXuSAvbL` | holds 0 native lamports; buyback balance kept as wSOL |
-| dev wallet (15%) | `74KbNAK9d3GAKSMKqA7fVzkLGcTcJStS9T3jiKmDs4nn` | receives wSOL |
+| dev wallet (15%) | `74KbNAK9d3GAKSMKqA7fVzkLGcTcJStS9T3jiKmDs4nn` | receives wSOL; configured as `dev_payout` (pubkey only, the keeper loads no dev key; QA blocker #4) |
 | gas wallet (fee payer of every keeper tx, pays all rent) | `D7ZmAZ9dpVBVFkR268dMnu1uPVKFUF9ZFJDZdXzdCbGt` | funded 0.05 SOL from deployer |
-| FW-15 treasury / dev | `96YYyNUPwxqZyebc9KbsPPWqzKDosUhJceYdmp3CBjth` / `Fyf3yL8DTiYR1ho2bdbUTro1Uq5d5Qss5KjYkqSgfVdP` | separate so each keeper reconciles exactly |
+| FW-15 treasury / dev payout | `96YYyNUPwxqZyebc9KbsPPWqzKDosUhJceYdmp3CBjth` / `Fyf3yL8DTiYR1ho2bdbUTro1Uq5d5Qss5KjYkqSgfVdP` | separate so each keeper reconciles exactly |
 
 **Accepted throwaway exception (FW-25):** on TDT/devnet `9DVu…` is fee claimer, upgrade authority and lift authority. Every keeper start and every run logs:
 `WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority` (and `… lift authority`). The FW-15 launch printed the config-builder variant (`feeClaimer 9DVu… is the hook upgrade/lift authority`). On mainnet both are hard refusals (FW-23/24, offline tests).

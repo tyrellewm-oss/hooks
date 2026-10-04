@@ -180,6 +180,8 @@ node --import tsx scripts/flywheel.ts pause|unpause|verify --config keeper/devne
 node --import tsx scripts/flywheel.ts help                                             # full command list
 ```
 
+**Keys.** The keeper loads exactly three keypairs, the ones it signs with: `keys.claim_signer` (fee claimer / position owner), `keys.treasury` (signs the dev transfer, swap and burn) and `keys.gas` (fee payer). Each value is a key-file name in the gitignored key dir, and each key goes through the §12a separation checks (FW-23/24/25) and the optional `pinned_pubkeys` check. The dev wallet only receives the 15% payout, so it is configured as a **pubkey**, `dev_payout`, and no dev keypair is loaded or needed. A config that still has a dev keypair path (`keys.dev`) is refused at start with a message to delete it and set `dev_payout`; `pinned_pubkeys.dev`, unknown key roles, a missing or off-curve `dev_payout`, and a `dev_payout` equal to one of the keeper's own keys are refused too. `setup` creates the dev payout's wSOL token account from `dev_payout` (gas pays the rent).
+
 In a dry run, a step that can only succeed after an earlier step has landed (the burn needs the swap's tokens) is reported as `dependent` rather than as an error. `loop --trade-lamports` sends scripted test trades, so it requires `--send`. The setup and test-trade commands (`setup`, `trade*`) are devnet operator tools that send when invoked.
 
 ## Launch page
