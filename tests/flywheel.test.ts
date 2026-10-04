@@ -91,8 +91,10 @@ test('FW-24: distinct claimer passes the check on mainnet; unknown authorities r
 test('FW-25: devnet TDT shared key 9DVu… → visible warnings, no refusal', () => {
   const k = keys(); const shared = k.claim.publicKey.toBase58();
   const w = preflightOffline(cfgWith({ cluster: 'devnet', hook_upgrade_authority: shared, hook_lift_authority: shared }), k);
-  assert.equal(w.length, 2); for (const x of w) assert.match(x, /^WARNING three-key rule \(accepted throwaway exception on devnet\)/);
-  const lw = launchConfigChecks('devnet', shared, { upgradeAuthority: shared, liftAuthority: shared }); assert.equal(lw.length, 2);
+  // 3 warnings: claimer = upgrade authority, claimer = lift authority, upgrade authority = lift authority
+  assert.equal(w.length, 3); for (const x of w) assert.match(x, /^WARNING three-key rule \(accepted throwaway exception on devnet\)/);
+  assert.ok(w.some(x => /upgrade authority and lift authority are the same key/.test(x)));
+  const lw = launchConfigChecks('devnet', shared, { upgradeAuthority: shared, liftAuthority: shared }); assert.equal(lw.length, 3);
   // the real devnet config pins 9DVu… for claimer + both authorities → warns (does not refuse)
   assert.equal(base.hook_upgrade_authority, base.pinned_pubkeys!.claim_signer); assert.equal(base.hook_lift_authority, base.pinned_pubkeys!.claim_signer);
 });
@@ -280,4 +282,30 @@ test('U-4: pause before the swap, pool spot moves while paused → resume re-quo
   assert.notEqual(run.swap!.spot_out_raw, savedSpot);                                // the pre-pause quote/spot was not reused
   assert.equal(run.stages.swap, undefined);
   assert.equal(s.consecutive_failures, 1);                                           // a real failure (unlike the pause itself)
+});
+
+// QA follow-up (issue 2): §12a also requires the hook upgrade authority and the lift authority to be different keys.
+test('§12a: upgrade authority = lift authority → refused off devnet (launch builder and keeper start), warned on devnet/local, distinct keys pass', () => {
+  const same = Keypair.generate().publicKey.toBase58(), u = Keypair.generate().publicKey.toBase58(), l = Keypair.generate().publicKey.toBase58();
+  const claimer = Keypair.generate().publicKey.toBase58(), keeperKeys = { claim_signer: claimer, treasury: Keypair.generate().publicKey.toBase58() };
+  const re = /upgrade authority and lift authority are the same key/;
+  assert.throws(() => launchConfigChecks('mainnet', claimer, { upgradeAuthority: same, liftAuthority: same }), (e: any) => e instanceof KeyRuleRefusal && re.test(e.message));
+  assert.throws(() => keeperStartChecks('mainnet', keeperKeys, { upgradeAuthority: same, liftAuthority: same }), (e: any) => e instanceof KeyRuleRefusal && re.test(e.message));
+  for (const c of ['devnet', 'local'] as const) {
+    const lw = launchConfigChecks(c, claimer, { upgradeAuthority: same, liftAuthority: same });
+    assert.deepEqual(lw.length, 1); assert.match(lw[0], new RegExp(`^WARNING three-key rule \\(accepted throwaway exception on ${c}\\): hook upgrade authority and lift authority are the same key`));
+    const kw = keeperStartChecks(c, keeperKeys, { upgradeAuthority: same, liftAuthority: same });
+    assert.equal(kw.length, 1); assert.match(kw[0], re);
+  }
+  assert.deepEqual(launchConfigChecks('mainnet', claimer, { upgradeAuthority: u, liftAuthority: l }), []);
+  assert.deepEqual(keeperStartChecks('mainnet', keeperKeys, { upgradeAuthority: u, liftAuthority: l }), []);
+  assert.deepEqual(launchConfigChecks('devnet', claimer, { upgradeAuthority: u, liftAuthority: l }), []);
+});
+test('§12a same-authority rule end to end: keeper start on mainnet with upgrade = lift refuses before connecting; the devnet TDT config still starts its preflight with warnings', async () => {
+  const k = keys(); let connected = 0; const same = Keypair.generate().publicKey.toBase58();
+  const cfg = cfgWith({ cluster: 'mainnet', hook_upgrade_authority: same, hook_lift_authority: same });
+  await assert.rejects(startKeeper(cfg, [], { loadKey: n => (k as any)[n === 'deployer' ? 'claim' : n.replace('fw_', '')], connect: async () => { connected++; return trapConn(); }, log: () => {} }), (e: any) => e instanceof KeyRuleRefusal && /same key/.test(e.message));
+  assert.equal(connected, 0);
+  const w = preflightOffline(cfgWith({ cluster: 'devnet' }), k);   // real TDT authorities (9DVu… for both): warns, does not refuse
+  assert.ok(w.some(x => /upgrade authority and lift authority are the same key 9DVu/.test(x)));
 });
