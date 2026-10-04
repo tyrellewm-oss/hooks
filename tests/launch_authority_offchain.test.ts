@@ -80,6 +80,23 @@ test('AC-17 dry run by default: without send the tool simulates once and calls s
   const s = rpc(DEVNET_GENESIS); await assert.rejects(runGlobalChange(s.conn, 'https://api.devnet.example', hook, ch(), { send: true }), /no signer/); assert.equal(s.c.sends, 0);
 });
 
+test('dry run simulates through a real web3.js Connection: a VersionedTransaction with sigVerify off (a legacy Transaction plus a config throws "Invalid arguments")', async () => {
+  const { Connection, VersionedTransaction } = await import('@solana/web3.js');
+  const real = new Connection('http://127.0.0.1:1');   // never contacted: _rpcRequest is stubbed below
+  let simArgs: any[] = [];
+  (real as any)._rpcRequest = async (method: string, args: any[]) => {
+    if (method === 'simulateTransaction') { simArgs = args; return { jsonrpc: '2.0', id: '1', result: { context: { slot: 1 }, value: { err: null, logs: ['ok'], accounts: null, unitsConsumed: 1 } } }; }
+    throw new Error(`unexpected RPC ${method}`);
+  };
+  const { conn, c } = rpc(DEVNET_GENESIS);
+  conn.simulateTransaction = real.simulateTransaction.bind(real) as any;
+  const r = await runGlobalChange(conn, 'https://api.devnet.example', hook, ch());
+  assert.equal(r.sent, false); assert.equal(c.sends, 0); assert.deepEqual(r.simulation, { err: null, logs: ['ok'] });
+  assert.equal(simArgs[1].sigVerify, false); assert.equal(simArgs[1].replaceRecentBlockhash, true); assert.equal(simArgs[1].encoding, 'base64');
+  const sent = VersionedTransaction.deserialize(Buffer.from(simArgs[0], 'base64'));
+  assert.ok(sent.message.staticAccountKeys.some(k => k.equals(ADMIN)), 'the simulated message is the migrate tx');
+});
+
 test('migrate/rotate preflight mirrors the program: wrong admin, zero key, launch == admin, migrate on 74 bytes, rotate on 42 bytes and rotate to the current key refuse before signing', async () => {
   const L = Keypair.generate().publicKey;
   const g1 = await readGlobal(rpc(DEVNET_GENESIS).conn, hook);

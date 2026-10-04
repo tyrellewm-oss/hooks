@@ -2,7 +2,7 @@
 // DEVNET / LOCAL only: any other genesis is refused before a transaction is built. Dry run by default: the tx is
 // simulated (sigVerify off, so no key is needed) and nothing is sent; only `send: true` with the signer keys sends.
 // This module generates no keys and loads none: the caller passes the signers for a send.
-import { Keypair, PublicKey, Transaction } from '@solana/web3.js';
+import { Keypair, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { classifyCluster, type ClusterClass } from './cluster.js';
 import { HookClient, decodeGlobal, GLOBAL_V1_LEN, GLOBAL_V2_LEN } from './hook.js';
 
@@ -71,7 +71,8 @@ export async function buildGlobalChangeTx(conn: LaConn, url: string, hook: HookC
 export async function runGlobalChange(conn: LaConn, url: string, hook: HookClient, ch: GlobalChange, o: { send?: boolean; signers?: Keypair[] } = {}): Promise<GlobalChangeResult> {
   const { tx, cluster, before } = await buildGlobalChangeTx(conn, url, hook, ch);
   if (!o.send) {
-    const sim = await conn.simulateTransaction(tx, { sigVerify: false, replaceRecentBlockhash: true, commitment: 'confirmed' } as any);
+    // web3.js accepts a simulate config only with a VersionedTransaction (a legacy Transaction plus config throws "Invalid arguments")
+    const sim = await conn.simulateTransaction(new VersionedTransaction(tx.compileMessage()), { sigVerify: false, replaceRecentBlockhash: true, commitment: 'confirmed' } as any);
     return { cluster, sent: false, sig: null, simulation: { err: sim.value.err, logs: sim.value.logs ?? [] }, before, after: null };
   }
   const need = [ch.admin, ...(ch.op === 'migrate' ? [ch.payer] : [])];
