@@ -23,6 +23,8 @@ export interface KeeperConfig {
   dev_payout: string;
   hook_program: string;
   hook_upgrade_authority: string | null; hook_lift_authority: string | null;   // pinned; verified on chain at start
+  /** 8.3: pinned hook launch key (Global bytes 42..74); null while Global is not migrated. Verified on chain at start. */
+  hook_launch_authority: string | null;
   max_swap_lamports_per_run: string;
   max_slippage_bps: number; max_price_impact_bps: number; max_halvings: number; price_band_pct: number;
   min_claim_lamports: string; cadence_seconds: number; auto_pause_after_failures: number;

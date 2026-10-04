@@ -15,8 +15,10 @@ const ONE_PCT = SUPPLY / 100n;
 
 function setup() {
   const env = new Env();
+  // 8.3: the admin (lift) key and the launch key are separate; a launch needs the migrated (74-byte) Global
+  const admin = Keypair.generate(); env.fund(admin.publicKey);
   const launcher = Keypair.generate(); env.fund(launcher.publicKey);
-  assert.ok(env.initGlobal(launcher.publicKey).ok);
+  const g = env.initGlobalV2(admin, launcher); assert.ok(g.ok, g.logs.join('\n'));
   const curve = Keypair.generate(); env.fund(curve.publicKey); // supply holder standing in for the curve (NOT exempt; QA H-1)
   const { mint, decimals } = env.createHookMint({ supply: SUPPLY, holderOwner: curve.publicKey });
   const r = env.send([env.hook.initializeExtraAccountMetaList({
@@ -25,7 +27,7 @@ function setup() {
   assert.ok(r.ok, r.logs.join('\n'));
   const cfg = decodeMintConfig(env.accountData(env.hook.configPda(mint))!);
   const poolVault = env.ata(mint, DBC_POOL_AUTHORITY); // a token account owned by the real DBC pool authority PDA
-  return { env, launcher, curve, mint, decimals, cfg, poolVault };
+  return { env, admin, launcher, curve, mint, decimals, cfg, poolVault };
 }
 const buy = (s: ReturnType<typeof setup>, w: Keypair, amt: bigint) => s.env.transfer(s.mint, s.decimals, s.curve, w.publicKey, amt);
 const sell = (s: ReturnType<typeof setup>, w: Keypair, amt: bigint) => {
@@ -50,7 +52,8 @@ describe('global init (lift authority)', () => {
 describe('config init + validation (AC-4, AC-9, AC-10)', () => {
   const base = () => {
     const env = new Env(); const launcher = Keypair.generate(); env.fund(launcher.publicKey);
-    env.initGlobal(launcher.publicKey);
+    const admin = Keypair.generate(); env.fund(admin.publicKey);
+    assert.ok(env.initGlobalV2(admin, launcher).ok);
     const holder = Keypair.generate();
     const m = env.createHookMint({ supply: SUPPLY, holderOwner: holder.publicKey });
     const init = (over: any = {}, signer = launcher) => env.send([env.hook.initializeExtraAccountMetaList({
@@ -205,7 +208,7 @@ describe('lift-only switch (AC-11, AC-12)', () => {
     assert.equal(s.env.send([s.env.hook.raiseMintCap(x.publicKey, s.mint, 500)], [x]).hookError, 'Unauthorized');
   });
   test('raise only upward, emits RestrictionsLifted; lower/equal -> ConfigFrozen', () => {
-    const s = setup(); const w = wallet(s); const A = s.launcher;
+    const s = setup(); const w = wallet(s); const A = s.admin;
     assert.ok(buy(s, w, ONE_PCT).ok); assert.equal(buy(s, w, 1n).hookError, 'WalletCapExceeded');
     const r = s.env.send([s.env.hook.raiseMintCap(A.publicKey, s.mint, 300)], [A]);
     assert.ok(r.ok); const ev = parseRestrictionsLifted(r.logs);
@@ -217,7 +220,7 @@ describe('lift-only switch (AC-11, AC-12)', () => {
     // raise is a floor: once the schedule passes it, the schedule applies (never lowers)
   });
   test('lift mint: one-way, emits event, everything allowed after; second lift / raise -> ConfigFrozen', () => {
-    const s = setup(); const w = wallet(s); const A = s.launcher;
+    const s = setup(); const w = wallet(s); const A = s.admin;
     const r = s.env.send([s.env.hook.liftMintCap(A.publicKey, s.mint)], [A]);
     assert.ok(r.ok); assert.equal(parseRestrictionsLifted(r.logs)[0].scopeName, 'mint-lift');
     assert.ok(decodeLift(s.env.accountData(s.env.hook.liftPda(s.mint))!).lifted);
@@ -226,19 +229,19 @@ describe('lift-only switch (AC-11, AC-12)', () => {
     assert.equal(s.env.send([s.env.hook.raiseMintCap(A.publicKey, s.mint, 500)], [A]).hookError, 'ConfigFrozen');
   });
   test('global lift: one-way allow-all, emits event', () => {
-    const s = setup(); const w = wallet(s); const A = s.launcher;
+    const s = setup(); const w = wallet(s); const A = s.admin;
     const r = s.env.send([s.env.hook.liftGlobal(A.publicKey)], [A]);
     assert.ok(r.ok); assert.equal(parseRestrictionsLifted(r.logs)[0].scopeName, 'global');
     assert.ok(buy(s, w, 40n * ONE_PCT).ok);
     assert.equal(s.env.send([s.env.hook.liftGlobal(A.publicKey)], [A]).hookError, 'ConfigFrozen');
   });
   test('config bytes never change under any instruction (L2-T1)', () => {
-    const s = setup(); const A = s.launcher; const cfgK = s.env.hook.configPda(s.mint);
+    const s = setup(); const A = s.admin; const L = s.launcher; const cfgK = s.env.hook.configPda(s.mint);
     const snap = s.env.accountData(cfgK)!;
     const w = wallet(s);
     buy(s, w, 10n); sell(s, w, 5n);
     s.env.send([s.env.hook.raiseMintCap(A.publicKey, s.mint, 500)], [A]);
-    s.env.send([s.env.hook.initializeExtraAccountMetaList({ payer: s.env.payer.publicKey, authority: A.publicKey, mint: s.mint, steps: [{ slotOffset: 0n, maxBps: 10 }], uncappedAfter: 9999n, supplyRef: SUPPLY })], [s.env.payer, A]);
+    s.env.send([s.env.hook.initializeExtraAccountMetaList({ payer: s.env.payer.publicKey, authority: L.publicKey, mint: s.mint, steps: [{ slotOffset: 0n, maxBps: 10 }], uncappedAfter: 9999n, supplyRef: SUPPLY })], [s.env.payer, L]);
     s.env.send([s.env.hook.viewSchedule(s.mint)], [s.env.payer]);
     s.env.send([s.env.hook.liftMintCap(A.publicKey, s.mint)], [A]);
     s.env.send([s.env.hook.liftGlobal(A.publicKey)], [A]);

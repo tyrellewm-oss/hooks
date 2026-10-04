@@ -52,6 +52,8 @@ export const IX = {
   liftMintCap: disc('global', 'lift_mint_cap'),
   raiseMintCap: disc('global', 'raise_mint_cap'),
   viewSchedule: disc('global', 'view_schedule'),
+  migrateGlobalV2: disc('global', 'migrate_global_v2'),
+  setLaunchAuthority: disc('global', 'set_launch_authority'),
 };
 export const ACC = { Global: disc('account', 'Global'), MintConfig: disc('account', 'MintConfig'), LiftState: disc('account', 'LiftState') };
 export const EVT = { RestrictionsLifted: disc('event', 'RestrictionsLifted') };
@@ -111,6 +113,22 @@ export class HookClient {
     });
   }
 
+  /** 8.3, admin-only, once: append the launch key to Global (42 -> 74 bytes); `payer` pays the rent increase. */
+  migrateGlobalV2(payer: PublicKey, authority: PublicKey, launchAuthority: PublicKey) {
+    return new TransactionInstruction({ programId: this.programId, data: Buffer.concat([IX.migrateGlobalV2, launchAuthority.toBuffer()]), keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: authority, isSigner: true, isWritable: false },
+      { pubkey: this.globalPda(), isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ] });
+  }
+  /** 8.3, admin-only: rotate the launch key. */
+  setLaunchAuthority(authority: PublicKey, newLaunchAuthority: PublicKey) {
+    return new TransactionInstruction({ programId: this.programId, data: Buffer.concat([IX.setLaunchAuthority, newLaunchAuthority.toBuffer()]), keys: [
+      { pubkey: authority, isSigner: true, isWritable: false },
+      { pubkey: this.globalPda(), isSigner: false, isWritable: true },
+    ] });
+  }
   liftGlobal(authority: PublicKey) {
     return new TransactionInstruction({ programId: this.programId, data: Buffer.from(IX.liftGlobal), keys: [
       { pubkey: authority, isSigner: true, isWritable: false },
@@ -152,15 +170,21 @@ export class HookClient {
 
 // ---------- decoders
 const pk = (b: Buffer, o: number) => new PublicKey(b.subarray(o, o + 32));
-export interface GlobalAcc { authority: PublicKey; lifted: boolean }
+/** Global lengths (8.3): 42 before `migrate_global_v2`, 74 after (launch key at bytes 42..74). */
+export const GLOBAL_V1_LEN = 42, GLOBAL_V2_LEN = 74;
+export interface GlobalAcc { authority: PublicKey; lifted: boolean; launchAuthority: PublicKey | null }
+/** Accepts 42 bytes (launchAuthority null: not migrated) or at least 74 (null when bytes 42..74 are all zero);
+ *  any other length is refused. */
 export function decodeGlobal(data: Uint8Array): GlobalAcc {
   const b = Buffer.from(data); if (!b.subarray(0, 8).equals(ACC.Global)) throw new Error('not Global');
-  return { authority: pk(b, 8), lifted: b[40] === 1 };
+  if (b.length !== GLOBAL_V1_LEN && b.length < GLOBAL_V2_LEN) throw new Error(`Global length ${b.length} is neither ${GLOBAL_V1_LEN} nor >= ${GLOBAL_V2_LEN}`);
+  const tail = b.length >= GLOBAL_V2_LEN ? b.subarray(GLOBAL_V1_LEN, GLOBAL_V2_LEN) : null;
+  return { authority: pk(b, 8), lifted: b[40] === 1, launchAuthority: tail && tail.some(x => x !== 0) ? new PublicKey(tail) : null };
 }
 // ---------- hook authority reader (§12a key separation, FW-23/FW-24). One implementation for the launch builder and the keeper.
 export class AuthorityReadError extends Error { constructor(msg: string) { super(msg); this.name = 'AuthorityReadError'; } }
 export interface AccountLike { owner: PublicKey; data: Uint8Array }
-export interface HookAuthorities { upgradeAuthority: string | null; liftAuthority: string | null; upgradeImmutable: boolean }
+export interface HookAuthorities { upgradeAuthority: string | null; liftAuthority: string | null; upgradeImmutable: boolean; launchAuthority: string | null }
 /** UpgradeableLoaderState::Program — owner BPF upgradeable loader, u32 tag 2, ProgramData address (must be the canonical PDA). */
 export function parseProgramAccount(ai: AccountLike | null, programId: PublicKey): PublicKey {
   if (!ai) throw new AuthorityReadError(`hook program ${programId.toBase58()} not found`);
@@ -185,13 +209,17 @@ export function parseProgramDataAuthority(ai: AccountLike | null): { upgradeAuth
   if (b.length < 45) throw new AuthorityReadError(`ProgramData truncated (${b.length} < 45 bytes with an authority)`);
   return { upgradeAuthority: new PublicKey(b.subarray(13, 45)).toBase58(), immutable: false };
 }
-/** Global PDA (Anchor account `Global`): owner = hook program, discriminator, authority (32), lifted (1). */
-export function parseGlobalAuthority(ai: AccountLike | null, programId: PublicKey): string {
+/** Global PDA (Anchor account `Global`): owner = hook program, discriminator, authority (32), lifted (1), bump (1),
+ *  then (8.3, after migration) launch_authority (32). Returns the lift (admin) key and the launch key (null if unset). */
+export function parseGlobalAuthorities(ai: AccountLike | null, programId: PublicKey): { liftAuthority: string; launchAuthority: string | null } {
   if (!ai) throw new AuthorityReadError('hook Global account not found (not initialized?)');
   if (!ai.owner.equals(programId)) throw new AuthorityReadError(`Global owner ${ai.owner.toBase58()} is not the hook program`);
-  if (ai.data.length < 41) throw new AuthorityReadError(`Global truncated (${ai.data.length} < 41 bytes)`);
-  try { return decodeGlobal(ai.data).authority.toBase58(); } catch (e: any) { throw new AuthorityReadError(`Global undecodable: ${e?.message ?? e}`); }
+  if (ai.data.length < GLOBAL_V1_LEN) throw new AuthorityReadError(`Global truncated (${ai.data.length} < ${GLOBAL_V1_LEN} bytes)`);
+  let g: GlobalAcc; try { g = decodeGlobal(ai.data); } catch (e: any) { throw new AuthorityReadError(`Global undecodable: ${e?.message ?? e}`); }
+  return { liftAuthority: g.authority.toBase58(), launchAuthority: g.launchAuthority?.toBase58() ?? null };
 }
+/** The lift (admin) key only. */
+export const parseGlobalAuthority = (ai: AccountLike | null, programId: PublicKey): string => parseGlobalAuthorities(ai, programId).liftAuthority;
 /** Read both authorities from chain. Missing or malformed accounts throw AuthorityReadError (fail closed); an immutable
  *  program returns upgradeAuthority null + upgradeImmutable true, which the §12a rules treat as unknown off devnet. */
 export async function readHookAuthorities(conn: { getAccountInfo(pk: PublicKey, c?: any): Promise<AccountLike | null> }, programId: PublicKey): Promise<HookAuthorities> {
@@ -203,8 +231,8 @@ export async function readHookAuthorities(conn: { getAccountInfo(pk: PublicKey, 
   };
   const pdAddr = parseProgramAccount(await get(programId, 'program account'), programId);
   const pd = parseProgramDataAuthority(await get(pdAddr, 'ProgramData'));
-  const liftAuthority = parseGlobalAuthority(await get(hc.globalPda(), 'Global'), programId);
-  return { upgradeAuthority: pd.upgradeAuthority, liftAuthority, upgradeImmutable: pd.immutable };
+  const { liftAuthority, launchAuthority } = parseGlobalAuthorities(await get(hc.globalPda(), 'Global'), programId);
+  return { upgradeAuthority: pd.upgradeAuthority, liftAuthority, upgradeImmutable: pd.immutable, launchAuthority };
 }
 export interface MintConfigAcc { mint: PublicKey; launchSlot: bigint; supplyRef: bigint; steps: Step[]; uncappedAfter: bigint; exemptOwners: PublicKey[]; testSlotsBuild: boolean; launcher: PublicKey }
 export function decodeMintConfig(data: Uint8Array): MintConfigAcc {

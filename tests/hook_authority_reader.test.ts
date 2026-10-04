@@ -37,12 +37,12 @@ test('real parser on recorded devnet data → upgrade and lift authority = expec
   assert.equal(parseProgramAccount(acc(FX.program), PROGRAM).toBase58(), FX.program_data.pubkey);
   assert.deepEqual(parseProgramDataAuthority(acc(FX.program_data)), { upgradeAuthority: EXPECTED, immutable: false });
   assert.equal(parseGlobalAuthority(acc(FX.global), PROGRAM), EXPECTED);
-  assert.deepEqual(await readHookAuthorities(conn(chain()), PROGRAM), { upgradeAuthority: EXPECTED, liftAuthority: EXPECTED, upgradeImmutable: false });
+  assert.deepEqual(await readHookAuthorities(conn(chain()), PROGRAM), { upgradeAuthority: EXPECTED, liftAuthority: EXPECTED, upgradeImmutable: false, launchAuthority: null });
 });
 
 test('both callers use the shared reader: Launchpad.hookAuthorities and startKeeper see the same values', async () => {
   const lp: any = { c: { connection: conn(chain()) }, hook: hc };
-  assert.deepEqual(await Launchpad.prototype.hookAuthorities.call(lp), { upgradeAuthority: EXPECTED, liftAuthority: EXPECTED });
+  assert.deepEqual(await Launchpad.prototype.hookAuthorities.call(lp), { upgradeAuthority: EXPECTED, liftAuthority: EXPECTED, launchAuthority: null });
   const cfg = { ...JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')), pinned_pubkeys: undefined } as KeeperConfig;
   const k = await startKeeper(cfg, [], { loadKey: () => Keypair.generate(), connect: async () => conn(chain()) as any, log: () => {} });
   assert.ok(k);   // pinned 9DVu… matched the parsed chain data
@@ -52,7 +52,7 @@ test('immutable program (no upgrade authority) → null + immutable; fails close
   const imm = mutate(FX.program_data, b => { b[12] = 0; return b.subarray(0, 13); });
   assert.deepEqual(parseProgramDataAuthority(imm), { upgradeAuthority: null, immutable: true });
   const a = await readHookAuthorities(conn(chain({ [FX.program_data.pubkey]: imm })), PROGRAM);
-  assert.deepEqual(a, { upgradeAuthority: null, liftAuthority: EXPECTED, upgradeImmutable: true });
+  assert.deepEqual(a, { upgradeAuthority: null, liftAuthority: EXPECTED, upgradeImmutable: true, launchAuthority: null });
   assert.throws(() => launchConfigChecks('mainnet', Keypair.generate().publicKey.toBase58(), a), KeyRuleRefusal);
   assert.throws(() => keeperStartChecks('mainnet', { gas: Keypair.generate().publicKey.toBase58() }, a), KeyRuleRefusal);
   const cfg = { ...JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')), pinned_pubkeys: undefined } as KeeperConfig;

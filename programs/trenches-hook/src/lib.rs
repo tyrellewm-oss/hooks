@@ -56,13 +56,68 @@ pub mod trenches_hook {
         Ok(())
     }
 
+    /// 8.3, admin-only, once: append `launch_authority` (bytes 42..74) to the 42-byte Global. Bytes 0..42 are
+    /// never written. `payer` (any key) pays the rent increase. A second run refuses (ConfigFrozen).
+    pub fn migrate_global_v2(ctx: Context<MigrateGlobalV2>, launch_authority: Pubkey) -> Result<()> {
+        let g = ctx.accounts.global.to_account_info();
+        let (canonical, _) = Pubkey::find_program_address(&[GLOBAL_SEED], &crate::ID);
+        require_keys_eq!(g.key(), canonical, HookError::ConfigFrozen);
+        require_keys_eq!(*g.owner, crate::ID, HookError::ConfigFrozen);
+        let admin = {
+            let d = g.try_borrow_data()?;
+            require!(d.len() == GLOBAL_V1_LEN || d.len() == GLOBAL_V2_LEN, HookError::ConfigFrozen);
+            require!(&d[..8] == Global::DISCRIMINATOR, HookError::ConfigFrozen);
+            Pubkey::try_from(&d[8..40]).map_err(|_| error!(HookError::ConfigFrozen))?
+        };
+        require_keys_eq!(ctx.accounts.authority.key(), admin, HookError::Unauthorized);
+        require!(g.data_len() == GLOBAL_V1_LEN, HookError::ConfigFrozen);
+        require_keys_neq!(launch_authority, Pubkey::default(), HookError::Unauthorized);
+        require_keys_neq!(launch_authority, admin, HookError::Unauthorized);
+        let need = Rent::get()?.minimum_balance(GLOBAL_V2_LEN);
+        let have = g.lamports();
+        if have < need {
+            system_program::transfer(
+                CpiContext::new(ctx.accounts.system_program.to_account_info(),
+                    system_program::Transfer { from: ctx.accounts.payer.to_account_info(), to: g.clone() }),
+                need - have,
+            )?;
+        }
+        g.resize(GLOBAL_V2_LEN)?;
+        g.try_borrow_mut_data()?[GLOBAL_V1_LEN..GLOBAL_V2_LEN].copy_from_slice(launch_authority.as_ref());
+        msg!("trenches-hook: global migrated to v2, launch authority={}", launch_authority);
+        Ok(())
+    }
+
+    /// 8.3, admin-only: rotate the launch key (bytes 42..74). Refuses the admin key, the zero key and the current
+    /// launch key (a rotation that changes nothing). After rotation the old key refuses on the launch path.
+    pub fn set_launch_authority(ctx: Context<SetLaunchAuthority>, new_launch_authority: Pubkey) -> Result<()> {
+        let admin = ctx.accounts.global.authority;
+        let g = ctx.accounts.global.to_account_info();
+        require!(g.data_len() == GLOBAL_V2_LEN, HookError::ConfigFrozen);
+        require_keys_neq!(new_launch_authority, Pubkey::default(), HookError::Unauthorized);
+        require_keys_neq!(new_launch_authority, admin, HookError::Unauthorized);
+        let current = launch_authority_of(&g.try_borrow_data()?);
+        require!(current != Some(new_launch_authority), HookError::ConfigFrozen);
+        g.try_borrow_mut_data()?[GLOBAL_V1_LEN..GLOBAL_V2_LEN].copy_from_slice(new_launch_authority.as_ref());
+        msg!("trenches-hook: launch authority rotated from={:?} to={}", current, new_launch_authority);
+        Ok(())
+    }
+
     /// Per-mint setup (the transfer-hook InitializeExtraAccountMetaList step):
     /// writes the immutable cap config, the lift state and the extra-account-meta
-    /// list. Signed by the launcher (global authority). Runs once per mint.
+    /// list. Signed by the launch key (Global bytes 42..74, 8.3), never the admin. Runs once per mint.
     pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
         args: InitConfigArgs,
     ) -> Result<()> {
+        // 8.3: (a) Global migrated (74 bytes), (b) launch key set, (c) signer == launch key, (d) signer != admin.
+        {
+            let g = ctx.accounts.global.to_account_info();
+            require!(g.data_len() == GLOBAL_V2_LEN, HookError::Unauthorized);
+            let launch = launch_authority_of(&g.try_borrow_data()?).ok_or(error!(HookError::Unauthorized))?;
+            require_keys_eq!(ctx.accounts.authority.key(), launch, HookError::Unauthorized);
+            require_keys_neq!(ctx.accounts.authority.key(), ctx.accounts.global.authority, HookError::Unauthorized);
+        }
         let mint_key = ctx.accounts.mint.key();
         // Mint must be a Token-2022 mint whose TransferHook points at this program.
         let supply = {
@@ -351,9 +406,9 @@ pub struct InitializeGlobal<'info> {
 pub struct InitializeExtraAccountMetaList<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Launcher: must be the global authority (beta: our own launches only).
+    /// Launcher: must be the launch key in Global bytes 42..74 (checked in the handler, 8.3), never the admin.
     pub authority: Signer<'info>,
-    #[account(seeds = [GLOBAL_SEED], bump = global.bump, has_one = authority @ HookError::Unauthorized)]
+    #[account(seeds = [GLOBAL_SEED], bump = global.bump)]
     pub global: Account<'info, Global>,
     /// CHECK: validated in the handler (Token-2022 mint with TransferHook -> this program).
     pub mint: UncheckedAccount<'info>,
@@ -367,6 +422,27 @@ pub struct InitializeExtraAccountMetaList<'info> {
     #[account(mut, seeds = [LIFT_SEED, mint.key().as_ref()], bump)]
     pub lift: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct MigrateGlobalV2<'info> {
+    /// Pays the rent increase (any key: the admin need not hold SOL).
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// Must equal Global bytes 8..40 (checked in the handler).
+    pub authority: Signer<'info>,
+    /// CHECK: checked by hand (canonical PDA, owner, discriminator, length 42): Anchor's realloc constraint would
+    /// deserialize into a 74-byte type first, which fails on the 42-byte account.
+    #[account(mut)]
+    pub global: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct SetLaunchAuthority<'info> {
+    pub authority: Signer<'info>,
+    #[account(mut, seeds = [GLOBAL_SEED], bump = global.bump, has_one = authority @ HookError::Unauthorized)]
+    pub global: Account<'info, Global>,
 }
 
 #[derive(Accounts)]

@@ -298,11 +298,11 @@ export class Launchpad {
 
   configParams(o: LaunchOpts) { return curveConfigParams(o); }
 
-  /** Hook upgrade authority (ProgramData) and lift authority (Global PDA), via the shared reader (throws AuthorityReadError). */
+  /** Hook upgrade authority (ProgramData), lift and launch authority (Global PDA), via the shared reader (throws AuthorityReadError). */
   async hookAuthorities(): Promise<Authorities> {
     await gateHook(this);
     const a = await readHookAuthorities(this.c.connection, this.hook.programId);
-    return { upgradeAuthority: a.upgradeAuthority, liftAuthority: a.liftAuthority };
+    return { upgradeAuthority: a.upgradeAuthority, liftAuthority: a.liftAuthority, launchAuthority: a.launchAuthority };
   }
 
   /** Blocker #7 helpers (module functions, so they also run with the test fakes' `this`). */
