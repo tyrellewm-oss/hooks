@@ -9,11 +9,12 @@ import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk
 import { utils as anchorUtils } from '@coral-xyz/anchor';
 const bs58 = anchorUtils.bytes.bs58;
 import { splitFees, minOut, spotOutBtoA, deviationBps, planSwap, runIdFor, historyWarning, fmtSol, fmtTokens, pctOf } from './math.js';
-import { checkKeyConfig, KEEPER_KEY_ROLES, type KeeperConfig, type KeeperKeyRole, type SourceDbc, type SourceDamm } from './config.js';
+import { checkKeyConfig, KEEPER_KEY_ROLES, type KeeperConfig, type KeeperKeyRole, type Source, type SourceDbc, type SourceDamm } from './config.js';
 import { Store, durableWrite, ser } from './store.js';
 import { keeperStartChecks, KeyRuleRefusal } from '../keyrules.js';
 import { assertClusterAccounts, ClusterCheckRefusal } from '../cluster_check.js';
 import { classifyCluster } from '../cluster.js';
+import { loadRegistry, assertRegistryMint, RegistryRefusal, REGISTRY_PATH } from '../registry.js';
 import { readHookAuthorities, resolveHookProgramId, type HookProgramResolution } from '../hook.js';
 import { assertMintHook, graduationPhase, mintHookAuthorityFor, MintHookRefusal } from '../mint_hook.js';
 import { redactPaths, redactDeep } from '../redact.js';
@@ -67,9 +68,9 @@ export class PausedMidrun extends FailClosed { constructor(public stage: string,
 /** The keys the keeper signs with (KEEPER_KEY_ROLES). No dev key: the dev payout is a pubkey in the config. */
 export interface KeySet { claim: Keypair; treasury: Keypair; gas: Keypair }
 const roleKey = (ks: KeySet, role: KeeperKeyRole): Keypair => (role === 'claim_signer' ? ks.claim : ks[role]);
-export interface StartDeps { loadKey: (name: string) => Keypair; connect: (cfg: KeeperConfig) => Promise<Connection>; log?: (s: string) => void }
+export interface StartDeps { loadKey: (name: string) => Keypair; connect: (cfg: KeeperConfig) => Promise<Connection>; log?: (s: string) => void; registryPath?: string }
 /** Refusals that need no network (FW-22, FW-23). Throws KeyRuleRefusal; returns warnings (FW-25 on devnet). */
-export function preflightOffline(cfg: KeeperConfig, keys: KeySet): string[] {
+export function preflightOffline(cfg: KeeperConfig, keys: KeySet, registryPath: string = REGISTRY_PATH): string[] {
   checkKeyConfig(cfg);
   // every loaded key goes through the §12a separation checks (built from the role list, so none can be skipped)
   const keeperKeys = Object.fromEntries(KEEPER_KEY_ROLES.map(r => [r, roleKey(keys, r).publicKey.toBase58()]));
@@ -81,12 +82,13 @@ export function preflightOffline(cfg: KeeperConfig, keys: KeySet): string[] {
     const pk = cfg.pinned_pubkeys[role];
     if (pk && roleKey(keys, role).publicKey.toBase58() !== pk) throw new KeyRuleRefusal(`refusing to start: key '${role}' does not match pinned pubkey`);
   }
+  assertRegistryMint(loadRegistry(cfg.cluster, registryPath), cfg.main_mint, 'main_mint');   // ticket 8.5: the keeper acts on registry mints only
   return warnings;
 }
 export async function startKeeper(cfg: KeeperConfig, overrides: string[], deps: StartDeps): Promise<Keeper> {
   checkKeyConfig(cfg);   // before any key file is opened: a dev keypair path is refused, never loaded
   const keys: KeySet = { claim: deps.loadKey(cfg.keys.claim_signer), treasury: deps.loadKey(cfg.keys.treasury), gas: deps.loadKey(cfg.keys.gas) };
-  const warnings = preflightOffline(cfg, keys);           // throws before any connection exists
+  const warnings = preflightOffline(cfg, keys, deps.registryPath);   // throws before any connection exists
   const conn = await deps.connect(cfg);
   const genesis = await conn.getGenesisHash();
   if (genesis === MAINNET_GENESIS) throw new KeyRuleRefusal('refusing: RPC is mainnet-beta');
@@ -103,6 +105,7 @@ export async function startKeeper(cfg: KeeperConfig, overrides: string[], deps: 
   if (upg !== cfg.hook_upgrade_authority || lift !== cfg.hook_lift_authority) throw new KeyRuleRefusal(`refusing: pinned hook authorities do not match chain (upgrade ${upg}, lift ${lift})`);
   const keeper = new Keeper(cfg, overrides, conn, keys, warnings, deps.log ?? console.log);
   for (const w of warnings) keeper.log(w);   // FW-17: through Keeper.log, which redacts
+  if (deps.registryPath) keeper.registryPath = deps.registryPath;
   return keeper;
 }
 
@@ -175,14 +178,17 @@ export class Keeper {
     if (this.faults.crashSend === stage) { this.log(`FW_FAULT crash_send:${stage} → exiting after send, before confirmation (devnet test)`); process.exit(98); }
     return this.awaitStage(s, run, stage);
   }
-  /** Resolve a pending stage: wait for its sig; confirmed → return tx; landed with error → failed; expired & not landed → expired. */
+  /** Delay between confirmation polls (tests replace it so polling loops finish without real waiting). */
+  wait: (ms: number) => Promise<unknown> = sleep;
+  /** Resolve a pending stage: wait for its sig; confirmed → return tx; landed with error → failed; expired & not landed → expired.
+   *  Expiry needs BOTH a null status (history searched) AND the block height, read at `confirmed`, past lvbh + 5. */
   private async awaitStage(s: KeeperState, run: RunLog, stage: string): Promise<ParsedTransactionWithMeta> {
     const st = run.stages[stage];
     for (let i = 0; i < 90; i++) {
       const r = (await this.conn.getSignatureStatuses([st.sig], { searchTransactionHistory: true })).value[0];
       if (r && (r.confirmationStatus === 'confirmed' || r.confirmationStatus === 'finalized')) {
         let tx: ParsedTransactionWithMeta | null = null;
-        for (let j = 0; j < 15 && !tx; j++) { tx = await this.conn.getParsedTransaction(st.sig, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 }); if (!tx) await sleep(1000); }
+        for (let j = 0; j < 15 && !tx; j++) { tx = await this.conn.getParsedTransaction(st.sig, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 }); if (!tx) await this.wait(1000); }
         if (!tx) throw new FailClosed('rpc_error', `tx ${st.sig} confirmed but not fetchable yet; stage stays pending`);
         if (!tx.transaction.message.accountKeys[0].pubkey.equals(this.keys.gas.publicKey)) throw new FailClosed('fee_payer_mismatch', `fee payer of ${stage} is not the gas wallet`, true);
         run.gas_lamports = add(run.gas_lamports, BigInt(tx.meta?.fee ?? 0)); s.totals.gas_lamports = add(s.totals.gas_lamports, BigInt(tx.meta?.fee ?? 0));
@@ -199,7 +205,7 @@ export class Keeper {
         st.status = 'expired'; this.store.journal({ run_id: run.run_id, stage, status: 'expired', sig: st.sig }); this.save(s);
         throw new FailClosed('expired', `${stage} sig ${st.sig} expired without landing; will retry with the same amounts`);
       }
-      await sleep(2000);
+      await this.wait(2000);
     }
     throw new FailClosed('rpc_error', `${stage} still unresolved; stays pending`);
   }
@@ -223,7 +229,7 @@ export class Keeper {
   }
 
   // ---------- pinned checks (any mismatch → fail closed + auto-pause)
-  private async pinnedChecks() {
+  private async pinnedChecks(sources: Source[] = this.cfg.sources) {
     const c = this.cfg;
     const mintAi = await this.conn.getAccountInfo(this.mint, 'confirmed');
     if (!mintAi) throw new FailClosed('rpc_error', 'mint unreadable');
@@ -252,7 +258,7 @@ export class Keeper {
       if (!p.tokenAMint.equals(this.mint) || !p.tokenBMint.equals(NATIVE_MINT)) throw new FailClosed('mismatch_pool', 'route pool mints != (main mint, WSOL)', true);
       if (p.tokenAFlag !== (this.mainProg.equals(TOKEN_2022_PROGRAM_ID) ? 1 : 0) || p.tokenBFlag !== 0) throw new FailClosed('mismatch_pool', 'route pool token programs unexpected', true);
     }
-    for (const src of c.sources) {
+    for (const src of sources) {
       if (src.kind === 'damm_v2') {
         const pos: any = await this.cp.fetchPositionState(new PublicKey(src.position));
         if (!pos.nftMint.equals(new PublicKey(src.position_nft_mint)) || !pos.pool.equals(new PublicKey(src.pool))) throw new FailClosed('mismatch_position', 'position nft/pool != pinned', true);
@@ -294,7 +300,7 @@ export class Keeper {
     let run: RunLog;
     if (s.current) {
       run = s.current; this.log(`[${run.run_id}] resuming in-progress run (status ${run.status}${run.stopped_before ? `, stopped before ${run.stopped_before}` : ''})`);
-      if (run.status === 'paused_midrun') { run.status = 'planned'; run.reason = ''; delete run.stopped_before; }   // amounts are re-planned from state below
+      if (run.status === 'paused_midrun' || run.status === 'failed_registry') { run.status = 'planned'; run.reason = ''; delete run.stopped_before; delete run.finished_at; }   // amounts are re-planned from state below
     }
     else {
       if (s.runs.some(r => r.run_id === runId)) { this.log(`[${runId}] window already ran — no-op, zero txs`); return { run_id: runId, status: 'noop_window_done', reason: 'window already ran', txs: [] }; }
@@ -307,15 +313,16 @@ export class Keeper {
       s.current = null; return this.finishFail(s, run, new FailClosed('failed_log', `log write failed before any tx: ${e.message}`), false);
     }
     try {
+      const sources = this.registrySources(run);   // ticket 8.5: first, before any read
       await this.resolvePending(s, run);
-      await this.pinnedChecks();
+      await this.pinnedChecks(sources);
       const gas = BigInt(await this.conn.getBalance(this.keys.gas.publicKey, 'confirmed'));
       if (gas < B(this.cfg.gas_min_lamports)) throw new FailClosed('gas_low', `gas wallet ${fmtSol(gas)} SOL < min ${fmtSol(B(this.cfg.gas_min_lamports))}`);
       if (s.dev_baseline_raw === null) { s.dev_baseline_raw = (await this.tokenAmt(this.dWsol)).toString(); }
       if (s.first_supply_raw === null) { s.first_supply_raw = (await this.supply()).toString(); }
       this.save(s);
       // 1. claims
-      for (const src of this.cfg.sources) await this.claim(s, run, src);
+      for (const src of sources) await this.claim(s, run, src);
       // 2. split
       await this.split(s, run);
       // 3. gate
@@ -334,6 +341,9 @@ export class Keeper {
       return this.finishOk(s, run);
     } catch (e: any) {
       if (e instanceof PausedMidrun) return this.finishPausedMidrun(s, run, e);
+      // ticket 8.5: a registry failure is handled before the pending branch. With a stage pending, the run stays open
+      // (s.current) with that stage untouched (never re-sent); the keeper pauses until an operator resumes it.
+      if (e instanceof FailClosed && e.code === 'registry') return this.finishFail(s, run, e, true);
       if (Object.values(run.stages).some(x => x.status === 'pending')) {
         run.status = 'pending'; run.reason = e.message; try { this.save(s); this.publish(s); } catch {}
         this.log(`[${run.run_id}] PENDING: ${e.message}`);
@@ -344,6 +354,26 @@ export class Keeper {
     }
   }
 
+  /** Ticket 8.5: the sources this run may act on, read from the mint registry each run. A DBC source counts when its
+   *  base mint is registered; a DAMM v2 source only when it is the route pool (pinned on chain to the main mint, which
+   *  startup requires in the registry). Any other source is skipped, with the reason in the run's warnings: no read,
+   *  quote, claim, swap, burn or send. The registry is read fresh each run (an edit applies to the next run). If it is
+   *  missing or unreadable, or the main mint is no longer in it, the run fails closed (failed_registry) and auto-pauses
+   *  before any read. Dry runs take this same path. */
+  registryPath: string = REGISTRY_PATH;
+  registrySources(run: RunLog): Source[] {
+    let reg: ReadonlySet<string>;
+    try { reg = loadRegistry(this.cfg.cluster, this.registryPath); assertRegistryMint(reg, this.cfg.main_mint, 'main_mint'); }
+    catch (e: any) { throw e instanceof RegistryRefusal ? new FailClosed('registry', e.message, true) : e; }
+    return this.cfg.sources.filter(src => {
+      const ok = src.kind === 'dbc' ? reg.has(src.base_mint) : src.pool === this.cfg.route_pool && reg.has(this.cfg.main_mint);
+      if (!ok) {
+        const why = src.kind === 'dbc' ? `source dbc pool ${src.pool} skipped: base mint ${src.base_mint} is not in the mint registry` : `source damm_v2 pool ${src.pool} skipped: not the route pool of a registry mint`;
+        if (!run.warnings.includes(why)) { run.warnings.push(why); this.log(`[${run.run_id}] ${why}`); }
+      }
+      return ok;
+    });
+  }
   private async resolvePending(s: KeeperState, run: RunLog) {
     for (const [stage, st] of Object.entries(run.stages)) {
       if (st.status !== 'pending') continue;
@@ -480,9 +510,41 @@ export class Keeper {
     return { out, impactBps, spotOut, pool };
   }
 
+  /** Ticket 8.5, expired swap retry. Before the single fresh-quote retry of a swap whose sig expired: one last status
+   *  check with history search. If the original landed late it is resolved and applied (confirmed) and no new swap is
+   *  built. Otherwise the unspent input is re-read from the chain (treasury wSOL minus unsplit claims); only on-chain <=
+   *  stored retries (amount = min(stored, on-chain)); more on chain than stored, or a negative amount, fails closed. The retry then goes through the normal path: registry (run start), quote, per-run cap, price
+   *  checks, min_out and the pre-send simulation (preflight). */
+  private async beforeExpiredRetry(s: KeeperState, run: RunLog) {
+    const st = run.stages.swap!;
+    const r = (await this.conn.getSignatureStatuses([st.sig], { searchTransactionHistory: true })).value[0];
+    if (r) {
+      st.status = 'pending'; this.store.journal({ run_id: run.run_id, stage: 'swap', status: 'pending', sig: st.sig, note: 'seen after expiry; resolving the original' }); this.save(s);
+      const tx = await this.awaitStage(s, run, 'swap');
+      this.applyEffect(s, run, 'swap', tx);
+      return;
+    }
+    const unspent = (await this.tokenAmt(this.tWsol)) - B(s.unsplit_lamports);
+    if (unspent < 0n) throw new FailClosed('reconcile_mismatch', `treasury wSOL is below the unsplit claims (${unspent}) before the swap retry`, true);
+    // only on-chain <= stored retries (amount = min(stored, on-chain) = on-chain). More on chain than stored (later
+    // claims or stray wSOL) fails closed before any quote, build or send; the stage and the stored amount stay as they are.
+    const stored = B(s.pending_lamports), amt = unspent < stored ? unspent : stored;
+    if (amt !== unspent) {
+      const why = `swap retry: on-chain unspent input ${unspent} > stored ${stored}; failing closed before any quote, build or send`;
+      run.warnings.push(why);
+      throw new FailClosed('reconcile_mismatch', why, true);
+    }
+    if (amt !== stored) {
+      run.warnings.push(`swap retry: unspent input re-read from chain ${unspent} != stored ${stored}; the chain amount is used`);
+      s.pending_lamports = amt.toString(); this.save(s);
+    }
+  }
   private async swapAndBurn(s: KeeperState, run: RunLog) {
     const c = this.cfg;
+    if (run.stages.swap?.status === 'expired') await this.beforeExpiredRetry(s, run);
     if (run.stages.swap?.status !== 'confirmed') {
+      const retry = run.stages.swap?.status === 'expired';
+      if (retry) run.warnings.push(`swap ${run.stages.swap!.sig} expired without landing; retrying once with a fresh quote`);
       if (run.stages.swap && run.stages.swap.status !== 'pending') delete run.stages.swap;
       const pending = B(s.pending_lamports);
       let last: Awaited<ReturnType<Keeper['quote']>> | null = null;
@@ -570,7 +632,9 @@ export class Keeper {
     if (e.pause || s.consecutive_failures >= this.cfg.auto_pause_after_failures) {
       s.paused = true; s.pause_reason = e.pause ? `${run.status}: ${e.message.slice(0, 200)}` : `${s.consecutive_failures} consecutive failed runs (last: ${run.status})`;
     }
-    s.runs.push(run); s.current = null;
+    // a registry failure with a stage pending keeps the run open, so the pending stage is resolved (never re-sent) on resume
+    if (e.code === 'registry' && Object.values(run.stages).some(x => x.status === 'pending')) s.current = run;
+    else { s.runs.push(run); s.current = null; }
     if (persist) { try { this.save(s); this.publish(s); } catch (we: any) { this.log(`log write failed: ${we.message}`); } }
     else { try { this.save(s); } catch {} }
     this.log(`[${run.run_id}] FAILED ${run.status}: ${run.reason}${s.paused ? ` → PAUSED (${s.pause_reason})` : ''}`);

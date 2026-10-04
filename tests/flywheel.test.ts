@@ -16,6 +16,7 @@ import { preflightOffline, startKeeper, Keeper, initState, publicLog, newRun, ME
 import { applyOverrides, type KeeperConfig } from '../sdk/flywheel/config.js';
 import { Launchpad } from '../sdk/launch.js';
 import { HOOK_PROGRAM_ID_DEVNET, HookProgramPinRefusal, BPF_UPGRADEABLE } from '../sdk/hook.js';
+import { RegistryRefusal } from '../sdk/registry.js';
 
 const base = JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')) as KeeperConfig;
 const trapConn = () => new Proxy({}, { get: (_t, p) => { if (p === 'then') return undefined; throw new Error(`network used: ${String(p)}`); } }) as unknown as Connection;
@@ -196,11 +197,11 @@ test('FW-17: public log has addresses/sigs only — no key arrays, no internal p
 // ledger and returns a parsed tx with real pre/post token balances, so the keeper's own effect checks and
 // reconciliation run unchanged. No network.
 type Ledger = Record<string, bigint>;
-function midrun(onSend: (stage: string, h: { pause: () => void; envPause: () => void }) => void = () => {}) {
+function midrun(onSend: (stage: string, h: { pause: () => void; envPause: () => void }) => void = () => {}, over: Partial<KeeperConfig> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fw-mid-'));
   const ks = keys();
   const dbcSrc = base.sources.find(x => x.kind === 'dbc')!;
-  const cfg = cfgWith({ state_dir: join(dir, 'state'), public_log: join(dir, 'pub.json'), sources: [dbcSrc], max_swap_lamports_per_run: '1000000', min_claim_lamports: '1000000' });
+  const cfg = cfgWith({ state_dir: join(dir, 'state'), public_log: join(dir, 'pub.json'), sources: [dbcSrc], max_swap_lamports_per_run: '1000000', min_claim_lamports: '1000000', ...over });
   const k = new Keeper(cfg, [], trapConn(), ks, [], () => {});
   const tW = k.tWsol.toBase58(), tM = k.tMain.toBase58(), dW = k.dWsol.toBase58();
   const L: Ledger = { [tW]: 0n, [tM]: 0n, [dW]: 0n, supply: 1_000_000_000_000_000n };
@@ -239,7 +240,7 @@ function midrun(onSend: (stage: string, h: { pause: () => void; envPause: () => 
     keys: [{ pubkey: ks.treasury.publicKey, isSigner: true, isWritable: false }, ...[k.tWsol, k.tMain].map(pubkey => ({ pubkey, isSigner: false, isWritable: true }))] })] }) };
   const state = () => k.store.loadState(() => initState(cfg));
   const unpause = () => { try { rmSync(join(cfg.state_dir, 'PAUSE')); } catch {} delete process.env.FW_PAUSED; const s = state(); s.paused = false; s.pause_reason = ''; k.store.saveState(s); };
-  return { k, cfg, sent, L, state, unpause };
+  return { k, cfg, sent, L, state, unpause, parsed, ks };
 }
 const T0 = Date.UTC(2026, 9, 4, 1, 0), W = 300_000;
 
@@ -357,4 +358,306 @@ test('§12a same-authority rule end to end: keeper start on mainnet with upgrade
   assert.equal(connected, 0);
   const w = preflightOffline(cfgWith({ cluster: 'devnet' }), k);   // real TDT authorities (9DVu… for both): warns, does not refuse
   assert.ok(w.some(x => /upgrade authority and lift authority are the same key 9DVu/.test(x)));
+});
+
+// ---------------- ticket 8.5: the keeper acts on mints in the registry (keeper/registry.json) only
+/** A midrun keeper that records every read the claim path could make, per pool. */
+function registryRun(sources: any[]) {
+  const m = midrun(() => {}, { sources });
+  const reads: string[] = []; const pinned: any[][] = [];
+  const getPool = (m.k as any).dbc.state.getPool;
+  (m.k as any).dbc = { state: { getPool: async (pk: PublicKey) => { reads.push(`dbc:${pk.toBase58()}`); return getPool(pk); }, getPoolConfig: async (pk: PublicKey) => { reads.push(`cfg:${pk.toBase58()}`); return {}; } } };
+  const cp = (m.k as any).cp;
+  (m.k as any).cp = { ...cp, fetchPoolState: async (pk: PublicKey) => { reads.push(`damm:${pk.toBase58()}`); throw new Error('damm read'); }, fetchPositionState: async (pk: PublicKey) => { reads.push(`pos:${pk.toBase58()}`); throw new Error('pos read'); } };
+  const claimIx = (m.k as any).dbcClaimIx; (m.k as any).dbcClaimIx = async (src: any, q: bigint) => { reads.push(`claimix:${src.pool}`); return claimIx(src, q); };
+  (m.k as any).pinnedChecks = async (srcs: any[]) => { pinned.push(srcs.map(x => x.pool)); };
+  const quote = (m.k as any).quote; (m.k as any).quote = async (l: bigint) => { reads.push('quote'); return quote(l); };
+  const conn = (m.k as any).conn;
+  (m.k as any).conn = new Proxy(conn, { get: (t, p) => { const v = t[p]; return typeof v === 'function' ? (...a: any[]) => { reads.push(`rpc:${String(p)}`); return v.apply(t, a); } : v; } });
+  return { ...m, reads, pinned };
+}
+/** A temp mint registry file (the keeper reads registryPath fresh on every run). */
+const regFile = (content: unknown) => { const p = join(mkdtempSync(join(tmpdir(), 'reg-')), 'registry.json'); writeFileSync(p, typeof content === 'string' ? content : JSON.stringify(content)); return p; };
+const mainMint = () => base.main_mint as string;
+const dbcSource = () => base.sources.find(x => x.kind === 'dbc')! as any;
+const foreignDbc = () => ({ kind: 'dbc', pool: Keypair.generate().publicKey.toBase58(), config: dbcSource().config, base_mint: Keypair.generate().publicKey.toBase58() });   // created on OUR config, mint not registered
+const foreignDamm = () => ({ kind: 'damm_v2', pool: Keypair.generate().publicKey.toBase58(), position: Keypair.generate().publicKey.toBase58(), position_nft_mint: Keypair.generate().publicKey.toBase58() });
+
+test('8.5: a pool on our config whose mint is not in the registry is ignored: no read, quote, claim, swap or burn; 0 sends; reason logged', async () => {
+  const f = foreignDbc(), d = foreignDamm();
+  const m = registryRun([f, d]);
+  const r = await m.k.runOnce(T0);
+  assert.deepEqual(m.sent, [], 'nothing sent'); assert.deepEqual(r.txs, []);
+  assert.ok(!m.reads.some(x => x.includes(f.pool) || x.includes(d.pool)), `no read of a skipped pool: ${m.reads.join(', ')}`);
+  assert.deepEqual(m.pinned, [[]], 'pinned checks see no skipped source');
+  const run = m.state().runs.at(-1)!;
+  assert.deepEqual(run.claims, [], 'no claim entry'); assert.equal(m.state().totals.spent_lamports, '0'); assert.equal(m.state().totals.burned_raw, '0');
+  assert.ok(run.warnings.includes(`source dbc pool ${f.pool} skipped: base mint ${f.base_mint} is not in the mint registry`), run.warnings.join(' | '));
+  assert.ok(run.warnings.includes(`source damm_v2 pool ${d.pool} skipped: not the route pool of a registry mint`), run.warnings.join(' | '));
+  assert.ok(JSON.parse(readFileSync(m.cfg.public_log, 'utf8')).runs.at(-1).warnings.some((w: string) => w.includes(f.pool)), 'the reason reaches the public log');
+  assert.equal(m.state().consecutive_failures, 0); assert.equal(m.state().paused, false);   // skipping is not a failure
+});
+
+test('8.5: a registry mint still runs (claim, dev, swap, burn) next to an ignored foreign pool', async () => {
+  const f = foreignDbc(); const m = registryRun([dbcSource(), f]);
+  const r = await m.k.runOnce(T0);
+  assert.equal(r.status, 'logged'); assert.deepEqual(m.sent, ['claim_dbc', 'dev', 'swap', 'burn']);
+  assert.deepEqual(m.pinned, [[dbcSource().pool]]);
+  assert.ok(m.reads.includes(`claimix:${dbcSource().pool}`)); assert.ok(!m.reads.some(x => x.includes(f.pool)), m.reads.join(', '));
+  const run = m.state().runs.at(-1)!; assert.deepEqual(run.claims.map(c => c.pool), [dbcSource().pool]);
+  assert.equal(run.warnings.filter(w => w.includes('skipped')).length, 1);
+});
+
+test('8.5: the keeper refuses to start on a main mint that is not in the registry (before any connection)', async () => {
+  const k = keys();
+  const foreign = Keypair.generate().publicKey.toBase58();
+  assert.throws(() => preflightOffline(cfgWith({ cluster: 'devnet', main_mint: foreign }), k), (e: any) => e instanceof RegistryRefusal && e instanceof KeyRuleRefusal && e.message === `refusing: main_mint ${foreign} is not in the mint registry`);
+  assert.doesNotThrow(() => preflightOffline(cfgWith({ cluster: 'devnet' }), k));
+  let connected = 0;
+  await assert.rejects(startKeeper(cfgWith({ cluster: 'devnet', main_mint: foreign, pinned_pubkeys: undefined }), [], { loadKey: n => (k as any)[n === 'deployer' ? 'claim' : n.replace('fw_', '')], connect: async () => { connected++; return trapConn(); }, log: () => {} }),
+    (e: any) => e instanceof RegistryRefusal);
+  assert.equal(connected, 0);
+});
+
+test('8.5: the registry is re-read every run: removing the main mint fails the next run closed (failed_registry, auto-pause) before any read, quote or send', async () => {
+  const m = registryRun([dbcSource()]); const path = regFile({ devnet: [mainMint()] }); m.k.registryPath = path;
+  const r1 = await m.k.runOnce(T0); assert.equal(r1.status, 'logged'); assert.deepEqual(m.sent, ['claim_dbc', 'dev', 'swap', 'burn']);
+  writeFileSync(path, JSON.stringify({ devnet: [] }));                  // main mint removed while the keeper is running
+  const n = m.reads.length, sent = m.sent.length;
+  const r2 = await m.k.runOnce(T0 + W);
+  assert.equal(r2.status, 'failed_registry'); assert.deepEqual(r2.txs, []); assert.match(r2.reason, new RegExp(`main_mint ${mainMint()} is not in the mint registry`));
+  assert.deepEqual(m.reads.slice(n), [], 'no read, quote or RPC call'); assert.equal(m.sent.length, sent, 'no send');
+  assert.equal(m.state().paused, true); assert.match(m.state().pause_reason, /^failed_registry: /);
+});
+
+test('8.5: a missing or unreadable registry pauses the run (failed_registry), with no read or send', async () => {
+  const dirAsFile = mkdtempSync(join(tmpdir(), 'regdir-'));
+  for (const path of [join(tmpdir(), 'no-such-dir-8-5', 'registry.json'), regFile('{not json'), dirAsFile, regFile({ local: [] })]) {
+    const m = registryRun([dbcSource()]); m.k.registryPath = path;
+    const r = await m.k.runOnce(T0);
+    assert.equal(r.status, 'failed_registry', path); assert.deepEqual(m.reads, [], path); assert.deepEqual(m.sent, []); assert.equal(m.state().paused, true);
+  }
+});
+
+test('8.5: an edit to the registry applies to the next run (no caching): a newly registered base mint is acted on', async () => {
+  const f = foreignDbc(); const m = registryRun([f]); const path = regFile({ devnet: [mainMint()] }); m.k.registryPath = path;   // one DBC claim per run, so f is the only source
+  await m.k.runOnce(T0); assert.ok(!m.reads.some(x => x.includes(f.pool)), 'skipped while not registered');
+  writeFileSync(path, JSON.stringify({ devnet: [mainMint(), f.base_mint] }));
+  await m.k.runOnce(T0 + W); assert.ok(m.reads.includes(`dbc:${f.pool}`), `read once registered: ${m.reads.join(', ')}`);
+  assert.ok(!m.state().runs.at(-1)!.warnings.some(w => w.includes(f.pool)), 'no skip warning once registered');
+});
+
+test('8.5: matching is exact: an empty list, a case-changed mint, a prefix or a non-string entry never admits the main mint', async () => {
+  const mm = mainMint(); const flip = (c: string) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase());
+  const i = [...mm].findIndex(c => /[a-km-zA-HJ-NP-Z]/.test(c) && flip(c) !== c && /[1-9A-HJ-NP-Za-km-z]/.test(flip(c)));
+  const cased = mm.slice(0, i) + flip(mm[i]) + mm.slice(i + 1);
+  const k = keys();
+  for (const list of [[], [cased], [mm.slice(0, -1)], [mm + '1'], [123], [mm.toLowerCase()]]) {
+    const path = regFile({ devnet: list });
+    assert.throws(() => preflightOffline(cfgWith({ cluster: 'devnet' }), k, path), (e: any) => e instanceof RegistryRefusal, JSON.stringify(list));
+    const m = registryRun([dbcSource()]); m.k.registryPath = path;
+    const r = await m.k.runOnce(T0); assert.equal(r.status, 'failed_registry', JSON.stringify(list)); assert.deepEqual(m.sent, []); assert.deepEqual(m.reads, []);
+  }
+  assert.doesNotThrow(() => preflightOffline(cfgWith({ cluster: 'devnet' }), k, regFile({ devnet: [mm] })));
+});
+
+test('8.5: startKeeper reads the registry at registryPath for the startup check and keeps that path for every run', async () => {
+  const k = keys(); let connected = 0;
+  const deps = (path: string) => ({ loadKey: (n: string) => (k as any)[n === 'deployer' ? 'claim' : n.replace('fw_', '')], connect: async () => { connected++; return trapConn(); }, log: () => {}, registryPath: path });
+  await assert.rejects(startKeeper(cfgWith({ cluster: 'devnet', pinned_pubkeys: undefined }), [], deps(regFile({ devnet: [] }))), (e: any) => e instanceof RegistryRefusal);
+  assert.equal(connected, 0);
+  // the started keeper keeps that path for every run (source check: a full successful start needs a live cluster)
+  assert.match(readFileSync('sdk/flywheel/keeper.ts', 'utf8'), /\n  const keeper = new Keeper\(cfg, overrides, conn, keys, warnings, deps\.log \?\? console\.log\);\n  for \(const w of warnings\) keeper\.log\(w\);[^\n]*\n  if \(deps\.registryPath\) keeper\.registryPath = deps\.registryPath;\n  return keeper;\n/);
+});
+
+/** A run left open with a signed swap pending (as after a crash or a confirmation timeout), then the main mint is removed. */
+function pendingSwapRemoved() {
+  const m = registryRun([]); const path = regFile({ devnet: [] }); m.k.registryPath = path;
+  const SIG = anchorUtils.bytes.bs58.encode(Uint8Array.from({ length: 64 }, (_, i) => (i * 7 + 3) & 255));
+  const inL = 1_000_000n, out = 900_000_000n;
+  const s = m.state(); s.pending_lamports = inL.toString();
+  const run = newRun(runIdFor('devnet', T0, m.cfg.cadence_seconds), [], 'pending', 'confirmation timed out');
+  run.swap = { route: m.cfg.route, pool: m.cfg.route_pool!, in_lamports: inL.toString(), min_out_raw: '1', out_raw: '0', quote_out_raw: out.toString(), spot_out_raw: out.toString(), slippage_bps: 100, price_impact_bps: 10, spot_deviation_bps: 0, halvings: 0 } as any;
+  run.stages.swap = { status: 'pending', sig: SIG, lvbh: 1000, intent: { in_lamports: inL.toString(), min_out_raw: '1' } };
+  s.current = run; m.k.store.saveState(s);
+  m.k.wait = async () => {};                                            // polling loops end without real waiting (no timeouts)
+  const checked: string[] = []; const statusOpts: any[] = []; const heightCommitments: any[] = []; const sendOpts: any[] = [];
+  const conn = (m.k as any).conn;                                         // properties set here land on the target behind the read-recording proxy
+  const getSt = conn.getSignatureStatuses; conn.getSignatureStatuses = async (sigs: string[], o: any) => { checked.push(...sigs); statusOpts.push(o); return getSt(sigs, o); };
+  const getH = conn.getBlockHeight; conn.getBlockHeight = async (c: any) => { heightCommitments.push(c); return getH(c); };
+  const sendRaw = conn.sendRawTransaction; conn.sendRawTransaction = async (buf: Buffer, o: any) => { sendOpts.push(o); return sendRaw(buf, o); };
+  const builds: any[] = []; const cp = (m.k as any).cp; (m.k as any).cp = { ...cp, swap: async (a: any) => { builds.push(a); return cp.swap(a); } };
+  return { ...m, path, SIG, inL, out, run, checked, statusOpts, heightCommitments, sendOpts, builds };
+}
+
+test('8.5: a pending swap when the main mint is removed: failed_registry + paused before any RPC call; the stage stays pending; re-registering keeps the keeper paused', async () => {
+  const m = pendingSwapRemoved();
+  const r = await m.k.runOnce(T0);
+  assert.equal(r.status, 'failed_registry'); assert.deepEqual(m.reads, [], 'no RPC call, read or quote'); assert.deepEqual(m.sent, []); assert.deepEqual(m.checked, []); assert.deepEqual(m.builds, []);
+  const st = m.state();
+  assert.equal(st.paused, true); assert.match(st.pause_reason, /^failed_registry: /); assert.equal(st.consecutive_failures, 1);
+  assert.equal(st.current!.stages.swap.status, 'pending'); assert.equal(st.current!.stages.swap.sig, m.SIG);
+  assert.ok(!st.runs.some(x => x.run_id === m.run.run_id && x.status === 'failed_registry'), 'the run stays open (s.current)');
+  writeFileSync(m.path, JSON.stringify({ devnet: [mainMint()] }));       // re-registered: still paused until an operator resumes
+  const r2 = await m.k.runOnce(T0 + W);
+  assert.equal(r2.status, 'paused'); assert.deepEqual(m.reads, []); assert.deepEqual(m.sent, []); assert.equal(m.state().current!.stages.swap.status, 'pending');
+});
+
+test('8.5: after re-registering and an operator resume, the ORIGINAL pending swap signature is resolved (confirmed case): no new swap is built or sent', async () => {
+  const m = pendingSwapRemoved();
+  await m.k.runOnce(T0); writeFileSync(m.path, JSON.stringify({ devnet: [mainMint()] })); m.unpause();
+  // the original swap landed while the keeper was paused
+  const k = m.k as any, acct = [m.ks.gas.publicKey, k.tWsol, k.tMain, k.dWsol, m.ks.treasury.publicKey];
+  const pre = { ...m.L, [k.tWsol.toBase58()]: m.inL }; m.L[k.tMain.toBase58()] += m.out;
+  const bal = (l: any) => [1, 2, 3].map(i => ({ accountIndex: i, uiTokenAmount: { amount: l[acct[i].toBase58()].toString() } }));
+  m.parsed.set(m.SIG, { slot: 1, blockTime: 1_790_000_000, transaction: { message: { accountKeys: acct.map(pubkey => ({ pubkey })), instructions: [] } },
+    meta: { err: null, fee: 5000, preTokenBalances: bal(pre), postTokenBalances: bal(m.L), preBalances: [0, 0, 0, 0, 0], postBalances: [0, 0, 0, 0, 0] } });
+  const r = await m.k.runOnce(T0 + 2 * W);
+  assert.equal(m.checked[0], m.SIG, 'the original signature is the one checked first');
+  assert.deepEqual(m.builds, [], 'no new swap built'); assert.ok(!m.reads.includes('quote'), 'no new quote'); assert.ok(!m.sent.includes('swap'), `no swap sent: ${m.sent}`);
+  const last = m.state().runs.at(-1)!;
+  assert.equal(last.run_id, m.run.run_id); assert.equal(last.stages.swap.status, 'confirmed'); assert.equal(last.stages.swap.sig, m.SIG); assert.equal(last.swap!.out_raw, m.out.toString());
+  assert.deepEqual(m.sent, ['burn'], 'only the burn of the swapped tokens follows'); assert.equal(r.status, 'logged');
+  assert.doesNotMatch(last.reason, /registry/, 'the resumed run does not carry the registry failure'); assert.equal(m.state().current, null); assert.equal(m.state().paused, false);
+});
+
+test('8.5: after re-registering and an operator resume, the ORIGINAL pending swap signature is resolved (expired case): recorded expired, never re-sent', async () => {
+  const m = pendingSwapRemoved();
+  await m.k.runOnce(T0); writeFileSync(m.path, JSON.stringify({ devnet: [mainMint()] })); m.unpause();
+  const s = m.state(); s.current!.stages.swap.lvbh = -10; m.k.store.saveState(s);   // block height (1) is past lvbh + 5: the original can no longer land
+  m.L[(m.k as any).tWsol.toBase58()] = m.inL;                                         // the swap input never left the treasury
+  const sends: string[] = []; const sendRaw = (m.k as any).conn.sendRawTransaction;
+  (m.k as any).conn.sendRawTransaction = async (buf: Buffer, o: any) => { sends.push(anchorUtils.bytes.bs58.encode(Transaction.from(buf).signature!)); return sendRaw(buf, o); };
+  await m.k.runOnce(T0 + 2 * W);
+  assert.equal(m.checked[0], m.SIG, 'the original signature is the one checked first');
+  assert.ok(!sends.includes(m.SIG), 'the original signed swap is never re-sent');
+  const journal = readFileSync(join(m.cfg.state_dir, 'journal.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.ok(journal.some(j => j.stage === 'swap' && j.status === 'expired' && j.sig === m.SIG), 'the original stage ends expired (journal)');
+  // existing keeper behaviour after an expiry (unchanged here): the unspent input is swapped again in the same run as a NEW tx
+  // (fresh quote, fresh blockhash). The original can no longer land, so this is not a double swap.
+  const last = m.state().runs.at(-1)!;
+  assert.equal(m.builds.length, 1, 'exactly one NEW swap is built, from a fresh quote'); assert.deepEqual(m.sent, ['swap', 'burn']);
+  assert.equal(last.run_id, m.run.run_id); assert.equal(last.stages.swap.status, 'confirmed'); assert.notEqual(last.stages.swap.sig, m.SIG, 'the confirmed swap is the new tx, not the original');
+});
+
+/** Resume an expired pending swap: re-registered, unpaused, original sig past lvbh + 5 (block height is 1). */
+async function expiredResume(o: { unspent?: bigint; stored?: bigint } = {}) {
+  const m = pendingSwapRemoved();
+  await m.k.runOnce(T0); writeFileSync(m.path, JSON.stringify({ devnet: [mainMint()] })); m.unpause();
+  const s = m.state(); s.current!.stages.swap.lvbh = -10; if (o.stored !== undefined) s.pending_lamports = o.stored.toString(); m.k.store.saveState(s);
+  m.L[(m.k as any).tWsol.toBase58()] = o.unspent ?? m.inL;
+  m.checked.length = 0; m.statusOpts.length = 0; m.heightCommitments.length = 0;
+  return m;
+}
+const swapIntent = (m: any) => m.state().runs.at(-1)!.stages.swap?.intent ?? m.state().current?.stages.swap?.intent;
+
+test('8.5 retry rule 1: a null status with the block height NOT past lvbh + 5 is no expiry and no retry (direct, no timeout)', async () => {
+  const m = pendingSwapRemoved();
+  await m.k.runOnce(T0); writeFileSync(m.path, JSON.stringify({ devnet: [mainMint()] })); m.unpause();
+  const conn = (m.k as any).conn; conn.getBlockHeight = async (c: any) => { m.heightCommitments.push(c); return c === 'processed' ? 2000 : 1000; };   // confirmed height = lvbh: not past
+  m.checked.length = 0;
+  const r = await m.k.runOnce(T0 + 2 * W);
+  assert.equal(r.status, 'pending'); assert.equal(m.state().current!.stages.swap.status, 'pending', 'not expired'); assert.equal(m.state().current!.stages.swap.sig, m.SIG);
+  assert.equal(m.builds.length, 0, 'no retry built'); assert.deepEqual(m.sent, [], 'nothing sent'); assert.ok(m.checked.length >= 2 && m.checked.every(x => x === m.SIG));
+  assert.ok(m.heightCommitments.length > 0 && m.heightCommitments.every(c => c === 'confirmed' || c === 'finalized'), `height read at confirmed/finalized: ${m.heightCommitments}`);
+});
+
+test('8.5 retry rule 1b/1c: expiry reads the block height at confirmed or finalized; the final status call before the retry searches history', async () => {
+  const m = await expiredResume();
+  await m.k.runOnce(T0 + 2 * W);
+  assert.ok(m.heightCommitments.length > 0 && m.heightCommitments.every(c => c === 'confirmed' || c === 'finalized'), `height read at: ${m.heightCommitments}`);
+  assert.deepEqual(m.checked.slice(0, 2), [m.SIG, m.SIG], 'expiry check, then one last status check of the original sig before building the retry');
+  assert.equal(m.statusOpts[1]?.searchTransactionHistory, true, 'the final status call searches transaction history');
+  assert.equal(m.builds.length, 1);
+});
+
+test('8.5 retry rule 1c: the original landed late (visible only with history search) → confirmed, no new swap', async () => {
+  const m = await expiredResume();
+  const k = m.k as any, acct = [m.ks.gas.publicKey, k.tWsol, k.tMain, k.dWsol, m.ks.treasury.publicKey];
+  let calls = 0;
+  k.conn.getSignatureStatuses = async (sigs: string[], o: any) => { calls++; m.checked.push(...sigs); m.statusOpts.push(o);
+    if (calls >= 2 && o?.searchTransactionHistory === true && !m.parsed.has(m.SIG)) {   // lands right after the expiry check
+      const pre = { ...m.L }; m.L[k.tWsol.toBase58()] -= m.inL; m.L[k.tMain.toBase58()] += m.out;
+      const bal = (l: any) => [1, 2, 3].map(i => ({ accountIndex: i, uiTokenAmount: { amount: l[acct[i].toBase58()].toString() } }));
+      m.parsed.set(m.SIG, { slot: 1, blockTime: 1_790_000_000, transaction: { message: { accountKeys: acct.map(pubkey => ({ pubkey })), instructions: [] } },
+        meta: { err: null, fee: 5000, preTokenBalances: bal(pre), postTokenBalances: bal(m.L), preBalances: [0, 0, 0, 0, 0], postBalances: [0, 0, 0, 0, 0] } });
+    }
+    return { value: sigs.map(x => (calls >= 2 && o?.searchTransactionHistory === true && m.parsed.has(x) ? { confirmationStatus: 'confirmed' } : null)) }; };
+  await m.k.runOnce(T0 + 2 * W);
+  const last = m.state().runs.at(-1)!;
+  assert.equal(m.builds.length, 0, 'no new swap built'); assert.ok(!m.sent.includes('swap')); assert.deepEqual(m.sent, ['burn']);
+  assert.equal(last.stages.swap.status, 'confirmed'); assert.equal(last.stages.swap.sig, m.SIG); assert.equal(last.swap!.out_raw, m.out.toString());
+});
+
+test('8.5 retry rule 3: the retry amount is the unspent input re-read from the chain when it is below the stored amount', async () => {
+  const m = await expiredResume({ unspent: 700_000n, stored: 1_000_000n });
+  await m.k.runOnce(T0 + 2 * W);
+  assert.equal(m.builds.length, 1); assert.equal(m.builds[0].amountIn.toString(), '700000'); assert.equal(swapIntent(m).in_lamports, '700000');
+  assert.ok(m.state().runs.at(-1)!.warnings.some(w => /re-read from chain 700000 != stored 1000000/.test(w)));
+});
+
+test('8.5 retry rule 2: the retry goes through the per-run cap, the price checks and min_out, and the pre-send simulation', async () => {
+  // cap: unspent 3 SOL-lamports-units above the per-run cap → the retry swaps at most the cap
+  const a = await expiredResume({ unspent: 3_000_000n, stored: 3_000_000n });
+  await a.k.runOnce(T0 + 2 * W);
+  assert.equal(a.builds.length, 1); assert.equal(swapIntent(a).in_lamports, a.cfg.max_swap_lamports_per_run, 'capped at max_swap_lamports_per_run');
+  // min_out: the retry's min_out is the normal minOut of the fresh quote
+  const q = BigInt(swapIntent(a).in_lamports) * 1000n;
+  assert.equal(swapIntent(a).min_out_raw, minOut(q, a.cfg.max_slippage_bps).toString()); assert.ok(BigInt(swapIntent(a).min_out_raw) > 0n);
+  // price check: a fresh quote far from spot blocks the retry (failed_price, nothing built or sent)
+  const b = await expiredResume(); (b.k as any).quote = async (inL: bigint) => ({ out: inL * 1000n, impactBps: 10, spotOut: inL * 3000n, pool: {} });
+  const rb = await b.k.runOnce(T0 + 2 * W);
+  assert.equal(rb.status, 'failed_price'); assert.equal(b.builds.length, 0); assert.ok(!b.sent.includes('swap'));
+  // pre-send simulation: the retry is sent with preflight on, and a failing simulation blocks it
+  const c = await expiredResume(); const conn = (c.k as any).conn; const send = conn.sendRawTransaction;
+  conn.sendRawTransaction = async (buf: Buffer, o: any) => { c.sendOpts.push(o); if (!o?.skipPreflight) throw new Error('Transaction simulation failed: custom program error'); return send(buf, o); };
+  const rc = await c.k.runOnce(T0 + 2 * W);
+  assert.equal(c.sendOpts[0]?.skipPreflight, false, 'retry sent with the pre-send simulation'); assert.equal(rc.status, 'failed_swap'); assert.ok(!c.sent.includes('swap'), 'nothing landed');
+});
+
+test('8.5 retry rule 2: the registry is checked on the resumed run before the retry (main mint removed → failed_registry, no retry)', async () => {
+  const m = await expiredResume(); writeFileSync(m.path, JSON.stringify({ devnet: [] }));
+  const r = await m.k.runOnce(T0 + 2 * W);
+  assert.equal(r.status, 'failed_registry'); assert.deepEqual(m.checked, [], 'not even the expiry check runs'); assert.equal(m.builds.length, 0); assert.deepEqual(m.sent, []);
+});
+
+test('8.5 retry rule 3: a negative re-read unspent amount (treasury wSOL below the unsplit claims) fails closed: reconcile_mismatch, paused, no swap built or sent', async () => {
+  const m = await expiredResume({ unspent: 1_000_000n });
+  const s = m.state(); s.current!.stages.dev = { status: 'confirmed', sig: 'devSig' } as any; s.unsplit_lamports = '2000000'; m.k.store.saveState(s);   // split already done this run, so the claims stay unsplit
+  const r = await m.k.runOnce(T0 + 2 * W);
+  const st = m.state();
+  assert.equal(r.status, 'reconcile_mismatch'); assert.match(r.reason ?? '', /below the unsplit claims \(-1000000\)/);
+  assert.equal(st.paused, true); assert.match(st.pause_reason ?? '', /^reconcile_mismatch/);
+  assert.equal(m.builds.length, 0, 'no swap built'); assert.deepEqual(m.sent, [], 'nothing sent'); assert.equal(st.pending_lamports, s.pending_lamports, 'stored amount untouched');
+});
+
+test('8.5 retry rule 3: more unspent input on chain than stored (later claims or stray wSOL) fails closed before building: reconcile_mismatch, paused, 0 quotes/builds/sends, stage and stored amount untouched', async () => {
+  const m = await expiredResume({ unspent: 900_000n, stored: 600_000n });
+  let quotes = 0; const q = (m.k as any).quote.bind(m.k); (m.k as any).quote = async (x: bigint) => { quotes++; return q(x); };
+  const r = await m.k.runOnce(T0 + 2 * W);
+  const st = m.state(), last = st.runs.at(-1)!;
+  assert.equal(r.status, 'reconcile_mismatch'); assert.equal(st.paused, true); assert.match(st.pause_reason ?? '', /^reconcile_mismatch/);
+  assert.equal(quotes, 0, 'no quote'); assert.equal(m.builds.length, 0, 'no swap built'); assert.deepEqual(m.sent, [], 'nothing sent');
+  assert.equal(last.stages.swap.status, 'expired', 'stage untouched'); assert.equal(last.stages.swap.sig, m.SIG); assert.equal(st.pending_lamports, '600000', 'stored amount untouched');
+  assert.ok(last.warnings.some(w => /on-chain unspent input 900000 > stored 600000/.test(w)), 'warning names both amounts');
+});
+
+/** Expiry margin: the original is expired only once the confirmed block height is past lvbh + 5. */
+async function marginResume(over: number) {
+  const m = await expiredResume(); const s = m.state(); s.current!.stages.swap.lvbh = 1000; m.k.store.saveState(s);
+  (m.k as any).conn.getBlockHeight = async (c: any) => { m.heightCommitments.push(c); return 1000 + over; };
+  return m;
+}
+test('8.5 retry rule 1: the +5 expiry margin: a confirmed height of lvbh + 5 is no expiry, no retry and no swap built', async () => {
+  const m = await marginResume(5);
+  const r = await m.k.runOnce(T0 + 2 * W);
+  assert.equal(r.status, 'pending'); assert.equal(m.state().current!.stages.swap.status, 'pending', 'not expired'); assert.equal(m.state().current!.stages.swap.sig, m.SIG);
+  assert.equal(m.builds.length, 0, 'no swap built'); assert.deepEqual(m.sent, []);
+});
+test('8.5 retry rule 1: the +5 expiry margin: a confirmed height of lvbh + 6 is expiry and exactly one retry', async () => {
+  const m = await marginResume(6);
+  await m.k.runOnce(T0 + 2 * W);
+  const last = m.state().runs.at(-1)!;
+  assert.equal(m.builds.length, 1, 'one retry built'); assert.deepEqual(m.sent, ['swap', 'burn']); assert.notEqual(last.stages.swap.sig, m.SIG);
+  assert.ok(last.warnings.some(w => /expired without landing; retrying once with a fresh quote/.test(w)));
 });

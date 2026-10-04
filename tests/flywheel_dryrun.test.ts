@@ -20,7 +20,7 @@ const trapConn = () => new Proxy({}, { get: (_t, p) => { if (p === 'then') retur
 const T0 = Date.UTC(2026, 9, 4, 2, 0), W = 300_000;
 
 /** Fake chain + keeper wired like the CLI: mode 'send' uses the chain directly, 'dry_run' goes through dryRunConnection on a state copy. */
-function setup(opts: { simErr?: (stage: string) => unknown } = {}) {
+function setup(opts: { simErr?: (stage: string) => unknown; registryPath?: string } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fw-dry-'));
   const ks: KeySet = { claim: Keypair.generate(), treasury: Keypair.generate(), gas: Keypair.generate() };
   const dbcSrc = base.sources.find(x => x.kind === 'dbc')!;
@@ -68,6 +68,7 @@ function setup(opts: { simErr?: (stage: string) => unknown } = {}) {
   };
   const stub = (k: Keeper) => {
     (k as any).pinnedChecks = async () => {};
+    if (opts.registryPath) k.registryPath = opts.registryPath;
     (k as any).dbc = { state: { getPool: async () => ({ partnerQuoteFee: { toString: () => dbcFee.toString() }, isMigrated: 1 }) } };
     (k as any).dbcClaimIx = async () => new TransactionInstruction({ programId: MEMO_PROGRAM_ID, keys: [{ pubkey: ks.claim.publicKey, isSigner: true, isWritable: false }, { pubkey: tW, isSigner: false, isWritable: true }], data: Buffer.from('claim') });
     (k as any).quote = async (inL: bigint) => ({ out: inL * 1000n, impactBps: 10, spotOut: inL * 1000n, pool: {} });
@@ -130,4 +131,14 @@ test('dry run: a step that needs an earlier dry step to land is reported `depend
   const g = setup({ simErr: st => (st === 'claim_dbc' ? { InstructionError: [2, { Custom: 6076 }] } : null) });
   const e = await g.run('dry_run', T0);
   assert.equal(e.steps![0].simulated, 'error'); assert.equal(e.r.status, 'failed_claim'); assert.deepEqual(g.chain.sent, []); assert.equal(e.unchanged, true);
+});
+
+test('8.5: a dry run takes the same registry path: main mint not registered → failed_registry, nothing simulated, sent or written', async () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'reg-')), 'registry.json'); writeFileSync(path, JSON.stringify({ devnet: [] }));
+  const t = setup({ registryPath: path }); const before = t.snap();
+  const { r, steps, unchanged, blocked } = await t.run('dry_run', T0) as any;
+  assert.equal(r.status, 'failed_registry'); assert.deepEqual(r.txs, []); assert.deepEqual(steps, []);
+  assert.deepEqual(t.chain.simulated, []); assert.deepEqual(t.chain.sent, []); assert.equal(unchanged, true); assert.equal(blocked, 0); assert.deepEqual(t.snap(), before);
+  writeFileSync(path, JSON.stringify({ devnet: [t.cfg.main_mint] }));      // registered → the same dry run simulates every step
+  const ok = await t.run('dry_run', T0) as any; assert.notEqual(ok.r.status, 'failed_registry'); assert.ok(ok.steps.length > 0);
 });
