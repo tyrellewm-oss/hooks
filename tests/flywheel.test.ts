@@ -129,7 +129,9 @@ test('FW-22 (devnet side): force_fail_swap allowed on devnet only; test knobs re
 test('FW-17: public log has addresses/sigs only — no key arrays, no internal paths', () => {
   const s = initState(base); s.runs.push(newRun('devnet-x', ['FW_MAX_SWAP_LAMPORTS=1000000'], 'logged', ''));
   const txt = JSON.stringify(publicLog(s, base));
-  assert.doesNotMatch(txt, /\[(\s*\d{1,3}\s*,){31,}/); assert.doesNotMatch(txt, /\/tmp\/|\/workspace|\.devnet-keys|state_dir|journal/);
+  assert.doesNotMatch(txt, /\[(\s*\d{1,3}\s*,){31,}/); assert.doesNotMatch(txt, /(?<![:\w/])\/(?:[\w.\-]+\/)+[\w.\-]+|\.devnet-keys|state_dir|journal/);
   for (const k of ['mint', 'burnedTokens', 'pctOfSupply', 'claimedSol', 'devSol', 'spentSol', 'reserveSol', 'burns', 'paused', 'state', 'runs']) assert.ok(k in JSON.parse(txt), k);
-  if (existsSync('flywheel/devnet-tdt.json')) { const live = readFileSync('flywheel/devnet-tdt.json', 'utf8'); assert.doesNotMatch(live, /\[(\s*\d{1,3}\s*,){31,}/); assert.doesNotMatch(live, /\/tmp\/|\/workspace|\.devnet-keys/); }
+  if (existsSync('flywheel/devnet-tdt.json')) { const live = readFileSync('flywheel/devnet-tdt.json', 'utf8'); assert.doesNotMatch(live, /\[(\s*\d{1,3}\s*,){31,}/); assert.doesNotMatch(live, /(?<![:\w/])\/(?:[\w.\-]+\/)+[\w.\-]+|\.devnet-keys/); }
+  const s2 = initState(base); s2.paused = true; s2.pause_reason = 'log write failed: EACCES /some/dir/fw.json see https://explorer.solana.com/tx/abc?cluster=devnet';
+  const pr = (publicLog(s2, base) as any).pause_reason as string; assert.match(pr, /<path>/); assert.doesNotMatch(pr, /\/some\/dir/); assert.match(pr, /https:\/\/explorer\.solana\.com\/tx\/abc/);
 });

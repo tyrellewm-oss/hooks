@@ -521,10 +521,10 @@ export function newRun(runId: string, overrides: string[], status: string, reaso
 /** §10 public log: HookedPad-compatible top level + per-run detail. Addresses and sigs only (FW-17). */
 export function publicLog(s: KeeperState, cfg: KeeperConfig) {
   const supply = B(s.last_supply_raw ?? s.first_supply_raw);
-  const redact = (t: string) => t.replace(/\/(?:tmp|workspace|home|proc|root|var)(?:\/[\w.\-]+)+/g, '<path>');   // FW-17: no internal paths in the public log
+  const redact = (t: string) => t.replace(/(?<![:\w/])\/(?:[\w.\-]+\/)+[\w.\-]+/g, '<path>');   // FW-17: no internal paths in the public log
   const strip = (r: RunLog) => { const { stages, overrides, ...rest } = r; return { ...rest, reason: redact(rest.reason), test_knobs: overrides.map(redact) }; };
   return {
-    cluster: s.cluster, mint: s.mint, decimals: s.decimals, live: !s.paused, paused: s.paused, pause_reason: s.pause_reason.replace(/\/(?:tmp|workspace|home|proc|root|var)(?:\/[\w.\-]+)+/g, '<path>'),
+    cluster: s.cluster, mint: s.mint, decimals: s.decimals, live: !s.paused, paused: s.paused, pause_reason: s.pause_reason.replace(/(?<![:\w/])\/(?:[\w.\-]+\/)+[\w.\-]+/g, '<path>'),
     state: s.paused ? 'paused' : s.runs.at(-1)?.status === 'waiting_for_graduation' ? 'waiting_for_graduation' : 'active',
     claimedSol: fmtSol(B(s.totals.claimed_lamports)), devSol: fmtSol(B(s.totals.dev_lamports)), spentSol: fmtSol(B(s.totals.spent_lamports)), reserveSol: fmtSol(B(s.pending_lamports)),
     burnedTokens: fmtTokens(B(s.totals.burned_raw), s.decimals), supplyTokens: fmtTokens(supply, s.decimals), pctOfSupply: pctOf(B(s.totals.burned_raw), B(s.first_supply_raw)),

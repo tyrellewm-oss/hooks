@@ -25,7 +25,7 @@ const cmd = argv[0] ?? 'help';
 const arg = (k: string, d?: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const { cfg, overrides } = loadConfig(arg('--config', 'keeper/devnet.tdt.json')!);
 const evlog = 'flywheel/devnet-events.jsonl'; // CLI-level evidence log (addresses + sigs only)
-const ev = (o: Record<string, unknown>) => { mkdirSync('flywheel', { recursive: true }); appendFileSync(evlog, JSON.stringify({ at: new Date().toISOString(), config: cfg.name, ...o }).replace(/\/(?:tmp|workspace|home|proc|root|var)(?:\/[\w.\-]+)+/g, '<path>') + '\n'); };
+const ev = (o: Record<string, unknown>) => { mkdirSync('flywheel', { recursive: true }); appendFileSync(evlog, JSON.stringify({ at: new Date().toISOString(), config: cfg.name, ...o }).replace(/(?<![:\w/])\/(?:[\w.\-]+\/)+[\w.\-]+/g, '<path>') + '\n'); };
 
 const rpcUrl = () => { const u = process.env.FW_RPC_URL ?? process.env.DEVNET_RPC ?? DEVNET_RPC_DEFAULT; assertNotMainnet(u); return u; };
 const loadKey = (name: string) => { if (!existsSync(`.devnet-keys/${name}.json`) && !name.startsWith('fw_')) throw new Error(`missing key ${name}`); return loadOrCreate('devnet', name); };
