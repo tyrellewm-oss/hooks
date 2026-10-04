@@ -44,7 +44,10 @@ export function resolveDammV2MigrationConfig(genesis: string, name: ClusterName,
 }
 /** Same resolution for a connected cluster (one genesis read). */
 export async function dammV2MigrationConfigFor(c: Pick<Cluster, 'name' | 'connection'>, env: NodeJS.ProcessEnv = process.env): Promise<DammConfigResolution> {
-  return resolveDammV2MigrationConfig(await c.connection.getGenesisHash(), c.name, env);
+  let genesis: string;
+  try { genesis = await c.connection.getGenesisHash(); }   // fail closed: an RPC error never falls back to a default cluster
+  catch (e: any) { throw new ConfigPinRefusal(`refusing: cannot read the genesis hash to pin DAMM_V2_MIGRATION_CONFIG (${String(e?.message ?? e).slice(0, 200)})`); }
+  return resolveDammV2MigrationConfig(genesis, c.name, env);
 }
 
 export interface TxRecord { time: string; cluster: string; label: string; purpose: string; sig: string; ok: boolean; err?: string; hookError?: string | null; hookCode?: number | null; link: string; capHit?: any; events?: any[]; note?: string }

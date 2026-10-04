@@ -113,3 +113,22 @@ test('accepted override → tx log note "overrides: DAMM_V2_MIGRATION_CONFIG=<va
   const trackedAfter = existsSync(tracked) ? readFileSync(tracked) : null;
   assert.deepEqual(trackedAfter, trackedBefore, 'tracked tx log must not be touched');
 });
+
+// Fail closed on a genesis read error: no fallback to devnet (or any default), no pool read, no tx built.
+test('getGenesisHash rejects → migrate() refuses with 0 tx builds (no fallback to devnet)', async () => {
+  const { PublicKey } = await import('@solana/web3.js');
+  const prev = process.env.DAMM_V2_MIGRATION_CONFIG;
+  // Every other account would pass the cluster check, so a fallback-to-devnet mutation would reach the build.
+  const hook = Keypair.generate().publicKey, poolCfg = Keypair.generate().publicKey, damm = new PublicKey(DAMM_V2_MIGRATION_CONFIG.devnet);
+  const accts = new Map<string, any>([[hook.toBase58(), { owner: hook, executable: true }], [poolCfg.toBase58(), { owner: DBC_PROGRAM_ID, executable: false }], [damm.toBase58(), { owner: DAMM_V2_PROGRAM_ID, executable: false }]]);
+  for (const ov of [undefined, other()]) {
+    if (ov === undefined) delete process.env.DAMM_V2_MIGRATION_CONFIG; else { process.env.DAMM_V2_MIGRATION_CONFIG = ov; accts.set(ov, { owner: DAMM_V2_PROGRAM_ID, executable: false }); }
+    let built = 0, poolReads = 0;
+    const connection: any = { getGenesisHash: async () => { throw new Error('fetch failed: 503'); }, getAccountInfo: async (k: any) => accts.get(k.toBase58()) ?? null, getLatestBlockhash: async () => { built++; throw new Error('stop before send'); } };
+    const fake: any = { c: { name: 'devnet', connection }, hook: { programId: hook }, dbc: { state: { getPool: async () => { poolReads++; return { config: poolCfg }; } }, migration: { migrateToDammV2: async () => { built++; return { transaction: {}, firstPositionNftKeypair: Keypair.generate(), secondPositionNftKeypair: Keypair.generate() }; } } } };
+    try {
+      await assert.rejects(Launchpad.prototype.migrate.call(fake, Keypair.generate(), Keypair.generate().publicKey), (e: any) => e instanceof ConfigPinRefusal && /cannot read the genesis hash/.test(e.message));
+    } finally { if (prev === undefined) delete process.env.DAMM_V2_MIGRATION_CONFIG; else process.env.DAMM_V2_MIGRATION_CONFIG = prev; }
+    assert.equal(built, 0); assert.equal(poolReads, 0);
+  }
+});
