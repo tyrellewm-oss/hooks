@@ -7,10 +7,10 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Keypair, PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import { DEVNET_GENESIS } from '../sdk/cluster.js';
-import { HOOK_PROGRAM_ID_DEVNET, DBC_PROGRAM_ID } from '../sdk/hook.js';
-import { MINT_HOOK_AUTHORITY_PINS, MintHookRefusal, mintHookAuthorityFor, readMintTransferHook, graduationPhase, mintHookProblems } from '../sdk/mint_hook.js';
+import { HOOK_PROGRAM_ID_DEVNET, DBC_PROGRAM_ID, DBC_POOL_AUTHORITY } from '../sdk/hook.js';
+import { MINT_HOOK_AUTHORITY_PINS, MintHookRefusal, mintHookAuthorityFor, readMintTransferHook, graduationPhase, mintHookProblems, sameMessageExceptBlockhash, DBC_INIT_POOL_T22_HOOK_DISC } from '../sdk/mint_hook.js';
 import { Launchpad, mintHookFlag, DAMM_V2_MIGRATION_CONFIG } from '../sdk/launch.js';
 import { Keeper, FailClosed } from '../sdk/flywheel/keeper.js';
 import { fixtureMint, MINT_HOOK_FIXTURE as FX, TRANSFER_HOOK_OFFSET as OFF } from './mint_hook_fixture.js';
@@ -160,14 +160,35 @@ test('migrate() on a pool that has not graduated → refused, 0 builds', async (
 let dir = ''; let cwd = '';
 before(() => { cwd = process.cwd(); dir = mkdtempSync(join(tmpdir(), 'mint-hook-')); });
 after(() => { process.chdir(cwd); rmSync(dir, { recursive: true, force: true }); });
-function launchLp(mintInfo: any, pool?: 'throw' | ((mint: PublicKey, config: PublicKey) => any)) {
-  const n = { built: 0, sent: 0 }; let newMint: PublicKey | null = null, newConfig: PublicKey | null = null;
+/** Simulation outcome for the create-pool tx: the post-simulation mint account (default: the same mint as on chain),
+ *  a simulation error, an RPC error, a null account, or no accounts array at all. `tamper` runs inside the simulation
+ *  call (e.g. to change the built tx between simulation and signing). */
+type SimMode = { info?: any; err?: any; rpcFail?: boolean; nullAccount?: boolean; noAccounts?: boolean; tamper?: (tx: Transaction) => void };
+function launchLp(mintInfo: any, pool?: 'throw' | ((mint: PublicKey, config: PublicKey) => any), sim: SimMode = {}, poolIxMint?: PublicKey) {
+  const n = { built: 0, sent: 0, simulated: 0 };
+  const seen = { simMessages: [] as Buffer[], simConfigs: [] as any[], sentMessages: [] as Buffer[] };
+  let newMint: PublicKey | null = null, newConfig: PublicKey | null = null, poolTx: Transaction | null = null;
   const memo = (signers: PublicKey[]) => new Transaction().add(new TransactionInstruction({ programId: MEMO, keys: signers.map(pubkey => ({ pubkey, isSigner: true, isWritable: false })), data: Buffer.from('t') }));
+  // The DBC create-pool ix in its IDL account order (config, pool_authority, creator, base_mint, ...), args elided.
+  const dbcIx = (a: any) => new TransactionInstruction({ programId: DBC_PROGRAM_ID, data: Buffer.concat([DBC_INIT_POOL_T22_HOOK_DISC, Buffer.from('args')]), keys: [
+    { pubkey: a.config, isSigner: false, isWritable: false }, { pubkey: DBC_POOL_AUTHORITY, isSigner: false, isWritable: false },
+    { pubkey: a.poolCreator, isSigner: true, isWritable: false }, { pubkey: poolIxMint ?? a.baseMint, isSigner: true, isWritable: true }, { pubkey: a.payer, isSigner: true, isWritable: true }] });
   const connection: any = {
     getGenesisHash: async () => DEVNET_GENESIS,
-    getAccountInfo: async (k: PublicKey) => (k.equals(HOOK) ? { owner: BPF, executable: true } : newMint && k.equals(newMint) ? mintInfo : null),
+    // the mint exists on chain only after the pool tx was sent (the config tx is send #1)
+    getAccountInfo: async (k: PublicKey) => (k.equals(HOOK) ? { owner: BPF, executable: true } : newMint && k.equals(newMint) && n.sent >= 2 ? mintInfo : null),
     getLatestBlockhash: async () => ({ blockhash: pk().toBase58(), lastValidBlockHeight: 1 }),
-    sendRawTransaction: async () => { n.sent++; return `FakeSig${n.sent}`; },
+    simulateTransaction: async (vtx: any, cfg: any) => {
+      n.simulated++; seen.simMessages.push(Buffer.from(vtx.message.serialize())); seen.simConfigs.push(cfg);
+      if (sim.tamper && poolTx) sim.tamper(poolTx);
+      if (sim.rpcFail) throw new Error('fetch failed: 503');
+      if (sim.err) return { context: { slot: 1 }, value: { err: sim.err, logs: ['Program log: boom'], accounts: null } };
+      if (sim.noAccounts) return { context: { slot: 1 }, value: { err: null, logs: [] } };
+      if (sim.nullAccount) return { context: { slot: 1 }, value: { err: null, logs: [], accounts: [null] } };
+      const i = sim.info ?? mintInfo;
+      return { context: { slot: 1 }, value: { err: null, logs: [], accounts: [{ owner: new PublicKey(i.owner).toBase58(), lamports: 1, executable: false, rentEpoch: 0, data: [Buffer.from(i.data).toString('base64'), 'base64'] }] } };
+    },
+    sendRawTransaction: async (raw: Buffer) => { n.sent++; seen.sentMessages.push(Buffer.from(Transaction.from(raw).serializeMessage())); return `FakeSig${n.sent}`; },
     confirmTransaction: async () => ({ value: { err: null } }),
     getTransaction: async () => ({ meta: { err: null, logMessages: [] } }),
   };
@@ -175,11 +196,19 @@ function launchLp(mintInfo: any, pool?: 'throw' | ((mint: PublicKey, config: Pub
     c: { name: 'devnet', label: 'devnet', connection }, hook: { programId: HOOK }, configParams: () => ({}),
     dbc: {
       partner: { createConfigWithTransferHook: async (a: any) => { n.built++; return memo([a.payer, a.config]); } },
-      creator: { createPoolWithTransferHook: async (a: any) => { n.built++; newMint = a.baseMint; newConfig = a.config; return memo([a.payer, a.baseMint]); } },
+      creator: { createPoolWithTransferHook: async (a: any) => { n.built++; newMint = a.baseMint; newConfig = a.config; poolTx = new Transaction().add(dbcIx(a)); return poolTx; } },
       state: { getPool: async () => (pool === undefined ? { baseMint: newMint, config: newConfig, migrationProgress: 0 } : pool === 'throw' ? (() => { throw new Error('503'); })() : pool(newMint!, newConfig!)) },
     },
   };
-  return { lp, n, mint: () => newMint! };
+  return { lp, n, seen, mint: () => newMint! };
+}
+/** Counts signatures over any tx that carries the DBC create-pool ix (Transaction.sign / partialSign), during `f`. */
+async function countPoolSigns<T>(f: () => Promise<T>): Promise<{ r: T | Error; poolSigns: number }> {
+  const P: any = Transaction.prototype; const sign = P.sign, partial = P.partialSign; let poolSigns = 0;
+  const isPool = (tx: Transaction) => tx.instructions.some(ix => ix.programId.equals(DBC_PROGRAM_ID));
+  P.sign = function (this: Transaction, ...a: any[]) { if (isPool(this)) poolSigns++; return sign.apply(this, a); };
+  P.partialSign = function (this: Transaction, ...a: any[]) { if (isPool(this)) poolSigns++; return partial.apply(this, a); };
+  try { return { r: await f(), poolSigns }; } catch (e: any) { return { r: e, poolSigns }; } finally { P.sign = sign; P.partialSign = partial; }
 }
 const opts = (extra: any = {}) => ({ name: 'T', symbol: 'T', steps: [{ slotOffset: 0n, maxBps: 100 }], uncappedAfter: 10n, authorities: { upgradeAuthority: pk().toBase58(), liftAuthority: pk().toBase58() }, ...extra });
 async function inTmp<T>(f: () => Promise<T>): Promise<T> {
@@ -197,7 +226,7 @@ test('launch(): the new mint is checked right after pool creation; a wrong autho
     const good = launchLp(V.pre());
     const rec: any = await Launchpad.prototype.launch.call(good.lp, Keypair.generate(), opts());
     assert.equal(rec.mintHookCheck, 'ok'); assert.equal(good.n.built, 2);
-    const bad = launchLp(V.wrongAuthority());
+    const bad = launchLp(V.wrongAuthority(), undefined, { info: V.pre() });   // simulation fine, chain wrong
     await assert.rejects(Launchpad.prototype.launch.call(bad.lp, Keypair.generate(), opts()), refused(/authority .* != pinned DBC signer/));
     const saved = JSON.parse(readFileSync(join(dir, 'launches', 'devnet', `${bad.mint().toBase58()}.json`), 'utf8'));
     assert.match(saved.mintHookCheck, /^FAILED: refusing: mint .* \(before graduation\): TransferHook authority/);
@@ -247,7 +276,7 @@ test('launch(): a matching authority alone is not enough. Wrong program_id on th
       [V.pre(), 'throw', /cannot read the new DBC pool/],
     ];
     for (const [info, pool, re] of cases) {
-      const L = launchLp(info, pool);
+      const L = launchLp(info, pool, { info: V.pre() });
       await assert.rejects(Launchpad.prototype.launch.call(L.lp, Keypair.generate(), opts()), refused(re), String(re));
       assert.match(JSON.parse(readFileSync(join(dir, 'launches', 'devnet', `${L.mint().toBase58()}.json`), 'utf8')).mintHookCheck, /^FAILED: /);
     }
@@ -258,4 +287,75 @@ test('pin = DBC\'s shared pool-authority PDA: derived here from the DBC program 
   assert.equal(pda.toBase58(), MINT_HOOK_AUTHORITY_PINS.devnet, 'FLAG: the pinned mint TransferHook authority is not DBC\'s pool-authority PDA');
   assert.equal(bump, 255);
   assert.equal(MINT_HOOK_AUTHORITY_PINS.local, MINT_HOOK_AUTHORITY_PINS.devnet);   // local clones DBC at the same id
+});
+
+// ---------------- launch(): pre-send simulation of the exact create-pool tx (before any signature on it)
+const launchRun = (L: ReturnType<typeof launchLp>, deployer = Keypair.generate()) => countPoolSigns(() => inTmp(() => Launchpad.prototype.launch.call(L.lp, deployer, opts())));
+async function refusedBeforeSigning(L: ReturnType<typeof launchLp>, re: RegExp) {
+  const { r, poolSigns } = await launchRun(L);
+  assert.ok(r instanceof MintHookRefusal && re.test(r.message), `expected MintHookRefusal ${re}, got ${String((r as any)?.message ?? r)}`);
+  assert.equal(poolSigns, 0, 'the create-pool tx must never be signed');
+  assert.equal(L.n.sent, 1, 'only the config tx may have been sent');
+  assert.equal(L.n.built, 2, 'the create-pool tx is built exactly once');
+}
+test('pre-send: the simulation request = exact unsigned message bytes, sigVerify false, replaceRecentBlockhash, the mint from the tx (base64)', async () => {
+  const L = launchLp(V.pre());
+  const { r, poolSigns } = await launchRun(L);
+  assert.equal((r as any).mintHookCheck, 'ok', String((r as any)?.message ?? ''));
+  assert.match((r as any).mintHookSimulation, /^ok before signing: program_id=.* authority=FhVo3mqL/);
+  assert.equal(poolSigns, 1); assert.equal(L.n.simulated, 1); assert.equal(L.n.built, 2); assert.equal(L.n.sent, 2);
+  assert.deepEqual(L.seen.simConfigs[0], { sigVerify: false, replaceRecentBlockhash: true, commitment: 'confirmed', accounts: { addresses: [L.mint().toBase58()], encoding: 'base64' } });
+  // the bytes signed and sent equal the simulated bytes apart from the blockhash (sendTx fetched a fresh one)
+  const simulated = L.seen.simMessages[0], signed = L.seen.sentMessages[1];
+  assert.equal(sameMessageExceptBlockhash(simulated, signed), true, 'signed bytes must equal simulated bytes apart from the blockhash');
+  assert.equal(simulated.equals(signed), false, 'the fake hands out a fresh blockhash per call, so the raw bytes differ only there');
+});
+test('pre-send: the simulation returns a wrong-hook mint → refused, the create-pool tx is never signed, 0 pool sends', async () => {
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, { info: V.wrongProgram() }), /refusing before signing: simulated mint .* program_id .* != gated hook/);
+});
+test('pre-send: wrong authority in the simulated mint → refused before signing', async () => {
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, { info: V.wrongAuthority() }), /refusing before signing: .*authority .* != pinned DBC signer/);
+});
+test('pre-send: simulation error (err non-null) → refused before signing', async () => {
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, { err: { InstructionError: [1, { Custom: 6000 }] } }), /create-pool simulation failed: .*InstructionError/);
+});
+test('pre-send: RPC error on simulateTransaction → refused before signing', async () => {
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, { rpcFail: true }), /RPC error simulating the create-pool tx/);
+});
+test('pre-send: null or missing returned account → refused before signing', async () => {
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, { nullAccount: true }), /simulation returned no account for mint/);
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, { noAccounts: true }), /simulation returned no account for mint/);
+});
+test('pre-send: non-Token-2022 owner / no extension / undecodable data in the simulated mint → refused before signing', async () => {
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, { info: V.splTokenOwner() }), /simulated mint .* is not Token-2022/);
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, { info: V.noExtension() }), /simulated mint .* has no TransferHook extension/);
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, { info: V.truncated() }), /simulated mint .* data unparseable/);
+});
+test('pre-send: the decision uses the POST-simulation mint (the mint does not exist on chain before the pool tx)', async () => {
+  // good simulation, nothing on chain yet: passes. A check that reads the chain before sending would find no mint.
+  const L = launchLp(V.pre(), undefined, { info: V.pre() });
+  const { r } = await launchRun(L); assert.equal((r as any).mintHookCheck, 'ok', String((r as any)?.message ?? ''));
+});
+test('pre-send: the mint comes from the built tx; a tx naming another base mint than the launch mint → refused before signing', async () => {
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, {}, pk()), /names base mint .* not the launch mint/);
+});
+test('pre-send: a tx changed after the simulation (beyond the blockhash) → refused at signing, never signed', async () => {
+  const L = launchLp(V.pre(), undefined, { tamper: tx => { tx.add(new TransactionInstruction({ programId: MEMO, keys: [], data: Buffer.from('x') })); } });
+  await refusedBeforeSigning(L, /refusing to sign: the create-pool tx differs from the simulated tx/);
+});
+test('pre-send passes but the on-chain mint after the pool tx is wrong → refused before any buy, record FAILED', async () => {
+  await inTmp(async () => {
+    const L = launchLp(V.wrongAuthority(), undefined, { info: V.pre() });
+    await assert.rejects(Launchpad.prototype.launch.call(L.lp, Keypair.generate(), opts()), refused(/authority .* != pinned DBC signer/));
+    const rec = JSON.parse(readFileSync(join(dir, 'launches', 'devnet', `${L.mint().toBase58()}.json`), 'utf8'));
+    assert.match(rec.mintHookCheck, /^FAILED: /); assert.match(rec.mintHookSimulation, /^ok before signing/);
+  });
+});
+test('sameMessageExceptBlockhash: only the blockhash may differ (fee payer, instructions, accounts may not)', () => {
+  const payer = pk(); const mk = (bh: string, p = payer, data = 'a') => { const t = new Transaction().add(new TransactionInstruction({ programId: MEMO, keys: [], data: Buffer.from(data) })); t.feePayer = p; t.recentBlockhash = bh; return t.serializeMessage(); };
+  const h1 = pk().toBase58(), h2 = pk().toBase58();
+  assert.equal(sameMessageExceptBlockhash(mk(h1), mk(h2)), true);
+  assert.equal(sameMessageExceptBlockhash(mk(h1), mk(h2, pk())), false);
+  assert.equal(sameMessageExceptBlockhash(mk(h1), mk(h2, payer, 'b')), false);
+  assert.equal(sameMessageExceptBlockhash(mk(h1), Buffer.from('junk')), false);
 });

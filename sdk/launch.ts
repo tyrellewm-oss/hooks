@@ -1,6 +1,6 @@
 // Meteora DBC transfer-hook pool integration (LOCAL default, DEVNET explicit). No mainnet path.
 import BN from 'bn.js';
-import { Keypair, PublicKey, Transaction, ComputeBudgetProgram, SendTransactionError } from '@solana/web3.js';
+import { Keypair, PublicKey, Transaction, ComputeBudgetProgram, SendTransactionError, type Signer } from '@solana/web3.js';
 import { NATIVE_MINT, getAssociatedTokenAddressSync, getMint, getTransferHook, unpackAccount } from '@solana/spl-token';
 import {
   DynamicBondingCurveClient, buildCurve, deriveDbcPoolAddress, ActivationType, BaseFeeMode, CollectFeeMode, MigrationOption,
@@ -8,12 +8,12 @@ import {
 } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { HookClient, DEFAULT_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, readHookAuthorities, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
+import { HookClient, DEFAULT_PROGRAM_ID, DBC_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, readHookAuthorities, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
 import { type Cluster, type ClusterName, type ClusterClass, explorerTx, nowIct, classifyCluster } from './cluster.js';
 import { launchConfigChecks, type Authorities } from './keyrules.js';
 import { assertClusterAccounts, checkDammV2Config, ClusterCheckRefusal } from './cluster_check.js';
-import { MintHookRefusal, mintHookAuthorityFor, assertPinNotOurs, assertMintHook, readMintTransferHook, mintHookProblems, graduationPhase, type GraduationPhase, type MintHookExpectation } from './mint_hook.js';
+import { MintHookRefusal, mintHookAuthorityFor, assertPinNotOurs, assertMintHook, readMintTransferHook, mintHookProblems, graduationPhase, poolTxBaseMint, simulateMintTransferHook, sameMessageExceptBlockhash, type GraduationPhase, type MintHookExpectation, type MintTransferHook } from './mint_hook.js';
 
 /** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()).
  *  Primary source for the pin: Meteora DBC repo README at commit f552f20 (2026-09-09), section "Damm v2":
@@ -76,9 +76,12 @@ export interface TxRecord { time: string; cluster: string; label: string; purpos
 export function txlogFile(cluster: string, env: NodeJS.ProcessEnv = process.env): string {
   return join(env.TXLOG_DIR || 'txlog', `${cluster}.jsonl`);
 }
-export async function sendTx(c: Cluster, tx: Transaction, signers: Keypair[], purpose: string, note?: string): Promise<TxRecord> {
+/** `beforeSign` sees the exact message bytes about to be signed (blockhash and fee payer set) and may throw: then nothing
+ *  is signed or sent. */
+export async function sendTx(c: Cluster, tx: Transaction, signers: Signer[], purpose: string, note?: string, beforeSign?: (message: Buffer) => void): Promise<TxRecord> {
   const { blockhash, lastValidBlockHeight } = await c.connection.getLatestBlockhash('confirmed');
   tx.recentBlockhash = blockhash; tx.feePayer = signers[0].publicKey;
+  if (beforeSign) beforeSign(tx.serializeMessage());
   tx.sign(...signers);
   let sig = '';
   let rec: TxRecord;
@@ -139,7 +142,7 @@ export function launchFeeConfig(o: Partial<LaunchOpts>) {
     creatorTradingFeePercentage: o.creatorTradingFeePercentage ?? d.creatorTradingFeePercentage, migrationFeeOption: o.migrationFeeOption ?? d.migrationFeeOption,
     percentageSupplyOnMigration: resolvePercentageSupplyOnMigration(o.percentageSupplyOnMigration) };
 }
-export interface LaunchRecord { name?: string; symbol?: string; cluster: string; label: string; time: string; programId: string; config: string; pool: string; mint: string; quoteMint: string; steps: { slotOffset: string; maxBps: number }[]; uncappedAfter: string; migrationQuoteThresholdSol: number; fee: any; txs: Record<string, string>; mintHookCheck?: string }
+export interface LaunchRecord { name?: string; symbol?: string; cluster: string; label: string; time: string; programId: string; config: string; pool: string; mint: string; quoteMint: string; steps: { slotOffset: string; maxBps: number }[]; uncappedAfter: string; migrationQuoteThresholdSol: number; fee: any; txs: Record<string, string>; mintHookCheck?: string; mintHookSimulation?: string }
 
 /** DBC config params for a launch (pure; no network). Launchpad.configParams uses this. */
 export function curveConfigParams(o: Partial<LaunchOpts>) {
@@ -229,6 +232,36 @@ export async function mintHookFlag(lp: { c: any; hook: HookClient; dbc: any; req
   }
 }
 
+/** Build the create-pool tx (DBC create pool + hook initialize_extra_account_meta_list, one tx) from PUBLIC keys only.
+ *  Nothing here signs: the mint key is not needed to build or to simulate (blocker #7). */
+export async function buildCreatePoolTx(lp: { dbc: any; hook: HookClient }, o: LaunchOpts, keys: { payer: PublicKey; config: PublicKey; mint: PublicKey }): Promise<Transaction> {
+  const poolTx: Transaction = await lp.dbc.creator.createPoolWithTransferHook({
+    name: o.name, symbol: o.symbol, uri: o.uri ?? 'https://example.invalid/devnet-test.json', payer: keys.payer, poolCreator: keys.payer,
+    config: keys.config, baseMint: keys.mint, transferHookProgram: lp.hook.programId,
+  } as any);
+  const supplyRef = BigInt(o.totalSupply ?? 1_000_000_000) * 1_000_000n;
+  // Same tx: hook config is frozen in the pool-creation slot, so the ramp starts exactly at launch.
+  poolTx.add(lp.hook.initializeExtraAccountMetaList({ payer: keys.payer, authority: keys.payer, mint: keys.mint, steps: o.steps, uncappedAfter: o.uncappedAfter, supplyRef }));
+  poolTx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }));
+  return poolTx;
+}
+/** Blocker #7 pre-send check: simulate the built, UNSIGNED create-pool tx (exact message bytes, sigVerify false, the RPC
+ *  replaces the blockhash) and require the post-simulation mint's TransferHook = gated hook program + pinned DBC signer.
+ *  The mint address is the one the tx itself names (DBC create-pool ix, base_mint); it must equal `expectedMint`.
+ *  Returns the simulated message bytes, so the signing step can prove it signs the same bytes apart from the blockhash. */
+export async function preSendMintHookCheck(conn: any, tx: Transaction, payer: PublicKey, expectedMint: PublicKey, exp: MintHookExpectation): Promise<{ messageBytes: Buffer; mint: PublicKey; hook: MintTransferHook }> {
+  const mint = poolTxBaseMint(tx, DBC_PROGRAM_ID);
+  if (!mint.equals(expectedMint)) throw new MintHookRefusal(`refusing: the built create-pool tx names base mint ${mint.toBase58()}, not the launch mint ${expectedMint.toBase58()}`);
+  let blockhash: string;
+  try { blockhash = (await conn.getLatestBlockhash('confirmed')).blockhash; }
+  catch (e: any) { throw new MintHookRefusal(`refusing: RPC error fetching a blockhash for the create-pool simulation: ${String(e?.message ?? e).slice(0, 200)}`); }
+  tx.feePayer = payer; tx.recentBlockhash = blockhash;   // placeholder only: replaceRecentBlockhash swaps it
+  const sim = await simulateMintTransferHook(conn, tx.serializeMessage(), mint);
+  const p = mintHookProblems(sim.hook, 'pre', exp);
+  if (p.length) throw new MintHookRefusal(`refusing before signing: simulated mint ${mint.toBase58()} (create-pool tx): ${p.join('; ')}`);
+  return { messageBytes: sim.messageBytes, mint, hook: sim.hook };
+}
+const hookStr = (h: MintTransferHook) => `program_id=${h.programId?.toBase58() ?? 'unset'} authority=${h.authority?.toBase58() ?? 'unset'}`;
 
 export class Launchpad {
   dbc: DynamicBondingCurveClient;
@@ -288,16 +321,14 @@ export class Launchpad {
     const r1 = await sendTx(this.c, cfgTx, [deployer, configKp], `dbc: create_config_with_transfer_hook (${o.symbol})`);
     txs.createConfig = r1.sig; if (!r1.ok) throw new Error('create config failed: ' + r1.err);
 
-    const poolTx = await this.dbc.creator.createPoolWithTransferHook({
-      name: o.name, symbol: o.symbol, uri: o.uri ?? 'https://example.invalid/devnet-test.json', payer: deployer.publicKey, poolCreator: deployer.publicKey,
-      config: configKp.publicKey, baseMint: mintKp.publicKey, transferHookProgram: this.hook.programId,
-    } as any);
+    // Built once from public keys only (the DBC IDL marks base_mint as a signer, but only the send needs that signature).
+    const poolTx = await buildCreatePoolTx(this, o, { payer: deployer.publicKey, config: configKp.publicKey, mint: mintKp.publicKey });
     const pool = deriveDbcPoolAddress(NATIVE_MINT, mintKp.publicKey, configKp.publicKey);
-    const supplyRef = BigInt(o.totalSupply ?? 1_000_000_000) * 1_000_000n;
-    // Same tx: hook config is frozen in the pool-creation slot, so the ramp starts exactly at launch.
-    poolTx.add(this.hook.initializeExtraAccountMetaList({ payer: deployer.publicKey, authority: deployer.publicKey, mint: mintKp.publicKey, steps: o.steps, uncappedAfter: o.uncappedAfter, supplyRef }));
-    poolTx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }));
-    const r2 = await sendTx(this.c, poolTx, [deployer, mintKp], `dbc: initialize_virtual_pool_with_token2022_transfer_hook + hook: initialize_extra_account_meta_list (${o.symbol})`);
+    // blocker #7 pre-send check: simulate these exact unsigned bytes; refuse before any signature on a wrong mint hook.
+    const sim = await preSendMintHookCheck(this.c.connection, poolTx, deployer.publicKey, mintKp.publicKey, mintHook);
+    // Signing step: the bytes signed must equal the simulated bytes apart from the blockhash (sendTx fetches a fresh one).
+    const sameBytes = (m: Buffer) => { if (!sameMessageExceptBlockhash(sim.messageBytes, m)) throw new MintHookRefusal('refusing to sign: the create-pool tx differs from the simulated tx (beyond the blockhash)'); };
+    const r2 = await sendTx(this.c, poolTx, [deployer, mintKp], `dbc: initialize_virtual_pool_with_token2022_transfer_hook + hook: initialize_extra_account_meta_list (${o.symbol})`, undefined, sameBytes);
     txs.createPoolAndHookConfig = r2.sig; if (!r2.ok) throw new Error('create pool failed: ' + r2.err);
 
     const rec: LaunchRecord = {
@@ -319,8 +350,11 @@ export class Launchpad {
       if (!new PublicKey(ps.baseMint).equals(mintKp.publicKey)) throw new MintHookRefusal(`refusing: new DBC pool base mint ${new PublicKey(ps.baseMint).toBase58()} != our mint ${mintKp.publicKey.toBase58()}`);
       if (!new PublicKey(ps.config).equals(configKp.publicKey)) throw new MintHookRefusal(`refusing: new DBC pool config ${new PublicKey(ps.config).toBase58()} != our config ${configKp.publicKey.toBase58()}`);
       if (graduationPhase(ps) !== 'pre') throw new MintHookRefusal(`refusing: new DBC pool ${pool.toBase58()} is already past graduation`);
-      await assertMintHook(this.c.connection, mintKp.publicKey, 'pre', mintHook);
+      // second check: the on-chain mint after the pool tx, which must also equal what the simulation showed.
+      const onChain = await assertMintHook(this.c.connection, sim.mint, 'pre', mintHook);
+      if (hookStr(onChain) !== hookStr(sim.hook)) throw new MintHookRefusal(`refusing: the on-chain mint TransferHook (${hookStr(onChain)}) differs from the pre-send simulation (${hookStr(sim.hook)}); stop before any buy or keeper step`);
     } catch (e: any) { mintHookErr = e; rec.mintHookCheck = `FAILED: ${e.message}`; }
+    rec.mintHookSimulation = `ok before signing: ${hookStr(sim.hook)}`;
     if (!mintHookErr) rec.mintHookCheck = 'ok';
     mkdirSync(`launches/${this.c.name}`, { recursive: true });
     writeFileSync(`launches/${this.c.name}/${rec.mint}.json`, JSON.stringify(rec, null, 2));

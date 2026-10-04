@@ -2,7 +2,7 @@
 // every transfer and who may repoint or remove it. Before graduation it must point at the gated hook program, with the
 // authority held by the DBC program's signer that removes the hook at graduation. After graduation both must be unset.
 // Every read failure refuses (no default to "no authority"), like AuthorityReadError for the hook program authorities.
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, Transaction, Message, VersionedMessage, VersionedTransaction } from '@solana/web3.js';
 import { unpackMint, getExtensionData, ExtensionType, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import type { ClusterClass } from './cluster.js';
 
@@ -40,23 +40,74 @@ export interface MintTransferHook { programId: PublicKey | null; authority: Publ
 const TRANSFER_HOOK_LEN = 64;   // OptionalNonZeroPubkey authority (32) + OptionalNonZeroPubkey program_id (32)
 const nz = (b: Buffer) => { const k = new PublicKey(b); return k.equals(PublicKey.default) ? null : k; };
 
-/** Read the mint's TransferHook extension. MintHookRefusal on an RPC error, a missing mint, a non-Token-2022 owner,
- *  unparseable mint data, a missing TransferHook extension, or extension data of the wrong length. */
+/** Decode the TransferHook extension from a mint account (owner + data). Used for the on-chain read and for the
+ *  post-simulation account alike. MintHookRefusal on a missing account, a non-Token-2022 owner, unparseable mint data, a
+ *  missing TransferHook extension, or extension data of the wrong length. */
+export function decodeMintTransferHook(mint: PublicKey, ai: { owner: PublicKey | string; data: Buffer | Uint8Array } | null | undefined, what = 'mint'): MintTransferHook {
+  if (!ai) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} not found`);
+  let owner: PublicKey;
+  try { owner = new PublicKey(ai.owner); } catch { throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} owner unreadable`); }
+  if (!owner.equals(TOKEN_2022_PROGRAM_ID)) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} owner ${owner.toBase58()} is not Token-2022`);
+  let tlv: Buffer;
+  try { tlv = unpackMint(mint, { ...(ai as any), owner, data: Buffer.from(ai.data) }, TOKEN_2022_PROGRAM_ID).tlvData; }
+  catch (e: any) { throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} data unparseable (${String(e?.message ?? e?.name ?? e).slice(0, 120)})`); }
+  let ext: Buffer | null;
+  try { ext = getExtensionData(ExtensionType.TransferHook, tlv); }
+  catch { throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} extension data unparseable`); }
+  if (!ext) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} has no TransferHook extension`);
+  if (ext.length !== TRANSFER_HOOK_LEN) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} TransferHook extension is ${ext.length} bytes, expected ${TRANSFER_HOOK_LEN}`);
+  return { authority: nz(ext.subarray(0, 32)), programId: nz(ext.subarray(32, 64)) };
+}
+/** Read the mint's TransferHook extension. MintHookRefusal on an RPC error, else as decodeMintTransferHook. */
 export async function readMintTransferHook(conn: { getAccountInfo(pk: PublicKey, c?: any): Promise<any> }, mint: PublicKey): Promise<MintTransferHook> {
   let ai: any;
   try { ai = await conn.getAccountInfo(mint, 'confirmed'); }
   catch (e: any) { throw new MintHookRefusal(`refusing: RPC error reading mint ${mint.toBase58()}: ${String(e?.message ?? e).slice(0, 200)}`); }
-  if (!ai) throw new MintHookRefusal(`refusing: mint ${mint.toBase58()} not found`);
-  if (!new PublicKey(ai.owner).equals(TOKEN_2022_PROGRAM_ID)) throw new MintHookRefusal(`refusing: mint ${mint.toBase58()} owner ${new PublicKey(ai.owner).toBase58()} is not Token-2022`);
-  let tlv: Buffer;
-  try { tlv = unpackMint(mint, { ...ai, data: Buffer.from(ai.data) }, TOKEN_2022_PROGRAM_ID).tlvData; }
-  catch (e: any) { throw new MintHookRefusal(`refusing: mint ${mint.toBase58()} data unparseable (${String(e?.message ?? e.name ?? e).slice(0, 120)})`); }
-  let ext: Buffer | null;
-  try { ext = getExtensionData(ExtensionType.TransferHook, tlv); }
-  catch (e: any) { throw new MintHookRefusal(`refusing: mint ${mint.toBase58()} extension data unparseable`); }
-  if (!ext) throw new MintHookRefusal(`refusing: mint ${mint.toBase58()} has no TransferHook extension`);
-  if (ext.length !== TRANSFER_HOOK_LEN) throw new MintHookRefusal(`refusing: mint ${mint.toBase58()} TransferHook extension is ${ext.length} bytes, expected ${TRANSFER_HOOK_LEN}`);
-  return { authority: nz(ext.subarray(0, 32)), programId: nz(ext.subarray(32, 64)) };
+  return decodeMintTransferHook(mint, ai);
+}
+
+// ---------------- pre-send simulation of the create-pool tx (blocker #7)
+/** DBC initialize_virtual_pool_with_token2022_transfer_hook: Anchor discriminator and the base_mint account index
+ *  (accounts: config 0, pool_authority 1, creator 2, base_mint 3; DBC IDL in @meteora-ag/dynamic-bonding-curve-sdk 1.5.13). */
+export const DBC_INIT_POOL_T22_HOOK_DISC = Buffer.from([182, 13, 233, 177, 42, 145, 135, 2]);
+export const DBC_INIT_POOL_BASE_MINT_INDEX = 3;
+/** The base mint as the built tx itself names it: account 3 of its one DBC create-pool instruction. */
+export function poolTxBaseMint(tx: Transaction, dbcProgram: PublicKey): PublicKey {
+  const ixs = tx.instructions.filter(ix => ix.programId.equals(dbcProgram) && Buffer.from(ix.data.subarray(0, 8)).equals(DBC_INIT_POOL_T22_HOOK_DISC));
+  if (ixs.length !== 1) throw new MintHookRefusal(`refusing: the built create-pool tx has ${ixs.length} DBC initialize_virtual_pool_with_token2022_transfer_hook instructions, expected 1`);
+  const k = ixs[0].keys[DBC_INIT_POOL_BASE_MINT_INDEX];
+  if (!k) throw new MintHookRefusal('refusing: the DBC create-pool instruction has no base_mint account');
+  return k.pubkey;
+}
+/** True when two serialized legacy messages are identical apart from the recent blockhash. */
+export function sameMessageExceptBlockhash(a: Uint8Array, b: Uint8Array): boolean {
+  let ma: Message, mb: Message;
+  try { ma = Message.from(Buffer.from(a)); mb = Message.from(Buffer.from(b)); } catch { return false; }
+  const withHash = new Message({ header: ma.header, accountKeys: ma.accountKeys, recentBlockhash: mb.recentBlockhash, instructions: ma.instructions });
+  return Buffer.from(withHash.serialize()).equals(Buffer.from(b));
+}
+export interface SimulatedMintHook { messageBytes: Buffer; mint: PublicKey; hook: MintTransferHook; unitsConsumed?: number }
+/** Simulate exactly these message bytes (no signatures: sigVerify false, the RPC swaps in a fresh blockhash) and decode
+ *  the mint as it would be after the tx. MintHookRefusal on an RPC error, a simulation error (err non-null), a missing or
+ *  null returned account, or anything decodeMintTransferHook refuses. */
+export async function simulateMintTransferHook(conn: { simulateTransaction(tx: VersionedTransaction, cfg?: any): Promise<any> }, messageBytes: Uint8Array, mint: PublicKey): Promise<SimulatedMintHook> {
+  const bytes = Buffer.from(messageBytes);
+  const vtx = new VersionedTransaction(VersionedMessage.deserialize(bytes));
+  let res: any;
+  try { res = await conn.simulateTransaction(vtx, { sigVerify: false, replaceRecentBlockhash: true, commitment: 'confirmed', accounts: { addresses: [mint.toBase58()], encoding: 'base64' } }); }
+  catch (e: any) { throw new MintHookRefusal(`refusing: RPC error simulating the create-pool tx: ${String(e?.message ?? e).slice(0, 200)}`); }
+  const v = res?.value;
+  if (!v) throw new MintHookRefusal('refusing: create-pool simulation returned no result');
+  if (v.err !== null && v.err !== undefined) throw new MintHookRefusal(`refusing: create-pool simulation failed: ${JSON.stringify(v.err).slice(0, 200)}${(v.logs ?? []).length ? ` (last log: ${String(v.logs[v.logs.length - 1]).slice(0, 160)})` : ''}`);
+  const acc = Array.isArray(v.accounts) ? v.accounts[0] : undefined;
+  if (!acc) throw new MintHookRefusal(`refusing: create-pool simulation returned no account for mint ${mint.toBase58()}`);
+  let data: Buffer;
+  if (Array.isArray(acc.data)) {
+    if (acc.data[1] !== 'base64' || typeof acc.data[0] !== 'string') throw new MintHookRefusal(`refusing: simulated mint ${mint.toBase58()} data is not base64`);
+    data = Buffer.from(acc.data[0], 'base64');
+  } else throw new MintHookRefusal(`refusing: simulated mint ${mint.toBase58()} data is not base64`);
+  const hook = decodeMintTransferHook(mint, { ...acc, owner: acc.owner, data }, 'simulated mint');
+  return { messageBytes: bytes, mint, hook, unitsConsumed: v.unitsConsumed };
 }
 
 export type GraduationPhase = 'pre' | 'post';
