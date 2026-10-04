@@ -84,3 +84,25 @@ test('missing accounts → AuthorityReadError; the keeper turns any read error i
   await assert.rejects(startKeeper(cfg, [], { loadKey: () => Keypair.generate(), connect: async () => conn(chain({ [FX.global.pubkey]: null })) as any, log: () => {} }),
     (e: any) => e instanceof KeyRuleRefusal && /cannot read hook authorities/.test(e.message));
 });
+
+// QA follow-up (issue 1): launch() WITHOUT o.authorities reads the chain through Launchpad.hookAuthorities(). A missing
+// Global, a wrong-owner ProgramData or an RPC error must reject with AuthorityReadError before any tx is built.
+test('launch() without o.authorities: missing Global / wrong-owner ProgramData / RPC error → AuthorityReadError, 0 builds', async () => {
+  const cases: [string, (a: Accts) => any][] = [
+    ['missing Global', a => conn({ ...a, [FX.global.pubkey]: null })],
+    ['wrong-owner ProgramData', a => conn({ ...a, [FX.program_data.pubkey]: { ...a[FX.program_data.pubkey]!, owner: SystemProgram.programId } })],
+    ['RPC error on the ProgramData read', a => { const c = conn(a); return { ...c, getAccountInfo: async (pk: PublicKey) => { if (pk.toBase58() === FX.program_data.pubkey) throw new Error('fetch failed: 503'); return c.getAccountInfo(pk); } }; }],
+  ];
+  for (const [name, mk] of cases) {
+    let built = 0;
+    const lp: any = Object.create(Launchpad.prototype);
+    Object.assign(lp, {
+      c: { name: 'devnet', label: 'DEVNET', url: undefined, connection: mk(chain()) },   // devnet: null authorities would NOT refuse, so a swallowed error would reach the build
+      hook: hc,
+      configParams: () => { built++; return {}; },
+      dbc: { partner: { createConfigWithTransferHook: async () => { built++; throw new Error('tx built'); } } },
+    });
+    await assert.rejects(lp.launch(Keypair.generate(), { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n } as any), (e: any) => e instanceof AuthorityReadError, name);
+    assert.equal(built, 0, name);
+  }
+});

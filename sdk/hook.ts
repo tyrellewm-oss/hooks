@@ -196,9 +196,14 @@ export function parseGlobalAuthority(ai: AccountLike | null, programId: PublicKe
  *  program returns upgradeAuthority null + upgradeImmutable true, which the §12a rules treat as unknown off devnet. */
 export async function readHookAuthorities(conn: { getAccountInfo(pk: PublicKey, c?: any): Promise<AccountLike | null> }, programId: PublicKey): Promise<HookAuthorities> {
   const hc = new HookClient(programId);
-  const pdAddr = parseProgramAccount(await conn.getAccountInfo(programId, 'confirmed'), programId);
-  const pd = parseProgramDataAuthority(await conn.getAccountInfo(pdAddr, 'confirmed'));
-  const liftAuthority = parseGlobalAuthority(await conn.getAccountInfo(hc.globalPda(), 'confirmed'), programId);
+  // an RPC error is a read failure too (fail closed, same error type as a missing or malformed account)
+  const get = async (pk: PublicKey, what: string) => {
+    try { return await conn.getAccountInfo(pk, 'confirmed'); }
+    catch (e: any) { throw new AuthorityReadError(`RPC error reading the hook ${what} ${pk.toBase58()}: ${String(e?.message ?? e).slice(0, 200)}`); }
+  };
+  const pdAddr = parseProgramAccount(await get(programId, 'program account'), programId);
+  const pd = parseProgramDataAuthority(await get(pdAddr, 'ProgramData'));
+  const liftAuthority = parseGlobalAuthority(await get(hc.globalPda(), 'Global'), programId);
   return { upgradeAuthority: pd.upgradeAuthority, liftAuthority, upgradeImmutable: pd.immutable };
 }
 export interface MintConfigAcc { mint: PublicKey; launchSlot: bigint; supplyRef: bigint; steps: Step[]; uncappedAfter: bigint; exemptOwners: PublicKey[]; testSlotsBuild: boolean; launcher: PublicKey }
