@@ -1,0 +1,54 @@
+// Ticket 8.5b: the site serves registry mints only. The listing (/api/meta), /api/token/<mint> and /api/trade go
+// through siteRoute: one loadRegistry read per request (sdk/registry.ts, no second parser, nothing cached), shared by
+// every check in that request, and run before any local-record lookup, RPC call or `new PublicKey`. Matching is exact
+// (base58 string equality after one URL decode). An unknown or malformed mint is a 404, and so is a registered mint
+// with no local launch record (token and trade alike, with no chain call); an unreadable registry is a 503 for the
+// whole response. The site never writes keeper/registry.json; /api/create marks new mints unregistered.
+import { loadRegistry, REGISTRY_PATH } from '../sdk/registry.js';
+
+export const NOT_REGISTERED_NOTE = 'not registered: add to keeper/registry.json';
+export interface Reply { code: number; body: unknown }
+export interface SiteRecord { mint: string }
+export interface SiteDeps<R extends SiteRecord = SiteRecord> {
+  cluster: string;
+  registryPath?: string;
+  /** the registry loader; tests wrap it to count reads */
+  load?: (cluster: string, path?: string) => ReadonlySet<string>;
+  /** local launch records (launches/<cluster>/), in record order */
+  launches(): R[];
+  /** the /api/meta body around the filtered listing */
+  meta(listing: R[]): unknown | Promise<unknown>;
+  /** the token view; reads the chain */
+  token(mint: string): Promise<unknown>;
+  /** the trade; reads the chain and sends */
+  trade(body: any, rec: R): Promise<Reply>;
+}
+
+const NOT_FOUND: Reply = { code: 404, body: { error: 'unknown token' } };
+
+/** The reply for a site route that is registry-gated, or null for any other route (unchanged). */
+export async function siteRoute<R extends SiteRecord>(pathname: string, method: string, readBody: () => Promise<any>, d: SiteDeps<R>): Promise<Reply | null> {
+  const isMeta = pathname === '/api/meta', isToken = pathname.startsWith('/api/token/'), isTrade = pathname === '/api/trade' && method === 'POST';
+  if (!isMeta && !isToken && !isTrade) return null;
+  let reg: ReadonlySet<string>;
+  try { reg = (d.load ?? loadRegistry)(d.cluster, d.registryPath ?? REGISTRY_PATH); }
+  catch (e: any) { return { code: 503, body: { error: `mint registry unavailable: ${String(e?.message ?? e)}` } }; }   // the whole response; never an empty listing
+  if (isMeta) return { code: 200, body: await d.meta(d.launches().filter(l => reg.has(l.mint))) };   // registry ∩ local records, record order
+  if (isToken) {
+    let mint: string;
+    try { mint = decodeURIComponent(pathname.split('/')[3] ?? ''); } catch { return NOT_FOUND; }
+    if (!reg.has(mint)) return NOT_FOUND;
+    if (!d.launches().find(l => l.mint === mint)) return NOT_FOUND;   // registered but no local launch record: no chain call
+    return { code: 200, body: await d.token(mint) };
+  }
+  const b = await readBody();
+  const mint = b?.mint;
+  if (typeof mint !== 'string' || !reg.has(mint)) return NOT_FOUND;
+  const rec = d.launches().find(l => l.mint === mint); if (!rec) return NOT_FOUND;
+  return d.trade(b, rec);
+}
+
+/** /api/create success body: the new mint is not in the registry until someone adds it by hand. */
+export function createReply<T extends object>(rec: T): T & { registered: false; note: string } {
+  return { ...rec, registered: false, note: NOT_REGISTERED_NOTE };
+}

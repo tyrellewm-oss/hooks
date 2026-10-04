@@ -64,7 +64,10 @@ async function home() {
   m.addEventListener('input', preview); preview();
   $('#c-go').onclick = async () => {
     const s = parse(); $('#c-out').textContent = 'creating… (2 transactions)'; $('#c-go').disabled = true;
-    try { const r = await api('/api/create', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: $('#c-name').value, symbol: $('#c-sym').value, steps: s.steps.map((x) => ({ slotOffset: x.slotOffset.toString(), maxBps: x.maxBps })), uncappedAfter: s.uncappedAfter.toString(), thresholdSol: Number($('#c-thr').value) }) }); location.href = `/token/${r.mint}`; }
+    try { const r = await api('/api/create', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: $('#c-name').value, symbol: $('#c-sym').value, steps: s.steps.map((x) => ({ slotOffset: x.slotOffset.toString(), maxBps: x.maxBps })), uncappedAfter: s.uncappedAfter.toString(), thresholdSol: Number($('#c-thr').value) }) });
+      // 8.5b: the page shows registry mints only; a new mint stays off the page until it is added to keeper/registry.json
+      if (r.registered === false) { $('#c-out').innerHTML = `created <code>${esc(r.mint)}</code>: ${esc(r.note)}`; $('#c-go').disabled = false; return; }
+      location.href = `/token/${r.mint}`; }
     catch (e) { $('#c-out').innerHTML = `<span class="fail">${esc(e.message)}</span>`; $('#c-go').disabled = false; }
   };
 }
