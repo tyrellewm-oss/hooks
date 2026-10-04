@@ -10,7 +10,7 @@ import { Keypair, PublicKey, Transaction, TransactionInstruction } from '@solana
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import { DEVNET_GENESIS } from '../sdk/cluster.js';
 import { HOOK_PROGRAM_ID_DEVNET, DBC_PROGRAM_ID, DBC_POOL_AUTHORITY } from '../sdk/hook.js';
-import { MINT_HOOK_AUTHORITY_PINS, MintHookRefusal, mintHookAuthorityFor, readMintTransferHook, graduationPhase, mintHookProblems, sameMessageExceptBlockhash, DBC_INIT_POOL_T22_HOOK_DISC, decodeMintTransferHookBytes, decodeMintTransferHook } from '../sdk/mint_hook.js';
+import { MINT_HOOK_AUTHORITY_PINS, MintHookRefusal, mintHookAuthorityFor, readMintTransferHook, graduationPhase, mintHookProblems, sameMessageExceptBlockhash, DBC_INIT_POOL_T22_HOOK_DISC, decodeMintTransferHookBytes, decodeMintTransferHook, poolTxBaseMint } from '../sdk/mint_hook.js';
 import { Launchpad, mintHookFlag, DAMM_V2_MIGRATION_CONFIG } from '../sdk/launch.js';
 import { Keeper, FailClosed } from '../sdk/flywheel/keeper.js';
 import { fixtureMint, MINT_HOOK_FIXTURE as FX, TRANSFER_HOOK_OFFSET as OFF } from './mint_hook_fixture.js';
@@ -427,4 +427,29 @@ test('keeper pinned checks compare against the pinned resolver, not cfg.hook_pro
   await assert.rejects(unres.pinnedChecks(), (e: any) => e instanceof FailClosed && e.code === 'mismatch_mint_hook' && /cannot resolve the pinned hook program/.test(e.message));
   const testnet = keeperThis(V.pre(), 0); (testnet as any).conn.getGenesisHash = async () => '4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY';
   await assert.rejects(testnet.pinnedChecks(), (e: any) => e instanceof FailClosed && e.code === 'mismatch_mint_hook' && /cannot resolve the pinned hook program/.test(e.message));
+});
+
+// QA note: the create-pool tx must carry exactly one DBC create-pool instruction (poolTxBaseMint takes the mint from it).
+test('pre-send: a create-pool tx with 2 DBC create-pool instructions → refused before signing, 0 pool sends (also with a different mint in the second)', async () => {
+  for (const second of ['same', 'other mint'] as const) {
+    const L = launchLp(V.pre());
+    const build = L.lp.dbc.creator.createPoolWithTransferHook;
+    L.lp.dbc.creator.createPoolWithTransferHook = async (a: any) => {
+      const tx: Transaction = await build(a); const ix = tx.instructions[0];
+      tx.add(new TransactionInstruction({ programId: ix.programId, data: Buffer.from(ix.data), keys: ix.keys.map((k, i) => (i === 3 && second === 'other mint' ? { ...k, pubkey: pk() } : { ...k })) }));
+      return tx;
+    };
+    await refusedBeforeSigning(L, /has 2 DBC initialize_virtual_pool_with_token2022_transfer_hook instructions, expected 1/);
+    assert.equal(L.seen.events.filter(e => e === 'send:pool').length, 0, `${second}: the create-pool tx must not be sent`);
+    assert.equal(L.n.simulated, 0, `${second}: refused before the simulation`);
+  }
+});
+test('poolTxBaseMint: exactly one DBC create-pool instruction (0 or 2 refuse; other DBC instructions are ignored)', () => {
+  const mk = (mint: PublicKey, disc = DBC_INIT_POOL_T22_HOOK_DISC) => new TransactionInstruction({ programId: DBC_PROGRAM_ID, data: Buffer.concat([disc, Buffer.from('args')]), keys: [pk(), DBC_POOL_AUTHORITY, pk(), mint].map((pubkey, i) => ({ pubkey, isSigner: i === 2 || i === 3, isWritable: i === 3 })) });
+  const m = pk();
+  assert.equal(poolTxBaseMint(new Transaction().add(mk(m)), DBC_PROGRAM_ID).toBase58(), m.toBase58());
+  assert.equal(poolTxBaseMint(new Transaction().add(mk(pk(), Buffer.alloc(8, 7)), mk(m)), DBC_PROGRAM_ID).toBase58(), m.toBase58());
+  assert.throws(() => poolTxBaseMint(new Transaction().add(mk(m), mk(m)), DBC_PROGRAM_ID), refused(/has 2 DBC .* expected 1/));
+  assert.throws(() => poolTxBaseMint(new Transaction().add(mk(m), mk(pk())), DBC_PROGRAM_ID), refused(/has 2 DBC .* expected 1/));
+  assert.throws(() => poolTxBaseMint(new Transaction(), DBC_PROGRAM_ID), refused(/has 0 DBC .* expected 1/));
 });
