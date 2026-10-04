@@ -7,7 +7,8 @@ import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Keypair, PublicKey, Connection } from '@solana/web3.js';
-import { NATIVE_MINT, TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from '@solana/spl-token';
+import { NATIVE_MINT, TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, decodeTransferCheckedInstruction } from '@solana/spl-token';
+import { FailClosed } from '../sdk/flywheel/keeper.js';
 import { checkKeyConfig, loadConfig, KEEPER_KEY_ROLES, type KeeperConfig } from '../sdk/flywheel/config.js';
 import { startKeeper, preflightOffline, Keeper, initState, newRun, type KeySet } from '../sdk/flywheel/keeper.js';
 import { KeyRuleRefusal } from '../sdk/keyrules.js';
@@ -132,4 +133,34 @@ test('the dev payout goes to the configured pubkey: 15% transfer from treasury w
   assert.ok(ix.keys[2].pubkey.equals(getAssociatedTokenAddressSync(NATIVE_MINT, new PublicKey(dev), false, TOKEN_PROGRAM_ID)));   // dest: dev_payout wSOL
   assert.ok(ix.keys[3].pubkey.equals(L.ks.treasury.publicKey));                                                    // owner/signer: treasury
   assert.deepEqual(got.signers.map((x: Keypair) => x.publicKey.toBase58()), [L.ks.treasury.publicKey.toBase58()]);
+  // the amount actually in the TransferChecked data is the 15% intent (not just the recorded intent)
+  const d = decodeTransferCheckedInstruction(ix, TOKEN_PROGRAM_ID).data;
+  assert.equal(d.amount, 1_500_000n); assert.equal(d.decimals, 9);
+});
+
+/** Fake chain for the dev stage: the sent tx moves `devGot` into dev_payout wSOL and `-treasuryGot` out of treasury wSOL. */
+async function devStageOnChain(devGot: bigint, treasuryGot: bigint) {
+  const L = loader(); const dir = mkdtempSync(join(tmpdir(), 'fw-dev-chain-'));
+  const cfg = startable({ state_dir: join(dir, 'state'), public_log: join(dir, 'pub.json') });
+  const k = new Keeper(cfg, [], {} as Connection, L.ks, [], () => {});
+  (k as any).save = () => {}; (k as any).publish = () => {};
+  (k as any).sendStage = async (_s: any, run: any, stage: string, _ixs: any[], _signers: Keypair[], intent: any) => {
+    run.stages[stage] = { status: 'pending', sig: 'FakeDevSig', intent };
+    const acct = [L.ks.treasury.publicKey, k.tWsol, k.dWsol];
+    const bal = (t: bigint, d: bigint) => [{ accountIndex: 1, uiTokenAmount: { amount: t.toString() } }, { accountIndex: 2, uiTokenAmount: { amount: d.toString() } }];
+    return { slot: 1, blockTime: 1, transaction: { message: { accountKeys: acct.map(pubkey => ({ pubkey })), instructions: [] } },
+      meta: { err: null, fee: 5000, preTokenBalances: bal(10_000_000n, 0n), postTokenBalances: bal(10_000_000n + treasuryGot, devGot), preBalances: [0, 0, 0], postBalances: [0, 0, 0] } };
+  };
+  const s: any = initState(cfg); s.unsplit_lamports = '10000000';
+  const run: any = newRun('r', [], 'running', '');
+  return { run: () => (k as any).split(s, run), s, r: run };
+}
+test('dev stage reconcile: deltas equal to the 15% intent confirm; any other dev delta fails closed (reconcile_mismatch)', async () => {
+  const ok = await devStageOnChain(1_500_000n, -1_500_000n); await ok.run();
+  assert.equal(ok.s.totals.dev_lamports, '1500000'); assert.equal(ok.r.stages.dev.status, 'confirmed');
+  for (const [d, t] of [[1_400_000n, -1_400_000n], [1_600_000n, -1_600_000n], [1_500_000n, -1_600_000n], [0n, -1_500_000n]] as const) {
+    const bad = await devStageOnChain(d, t);
+    await assert.rejects(bad.run(), (e: any) => e instanceof FailClosed && e.code === 'reconcile_mismatch' && /dev transfer deltas/.test(e.message));
+    assert.equal(bad.s.totals.dev_lamports, '0');
+  }
 });
