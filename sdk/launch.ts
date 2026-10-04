@@ -166,7 +166,7 @@ export async function hookProgramFor(c: { connection: { getGenesisHash(): Promis
 /** Hook gate, run by every Launchpad method that builds a tx or reads hook state: resolve the hook program id for this
  *  cluster (HookProgramPinRefusal), refuse an explicit constructor id that differs, adopt it, then the cluster check
  *  that the program account is executable (ClusterCheckRefusal). */
-export async function gateHook(lp: { c: any; hook: HookClient; requestedHookProgram?: PublicKey }): Promise<void> {
+export async function gateHook(lp: { c: any; hook: HookClient; requestedHookProgram?: PublicKey }): Promise<HookProgramResolution> {
   const r = await hookProgramFor(lp.c);
   if (lp.requestedHookProgram && !lp.requestedHookProgram.equals(r.programId))
     throw new HookProgramPinRefusal(`refusing: Launchpad hook program ${lp.requestedHookProgram.toBase58()} differs from the resolved ${r.programId.toBase58()} (cluster class '${r.clusterClass}')`);
@@ -174,6 +174,7 @@ export async function gateHook(lp: { c: any; hook: HookClient; requestedHookProg
   lp.hook = new HookClient(r.programId);
   lp.c.hookProgram = r.programId;
   await assertClusterAccounts(lp.c.connection, { hookProgram: r.programId });
+  return r;
 }
 
 /** Hook program id for read-only tools (scripts/qa_schedule.ts): the same resolver and executable check as gateHook(). */
@@ -214,12 +215,13 @@ export class Launchpad {
 
   /** Partner config (transfer hook -> our program) + pool + hook config, by `deployer` (partner = creator = launcher in the beta). */
   async launch(deployer: Keypair, o: LaunchOpts): Promise<LaunchRecord> {
-    // §12a preflight (FW-24): feeClaimer (= deployer here) must differ from the hook upgrade and lift authorities.
-    // Throws off devnet/local before any tx is built; logs the accepted throwaway exception on devnet/local.
-    const auth = o.authorities ?? (await this.hookAuthorities());   // hookAuthorities() runs the hook gate first
-    for (const w of launchConfigChecks(this.c.name, deployer.publicKey.toBase58(), auth)) console.warn(w);
-    // hook gate: resolve the hook program id for this cluster (pinned by genesis) and check it is executable here
-    await gateHook(this);
+    // hook gate first (also when o.authorities is given): the hook program id pinned by genesis, executable here. Its
+    // genesis class (not the Cluster's name) decides warn-vs-refuse in the §12a checks below.
+    const gate = await gateHook(this);
+    // §12a preflight (FW-24): feeClaimer (= deployer here) must differ from the hook upgrade and lift authorities, and
+    // upgrade != lift. Throws off devnet/local (by genesis class) before any tx is built; warns on devnet/local.
+    const auth = o.authorities ?? (await this.hookAuthorities());
+    for (const w of launchConfigChecks(gate.clusterClass, deployer.publicKey.toBase58(), auth)) console.warn(w);
     const configKp = Keypair.generate();
     const mintKp = Keypair.generate();
     const txs: Record<string, string> = {};
