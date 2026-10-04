@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Keypair, PublicKey, Connection } from '@solana/web3.js';
 import { DEVNET_GENESIS } from '../sdk/cluster.js';
-import { DBC_PROGRAM_ID, DAMM_V2_PROGRAM_ID } from '../sdk/hook.js';
+import { DBC_PROGRAM_ID, DAMM_V2_PROGRAM_ID, HOOK_PROGRAM_ID_DEVNET } from '../sdk/hook.js';
 import { checkHookProgram, checkDbcConfig, checkDammV2Config, assertClusterAccounts, ClusterCheckRefusal } from '../sdk/cluster_check.js';
 import { Launchpad, DAMM_V2_MIGRATION_CONFIG } from '../sdk/launch.js';
 import { startKeeper } from '../sdk/flywheel/keeper.js';
@@ -90,7 +90,7 @@ function fakeLaunchpad(accts: Map<string, Info>, poolConfig: PublicKey, hook: Pu
   };
 }
 test('migrate(): each of the three checks refuses before migrateToDammV2 builds a tx; all good reaches the build', async () => {
-  const hook = pk(), poolCfg = pk(), damm = new PublicKey(DAMM_V2_MIGRATION_CONFIG.devnet);
+  const hook = new PublicKey(HOOK_PROGRAM_ID_DEVNET), poolCfg = pk(), damm = new PublicKey(DAMM_V2_MIGRATION_CONFIG.devnet);   // devnet genesis → pinned hook id
   const good = () => new Map<string, Info>([[hook.toBase58(), program()], [poolCfg.toBase58(), dbcConfig()], [damm.toBase58(), dammConfig()]]);
   const saved = process.env.DAMM_V2_MIGRATION_CONFIG; delete process.env.DAMM_V2_MIGRATION_CONFIG;
   try {
@@ -113,7 +113,7 @@ test('migrate(): each of the three checks refuses before migrateToDammV2 builds 
 });
 
 test('launch(): a non-executable hook program refuses before create_config is built', async () => {
-  const hook = pk(); const n = { built: 0 };
+  const hook = new PublicKey(HOOK_PROGRAM_ID_DEVNET); const n = { built: 0 };
   const authorities = { upgradeAuthority: pk().toBase58(), liftAuthority: pk().toBase58() };
   const lp = fakeLaunchpad(new Map([[hook.toBase58(), { ...program(), executable: false }]]), pk(), hook, n);
   await assert.rejects(Launchpad.prototype.launch.call(lp as any, Keypair.generate(), { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities } as any), refused(/not executable/));

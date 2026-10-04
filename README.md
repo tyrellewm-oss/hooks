@@ -76,7 +76,7 @@ Environment variables (names only; all optional):
 |---|---|---|
 | `DEVNET_RPC` | `sdk/cluster.ts`, `tests/env.ts` | devnet RPC override (anything containing "mainnet" is refused; the genesis hash must be devnet's) |
 | `LOCAL_RPC` | `sdk/cluster.ts`, `tests/env.ts` | local validator RPC override |
-| `HOOK_PROGRAM_ID` | `sdk/hook.ts` | hook program id override |
+| `HOOK_PROGRAM_ID` | `sdk/hook.ts` | hook program id override: allowed on devnet and on a local validator (localhost RPC URL + a genesis that is not devnet/mainnet/testnet), where it is required; refused on any other cluster (genesis-pinned, no fallback to the devnet id) |
 | `HOOK_SO`, `HOOK_TEST_SLOTS_SO` | `tests/env.ts`, `scripts/local_validator.sh` | paths to the release / test-slots `.so` |
 | `PORT` | `app/server.ts` | launch page port (default 5175) |
 | `PAGE_URL`, `CHROME`, `MINT` | `tests/e2e/page.e2e.ts` | e2e page URL, headless Chrome path, existing mint to test |
@@ -159,7 +159,7 @@ node --import tsx scripts/dbc_flow.ts demo --cluster devnet --threshold 0.2 --wa
 node --import tsx scripts/dbc_flow.ts lift-demo --cluster devnet
 pnpm qa-schedule <mint> --cluster devnet
 ```
-- Env vars: `DEVNET_RPC` (optional devnet RPC override; anything containing "mainnet" is refused, and the genesis hash must be devnet's), `HOOK_PROGRAM_ID` (optional override), `CHROME` (e2e browser path).
+- Env vars: `DEVNET_RPC` (optional devnet RPC override; anything containing "mainnet" is refused, and the genesis hash must be devnet's), `HOOK_PROGRAM_ID` (override; devnet or a local validator only, required for a local validator), `CHROME` (e2e browser path).
 - Cost estimate: about 2.8 SOL of rent for the 393 KB program plus about 0.5–1 SOL for the demos (estimate). All devnet SOL, no real value.
 - Every devnet tx is appended to `txlog/devnet.jsonl` (local, gitignored) with its explorer link (`?cluster=devnet`), ICT time and purpose.
 

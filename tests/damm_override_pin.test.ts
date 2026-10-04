@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Keypair, Connection } from '@solana/web3.js';
 import { DEVNET_GENESIS, MAINNET_GENESIS, TESTNET_GENESIS, classifyCluster, isLocalhostRpc } from '../sdk/cluster.js';
-import { DBC_PROGRAM_ID, DAMM_V2_PROGRAM_ID } from '../sdk/hook.js';
+import { DBC_PROGRAM_ID, DAMM_V2_PROGRAM_ID, HOOK_PROGRAM_ID_DEVNET } from '../sdk/hook.js';
+import { PublicKey } from '@solana/web3.js';
 import { ClusterCheckRefusal } from '../sdk/cluster_check.js';
 import { startKeeper } from '../sdk/flywheel/keeper.js';
 import { KeyRuleRefusal } from '../sdk/keyrules.js';
@@ -55,7 +56,7 @@ test('Launchpad.migrate on devnet genesis with an override → builds the migrat
   const prev = process.env.DAMM_V2_MIGRATION_CONFIG; const x = other(); process.env.DAMM_V2_MIGRATION_CONFIG = x;
   try {
     // accounts that pass the cluster check: hook executable, pool config owned by DBC, override owned by DAMM v2
-    const hook = Keypair.generate().publicKey, poolCfg = Keypair.generate().publicKey;
+    const hook = new PublicKey(HOOK_PROGRAM_ID_DEVNET), poolCfg = Keypair.generate().publicKey;
     const accts = new Map<string, any>([[hook.toBase58(), { owner: hook, executable: true }], [poolCfg.toBase58(), { owner: DBC_PROGRAM_ID, executable: false }], [x, { owner: DAMM_V2_PROGRAM_ID, executable: false }]]);
     let usedConfig = ''; const connection: any = { getGenesisHash: async () => DEVNET_GENESIS, getAccountInfo: async (k: any) => accts.get(k.toBase58()) ?? null, getLatestBlockhash: async () => { throw new Error('stop before send'); } };
     const fake: any = { c: { name: 'devnet', connection }, hook: { programId: hook }, dbc: { state: { getPool: async () => ({ config: poolCfg }) }, migration: { migrateToDammV2: async (a: any) => { usedConfig = a.dammConfig.toBase58(); return { transaction: {}, firstPositionNftKeypair: Keypair.generate(), secondPositionNftKeypair: Keypair.generate() }; } } } };
@@ -69,12 +70,12 @@ test('accepted override → tx log note "overrides: DAMM_V2_MIGRATION_CONFIG=<va
   const { mkdtempSync, readFileSync, existsSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
-  const { Transaction, TransactionInstruction, PublicKey } = await import('@solana/web3.js');
+  const { Transaction, TransactionInstruction } = await import('@solana/web3.js');
   const tracked = txlogFile('devnet', {});
   const trackedBefore = existsSync(tracked) ? readFileSync(tracked) : null;
   const dir = mkdtempSync(join(tmpdir(), 'txlog-'));
   const savedDir = process.env.TXLOG_DIR, savedOv = process.env.DAMM_V2_MIGRATION_CONFIG;
-  const ov = other(), hook = other(), poolCfg = other();
+  const ov = other(), hook = HOOK_PROGRAM_ID_DEVNET, poolCfg = other();
   const accts = new Map<string, any>([[hook, { owner: new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111'), executable: true }], [poolCfg, { owner: DBC_PROGRAM_ID, executable: false }], [ov, { owner: DAMM_V2_PROGRAM_ID, executable: false }]]);
   const conn = {
     getGenesisHash: async () => DEVNET_GENESIS,
@@ -119,7 +120,6 @@ test('accepted override → tx log note "overrides: DAMM_V2_MIGRATION_CONFIG=<va
 
 // Fail closed on a genesis read error: no fallback to devnet (or any default), no pool read, no tx built.
 test('getGenesisHash rejects → migrate() refuses with 0 tx builds (no fallback to devnet)', async () => {
-  const { PublicKey } = await import('@solana/web3.js');
   const prev = process.env.DAMM_V2_MIGRATION_CONFIG;
   // Every other account would pass the cluster check, so a fallback-to-devnet mutation would reach the build.
   const hook = Keypair.generate().publicKey, poolCfg = Keypair.generate().publicKey, damm = new PublicKey(DAMM_V2_MIGRATION_CONFIG.devnet);
@@ -169,17 +169,21 @@ test('DAMM pin matrix: non-localhost + unknown genesis → refused, with or with
 });
 test('migrate() via a cluster object: localhost URL + unknown genesis accepts the override; same genesis on a remote URL refuses before any build', async () => {
   const prev = process.env.DAMM_V2_MIGRATION_CONFIG; const x = other(); process.env.DAMM_V2_MIGRATION_CONFIG = x;
+  const prevHook = process.env.HOOK_PROGRAM_ID; const localHook = Keypair.generate().publicKey; process.env.HOOK_PROGRAM_ID = localHook.toBase58();   // local needs it
   try {
     for (const [url, ok] of [['http://127.0.0.1:8899', true], ['https://rpc.example.com', false]] as const) {
       let usedConfig = '', built = 0;
       const connection: any = { getGenesisHash: async () => LOCAL_GENESIS, getAccountInfo: async () => { throw new Error('stop at cluster check'); } };
-      const fake: any = { c: { name: 'local', url, connection }, hook: { programId: Keypair.generate().publicKey }, dbc: { state: { getPool: async () => ({ config: Keypair.generate().publicKey }) }, migration: { migrateToDammV2: async (a: any) => { built++; usedConfig = a.dammConfig.toBase58(); return {}; } } } };
+      const fake: any = { c: { name: 'local', url, connection }, hook: { programId: localHook }, dbc: { state: { getPool: async () => ({ config: Keypair.generate().publicKey }) }, migration: { migrateToDammV2: async (a: any) => { built++; usedConfig = a.dammConfig.toBase58(); return {}; } } } };
       // ok: resolution passed and the next gate (the cluster check) is what stops it
       if (ok) await assert.rejects(Launchpad.prototype.migrate.call(fake, Keypair.generate(), Keypair.generate().publicKey), (e: any) => e instanceof ClusterCheckRefusal && /stop at cluster check/.test(e.message));
       else await assert.rejects(Launchpad.prototype.migrate.call(fake, Keypair.generate(), Keypair.generate().publicKey), (e: any) => e instanceof ConfigPinRefusal && /class 'unknown'/.test(e.message));
       assert.equal(built, 0); void usedConfig;
     }
-  } finally { if (prev === undefined) delete process.env.DAMM_V2_MIGRATION_CONFIG; else process.env.DAMM_V2_MIGRATION_CONFIG = prev; }
+  } finally {
+    if (prev === undefined) delete process.env.DAMM_V2_MIGRATION_CONFIG; else process.env.DAMM_V2_MIGRATION_CONFIG = prev;
+    if (prevHook === undefined) delete process.env.HOOK_PROGRAM_ID; else process.env.HOOK_PROGRAM_ID = prevHook;
+  }
 });
 
 test('keeper on cluster "local": needs localhost URL + unknown genesis; remote URL or a known genesis is refused', async () => {

@@ -1,5 +1,5 @@
 // Cluster resolution with hard guards: only LOCAL (default) or DEVNET. There is no mainnet code path.
-import { Connection } from '@solana/web3.js';
+import { Connection, type PublicKey } from '@solana/web3.js';
 export const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 export const MAINNET_GENESIS = '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d';
 export const TESTNET_GENESIS = '4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY';
@@ -20,7 +20,7 @@ export function classifyCluster(genesis: string, url?: string): ClusterClass {
 export const DEVNET_RPC_DEFAULT = 'https://solana-devnet.api.onfinality.io/public';
 export const LOCAL_RPC_DEFAULT = 'http://127.0.0.1:8899';
 export type ClusterName = 'local' | 'devnet';
-export interface Cluster { name: ClusterName; url: string; label: 'LOCAL' | 'DEVNET'; connection: Connection }
+export interface Cluster { name: ClusterName; url: string; label: 'LOCAL' | 'DEVNET'; connection: Connection; /** set by the hook gate; used for log attribution */ hookProgram?: PublicKey }
 
 export function assertNotMainnet(url: string) {
   if (/mainnet/i.test(url)) throw new Error(`refusing mainnet-looking RPC URL: ${url}`);

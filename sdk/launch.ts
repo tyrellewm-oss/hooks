@@ -8,7 +8,7 @@ import {
 } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { HookClient, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
+import { HookClient, DEFAULT_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
 import { type Cluster, type ClusterName, type ClusterClass, explorerTx, nowIct, classifyCluster } from './cluster.js';
 import { launchConfigChecks, type Authorities } from './keyrules.js';
@@ -81,11 +81,11 @@ export async function sendTx(c: Cluster, tx: Transaction, signers: Keypair[], pu
     for (let i = 0; i < 10 && !info; i++) { info = await c.connection.getTransaction(sig, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 }); if (!info) await new Promise(r => setTimeout(r, 800)); }
     const logs = info?.meta?.logMessages ?? [];
     const ok = !info?.meta?.err;
-    rec = { time: nowIct(), cluster: c.name, label: c.label, purpose, sig, ok, err: ok ? undefined : JSON.stringify(info?.meta?.err), hookError: hookErrorFromLogs(logs), hookCode: hookCodeFromLogs(logs), link: explorerTx(sig, c.name), capHit: capHitDetails(logs) ?? undefined, events: parseRestrictionsLifted(logs).map(e => ({ ...e, mint: e.mint.toBase58(), signer: e.signer.toBase58(), slot: e.slot.toString() })), note };
+    rec = { time: nowIct(), cluster: c.name, label: c.label, purpose, sig, ok, err: ok ? undefined : JSON.stringify(info?.meta?.err), hookError: hookErrorFromLogs(logs, c.hookProgram), hookCode: hookCodeFromLogs(logs, c.hookProgram), link: explorerTx(sig, c.name), capHit: capHitDetails(logs) ?? undefined, events: parseRestrictionsLifted(logs).map(e => ({ ...e, mint: e.mint.toBase58(), signer: e.signer.toBase58(), slot: e.slot.toString() })), note };
     (rec as any).logs = logs;
   } catch (e: any) {
     const logs = e instanceof SendTransactionError ? (e.logs ?? []) : [];
-    rec = { time: nowIct(), cluster: c.name, label: c.label, purpose, sig, ok: false, err: String(e?.message ?? e).slice(0, 500), hookError: hookErrorFromLogs(logs), hookCode: hookCodeFromLogs(logs), link: sig ? explorerTx(sig, c.name) : '', note };
+    rec = { time: nowIct(), cluster: c.name, label: c.label, purpose, sig, ok: false, err: String(e?.message ?? e).slice(0, 500), hookError: hookErrorFromLogs(logs, c.hookProgram), hookCode: hookCodeFromLogs(logs, c.hookProgram), link: sig ? explorerTx(sig, c.name) : '', note };
   }
   const file = txlogFile(c.name);
   mkdirSync(dirname(file), { recursive: true });
@@ -148,15 +148,39 @@ export function curveConfigParams(o: Partial<LaunchOpts>) {
   } as any);
 }
 
+/** Hook program id for a connected cluster (one genesis read; an RPC error refuses, never falls back). */
+export async function hookProgramFor(c: { connection: { getGenesisHash(): Promise<string> }; url?: string }, env: NodeJS.ProcessEnv = process.env): Promise<HookProgramResolution> {
+  let genesis: string;
+  try { genesis = await c.connection.getGenesisHash(); }
+  catch (e: any) { throw new HookProgramPinRefusal(`refusing: cannot read the genesis hash to pin HOOK_PROGRAM_ID (${String(e?.message ?? e).slice(0, 200)})`); }
+  return resolveHookProgramId(genesis, c.url, env);
+}
+/** Hook gate, run by every Launchpad method that builds a tx or reads hook state: resolve the hook program id for this
+ *  cluster (HookProgramPinRefusal), refuse an explicit constructor id that differs, adopt it, then the cluster check
+ *  that the program account is executable (ClusterCheckRefusal). */
+export async function gateHook(lp: { c: any; hook: HookClient; requestedHookProgram?: PublicKey }): Promise<void> {
+  const r = await hookProgramFor(lp.c);
+  if (lp.requestedHookProgram && !lp.requestedHookProgram.equals(r.programId))
+    throw new HookProgramPinRefusal(`refusing: Launchpad hook program ${lp.requestedHookProgram.toBase58()} differs from the resolved ${r.programId.toBase58()} (cluster class '${r.clusterClass}')`);
+  if (r.override) console.warn(`overrides: HOOK_PROGRAM_ID=${r.override}`);
+  lp.hook = new HookClient(r.programId);
+  lp.c.hookProgram = r.programId;
+  await assertClusterAccounts(lp.c.connection, { hookProgram: r.programId });
+}
+
 export class Launchpad {
   dbc: DynamicBondingCurveClient;
   hook: HookClient;
+  /** Explicit id from the constructor, if any; the hook gate refuses when it differs from the cluster's resolved id. */
+  requestedHookProgram?: PublicKey;
   constructor(public c: Cluster, programId?: PublicKey) {
     this.dbc = new DynamicBondingCurveClient(c.connection, 'confirmed');
-    this.hook = new HookClient(programId);
+    this.requestedHookProgram = programId;
+    this.hook = new HookClient(programId ?? DEFAULT_PROGRAM_ID);   // placeholder until gateHook() resolves it per cluster
   }
 
   async ensureGlobal(upgradeAuthority: Keypair, liftAuthority: PublicKey) {
+    await gateHook(this);
     const acc = await this.c.connection.getAccountInfo(this.hook.globalPda());
     if (acc) return decodeGlobal(acc.data);
     const r = await sendTx(this.c, new Transaction().add(this.hook.initializeGlobal(upgradeAuthority.publicKey, liftAuthority)), [upgradeAuthority], 'hook: initialize_global (set lift authority)');
@@ -168,6 +192,7 @@ export class Launchpad {
 
   /** Hook upgrade authority (from ProgramData) and lift authority (Global PDA). null when unreadable. */
   async hookAuthorities(): Promise<Authorities> {
+    await gateHook(this);
     let upgradeAuthority: string | null = null, liftAuthority: string | null = null;
     const prog = await this.c.connection.getAccountInfo(this.hook.programId);
     if (prog && prog.data.length >= 36) {
@@ -183,10 +208,10 @@ export class Launchpad {
   async launch(deployer: Keypair, o: LaunchOpts): Promise<LaunchRecord> {
     // §12a preflight (FW-24): feeClaimer (= deployer here) must differ from the hook upgrade and lift authorities.
     // Throws off devnet/local before any tx is built; logs the accepted throwaway exception on devnet/local.
-    const auth = o.authorities ?? (await this.hookAuthorities());
+    const auth = o.authorities ?? (await this.hookAuthorities());   // hookAuthorities() runs the hook gate first
     for (const w of launchConfigChecks(this.c.name, deployer.publicKey.toBase58(), auth)) console.warn(w);
-    // cluster check: the hook program the new config points at must be an executable account on this cluster
-    await assertClusterAccounts(this.c.connection, { hookProgram: this.hook.programId });
+    // hook gate: resolve the hook program id for this cluster (pinned by genesis) and check it is executable here
+    await gateHook(this);
     const configKp = Keypair.generate();
     const mintKp = Keypair.generate();
     const txs: Record<string, string> = {};
@@ -222,6 +247,7 @@ export class Launchpad {
 
   /** Buy exactly `tokens` (base units) or sell `tokens` (base units) via swap2_with_transfer_hook. */
   async swap(owner: Keypair, pool: PublicKey, side: 'buy' | 'sell', tokens: bigint, purpose?: string, maxSolIn?: bigint) {
+    await gateHook(this);
     if (maxSolIn === undefined) { // SDK wraps maximumAmountIn into wSOL up front, so bound it by the wallet balance
       const bal = BigInt(await this.c.connection.getBalance(owner.publicKey));
       maxSolIn = bal > 30_000_000n ? bal - 30_000_000n : 1n; if (maxSolIn > 2_000_000_000n) maxSolIn = 2_000_000_000n;
@@ -235,6 +261,7 @@ export class Launchpad {
   }
   /** Buy with exact SOL in (used to fill the curve). */
   async buyExactIn(owner: Keypair, pool: PublicKey, lamportsIn: bigint, purpose: string) {
+    await gateHook(this);
     const tx = await this.dbc.pool.swap2WithTransferHook({ owner: owner.publicKey, pool, swapBaseForQuote: false, referralTokenAccount: null, swapMode: SwapMode.PartialFill, amountIn: new BN(lamportsIn.toString()), minimumAmountOut: new BN(0) } as any);
     tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
     return sendTx(this.c, tx, [owner], purpose);
@@ -242,14 +269,16 @@ export class Launchpad {
 
   async migrate(payer: Keypair, pool: PublicKey) {
     const damm = await dammV2MigrationConfigFor(this.c);   // throws ConfigPinRefusal before any tx is built
-    // cluster check (throws ClusterCheckRefusal before any tx is built): the pool's DBC config, the DAMM v2 migration
-    // config and the hook program (Token-2022 invokes it on the migration transfers) must match this cluster.
+    // hook gate (Token-2022 invokes the hook on the migration transfers): pinned id for this cluster, executable here
+    await gateHook(this);
+    // cluster check (throws ClusterCheckRefusal before any tx is built): the pool's DBC config and the DAMM v2 migration
+    // config must be owned by their programs on this cluster.
     let st: any;
     try { st = await this.dbc.state.getPool(pool); }
     catch (e: any) { throw new ClusterCheckRefusal(`refusing: cluster check could not read DBC pool ${pool.toBase58()} (RPC error: ${String(e?.message ?? e).slice(0, 200)})`); }
     const ps = st?.poolState ?? st;
     if (!ps?.config) throw new ClusterCheckRefusal(`refusing: DBC pool ${pool.toBase58()} does not exist on this cluster`);
-    await assertClusterAccounts(this.c.connection, { hookProgram: this.hook.programId, dbcConfigs: [new PublicKey(ps.config)], dammV2Config: damm.config });
+    await assertClusterAccounts(this.c.connection, { dbcConfigs: [new PublicKey(ps.config)], dammV2Config: damm.config });
     const { transaction, firstPositionNftKeypair, secondPositionNftKeypair } = await this.dbc.migration.migrateToDammV2({ payer: payer.publicKey, pool, dammConfig: damm.config });
     return sendTx(this.c, transaction, [payer, firstPositionNftKeypair, secondPositionNftKeypair], 'dbc: migration_damm_v2 (graduation)',
       damm.override ? `overrides: DAMM_V2_MIGRATION_CONFIG=${damm.override}` : undefined);
@@ -262,6 +291,7 @@ export class Launchpad {
   }
 
   async status(mint: PublicKey, wallet?: PublicKey) {
+    await gateHook(this);
     const conn = this.c.connection;
     const [cfgAcc, liftAcc, globalAcc, slot] = await Promise.all([
       conn.getAccountInfo(this.hook.configPda(mint)), conn.getAccountInfo(this.hook.liftPda(mint)), conn.getAccountInfo(this.hook.globalPda()), conn.getSlot('confirmed'),
