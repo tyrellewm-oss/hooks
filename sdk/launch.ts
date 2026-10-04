@@ -7,20 +7,66 @@ import {
   MigrationFeeOption, TokenAuthorityOption, TokenDecimal, TokenType, SwapMode,
 } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
-import { HookClient, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
+import { dirname, join } from 'node:path';
+import { HookClient, DEFAULT_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
-import { type Cluster, type ClusterName, explorerTx, nowIct } from './cluster.js';
+import { type Cluster, type ClusterName, type ClusterClass, explorerTx, nowIct, classifyCluster } from './cluster.js';
 import { launchConfigChecks, type Authorities } from './keyrules.js';
+import { assertClusterAccounts, ClusterCheckRefusal } from './cluster_check.js';
 
-/** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()). Env DAMM_V2_MIGRATION_CONFIG overrides. */
+/** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()).
+ *  Primary source for the pin: Meteora DBC repo README at commit f552f20 (2026-09-09), section "Damm v2":
+ *  `migration_fee_option == 0: 7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd` (option 0 = FixedBps25, base_fee_bps == 25,
+ *  the default migrationFeeOption in DEFAULT_LAUNCH_FEES). The flat/Customizable option 6 would instead be
+ *  A8gMrEPJkacWkcb3DGwtJwTe16HktSEfvwtuDh2MCtck, so it is not used here. The pinned account was checked on mainnet:
+ *  owned by the DAMM v2 program, non-executable, 328 bytes. Same address on every cluster (the local validator clones
+ *  the devnet account). The env override `DAMM_V2_MIGRATION_CONFIG` is a test knob, gated by the genesis-based class
+ *  (classifyCluster): devnet → any valid override; local (localhost URL + unknown genesis) → any valid override;
+ *  mainnet/testnet → the override must equal that class's pin, and a class without a pin refuses; unknown → refuse.
+ *  Resolution happens before any migration tx is built. */
 export const DAMM_V2_MIGRATION_CONFIG: Record<ClusterName, string> = {
   devnet: '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd',
-  local: '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd', // local validator clones the devnet account
+  local: '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd', // scripts/local_validator.sh clones this account from devnet
 };
-export const dammV2MigrationConfig = (c: ClusterName) => new PublicKey(process.env.DAMM_V2_MIGRATION_CONFIG ?? DAMM_V2_MIGRATION_CONFIG[c]);
+export const DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN = '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd';
+/** Per-class pins. null = no pinned value: resolution on that class refuses (with or without an override). */
+export const DAMM_V2_MIGRATION_CONFIG_PINS: Record<ClusterClass, string | null> = {
+  devnet: DAMM_V2_MIGRATION_CONFIG.devnet, mainnet: DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN, testnet: null,
+  local: DAMM_V2_MIGRATION_CONFIG.local, unknown: null,
+};
+export class ConfigPinRefusal extends Error {}
+export interface DammConfigResolution { config: PublicKey; override: string | null; clusterByGenesis: ClusterClass }
+/** Resolve the migration DAMM v2 config from the RPC's genesis hash (+ the RPC URL, only to recognise a local validator).
+ *  The cluster name is not used for the decision. Throws ConfigPinRefusal. */
+export function resolveDammV2MigrationConfig(genesis: string, _name: ClusterName, env: NodeJS.ProcessEnv = process.env, url?: string): DammConfigResolution {
+  const cls = classifyCluster(genesis, url);
+  const raw = env.DAMM_V2_MIGRATION_CONFIG;
+  const override = raw !== undefined && raw !== '' ? raw : null;
+  const pinned = DAMM_V2_MIGRATION_CONFIG_PINS[cls];
+  const overridable = cls === 'devnet' || cls === 'local';
+  if (override === null) {
+    if (pinned === null) throw new ConfigPinRefusal(`refusing: no pinned DAMM_V2_MIGRATION_CONFIG for cluster class '${cls}' (genesis ${genesis})`);
+    return { config: new PublicKey(pinned), override: null, clusterByGenesis: cls };
+  }
+  if (!overridable && (pinned === null || override !== pinned))
+    throw new ConfigPinRefusal(`refusing DAMM_V2_MIGRATION_CONFIG override ${override} on a non-devnet cluster (class '${cls}', genesis ${genesis}): ${pinned === null ? 'no pinned value, so no override is allowed' : `only the pinned value ${pinned} is allowed`}`);
+  let pk: PublicKey; try { pk = new PublicKey(override); } catch { throw new ConfigPinRefusal(`DAMM_V2_MIGRATION_CONFIG override is not a valid address: ${override}`); }
+  return { config: pk, override, clusterByGenesis: cls };
+}
+/** Same resolution for a connected cluster (one genesis read). */
+export async function dammV2MigrationConfigFor(c: Pick<Cluster, 'name' | 'connection'> & { url?: string }, env: NodeJS.ProcessEnv = process.env): Promise<DammConfigResolution> {
+  let genesis: string;
+  try { genesis = await c.connection.getGenesisHash(); }   // fail closed: an RPC error never falls back to a default cluster
+  catch (e: any) { throw new ConfigPinRefusal(`refusing: cannot read the genesis hash to pin DAMM_V2_MIGRATION_CONFIG (${String(e?.message ?? e).slice(0, 200)})`); }
+  return resolveDammV2MigrationConfig(genesis, c.name, env, c.url);
+}
 
 export interface TxRecord { time: string; cluster: string; label: string; purpose: string; sig: string; ok: boolean; err?: string; hookError?: string | null; hookCode?: number | null; link: string; capHit?: any; events?: any[]; note?: string }
 
+/** Tx log file for a cluster: `<cluster>.jsonl` in the default tx log dir; `TXLOG_DIR` redirects it (tests write to a temp dir). */
+export function txlogFile(cluster: string, env: NodeJS.ProcessEnv = process.env): string {
+  return join(env.TXLOG_DIR || 'txlog', `${cluster}.jsonl`);
+}
 export async function sendTx(c: Cluster, tx: Transaction, signers: Keypair[], purpose: string, note?: string): Promise<TxRecord> {
   const { blockhash, lastValidBlockHeight } = await c.connection.getLatestBlockhash('confirmed');
   tx.recentBlockhash = blockhash; tx.feePayer = signers[0].publicKey;
@@ -35,15 +81,16 @@ export async function sendTx(c: Cluster, tx: Transaction, signers: Keypair[], pu
     for (let i = 0; i < 10 && !info; i++) { info = await c.connection.getTransaction(sig, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 }); if (!info) await new Promise(r => setTimeout(r, 800)); }
     const logs = info?.meta?.logMessages ?? [];
     const ok = !info?.meta?.err;
-    rec = { time: nowIct(), cluster: c.name, label: c.label, purpose, sig, ok, err: ok ? undefined : JSON.stringify(info?.meta?.err), hookError: hookErrorFromLogs(logs), hookCode: hookCodeFromLogs(logs), link: explorerTx(sig, c.name), capHit: capHitDetails(logs) ?? undefined, events: parseRestrictionsLifted(logs).map(e => ({ ...e, mint: e.mint.toBase58(), signer: e.signer.toBase58(), slot: e.slot.toString() })), note };
+    rec = { time: nowIct(), cluster: c.name, label: c.label, purpose, sig, ok, err: ok ? undefined : JSON.stringify(info?.meta?.err), hookError: hookErrorFromLogs(logs, c.hookProgram), hookCode: hookCodeFromLogs(logs, c.hookProgram), link: explorerTx(sig, c.name), capHit: capHitDetails(logs) ?? undefined, events: parseRestrictionsLifted(logs).map(e => ({ ...e, mint: e.mint.toBase58(), signer: e.signer.toBase58(), slot: e.slot.toString() })), note };
     (rec as any).logs = logs;
   } catch (e: any) {
     const logs = e instanceof SendTransactionError ? (e.logs ?? []) : [];
-    rec = { time: nowIct(), cluster: c.name, label: c.label, purpose, sig, ok: false, err: String(e?.message ?? e).slice(0, 500), hookError: hookErrorFromLogs(logs), hookCode: hookCodeFromLogs(logs), link: sig ? explorerTx(sig, c.name) : '', note };
+    rec = { time: nowIct(), cluster: c.name, label: c.label, purpose, sig, ok: false, err: String(e?.message ?? e).slice(0, 500), hookError: hookErrorFromLogs(logs, c.hookProgram), hookCode: hookCodeFromLogs(logs, c.hookProgram), link: sig ? explorerTx(sig, c.name) : '', note };
   }
-  mkdirSync('txlog', { recursive: true });
+  const file = txlogFile(c.name);
+  mkdirSync(dirname(file), { recursive: true });
   const { logs, ...slim } = rec as any;
-  appendFileSync(`txlog/${c.name}.jsonl`, JSON.stringify(slim, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) + '\n');
+  appendFileSync(file, JSON.stringify(slim, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) + '\n');
   console.log(`[${c.label}] ${rec.ok ? 'OK  ' : 'FAIL'} ${purpose} ${rec.hookError ? '(' + rec.hookError + ')' : ''} ${rec.link || rec.err}`);
   return rec;
 }
@@ -101,15 +148,39 @@ export function curveConfigParams(o: Partial<LaunchOpts>) {
   } as any);
 }
 
+/** Hook program id for a connected cluster (one genesis read; an RPC error refuses, never falls back). */
+export async function hookProgramFor(c: { connection: { getGenesisHash(): Promise<string> }; url?: string }, env: NodeJS.ProcessEnv = process.env): Promise<HookProgramResolution> {
+  let genesis: string;
+  try { genesis = await c.connection.getGenesisHash(); }
+  catch (e: any) { throw new HookProgramPinRefusal(`refusing: cannot read the genesis hash to pin HOOK_PROGRAM_ID (${String(e?.message ?? e).slice(0, 200)})`); }
+  return resolveHookProgramId(genesis, c.url, env);
+}
+/** Hook gate, run by every Launchpad method that builds a tx or reads hook state: resolve the hook program id for this
+ *  cluster (HookProgramPinRefusal), refuse an explicit constructor id that differs, adopt it, then the cluster check
+ *  that the program account is executable (ClusterCheckRefusal). */
+export async function gateHook(lp: { c: any; hook: HookClient; requestedHookProgram?: PublicKey }): Promise<void> {
+  const r = await hookProgramFor(lp.c);
+  if (lp.requestedHookProgram && !lp.requestedHookProgram.equals(r.programId))
+    throw new HookProgramPinRefusal(`refusing: Launchpad hook program ${lp.requestedHookProgram.toBase58()} differs from the resolved ${r.programId.toBase58()} (cluster class '${r.clusterClass}')`);
+  if (r.override) console.warn(`overrides: HOOK_PROGRAM_ID=${r.override}`);
+  lp.hook = new HookClient(r.programId);
+  lp.c.hookProgram = r.programId;
+  await assertClusterAccounts(lp.c.connection, { hookProgram: r.programId });
+}
+
 export class Launchpad {
   dbc: DynamicBondingCurveClient;
   hook: HookClient;
+  /** Explicit id from the constructor, if any; the hook gate refuses when it differs from the cluster's resolved id. */
+  requestedHookProgram?: PublicKey;
   constructor(public c: Cluster, programId?: PublicKey) {
     this.dbc = new DynamicBondingCurveClient(c.connection, 'confirmed');
-    this.hook = new HookClient(programId);
+    this.requestedHookProgram = programId;
+    this.hook = new HookClient(programId ?? DEFAULT_PROGRAM_ID);   // placeholder until gateHook() resolves it per cluster
   }
 
   async ensureGlobal(upgradeAuthority: Keypair, liftAuthority: PublicKey) {
+    await gateHook(this);
     const acc = await this.c.connection.getAccountInfo(this.hook.globalPda());
     if (acc) return decodeGlobal(acc.data);
     const r = await sendTx(this.c, new Transaction().add(this.hook.initializeGlobal(upgradeAuthority.publicKey, liftAuthority)), [upgradeAuthority], 'hook: initialize_global (set lift authority)');
@@ -121,6 +192,7 @@ export class Launchpad {
 
   /** Hook upgrade authority (from ProgramData) and lift authority (Global PDA). null when unreadable. */
   async hookAuthorities(): Promise<Authorities> {
+    await gateHook(this);
     let upgradeAuthority: string | null = null, liftAuthority: string | null = null;
     const prog = await this.c.connection.getAccountInfo(this.hook.programId);
     if (prog && prog.data.length >= 36) {
@@ -136,8 +208,10 @@ export class Launchpad {
   async launch(deployer: Keypair, o: LaunchOpts): Promise<LaunchRecord> {
     // §12a preflight (FW-24): feeClaimer (= deployer here) must differ from the hook upgrade and lift authorities.
     // Throws off devnet/local before any tx is built; logs the accepted throwaway exception on devnet/local.
-    const auth = o.authorities ?? (await this.hookAuthorities());
+    const auth = o.authorities ?? (await this.hookAuthorities());   // hookAuthorities() runs the hook gate first
     for (const w of launchConfigChecks(this.c.name, deployer.publicKey.toBase58(), auth)) console.warn(w);
+    // hook gate: resolve the hook program id for this cluster (pinned by genesis) and check it is executable here
+    await gateHook(this);
     const configKp = Keypair.generate();
     const mintKp = Keypair.generate();
     const txs: Record<string, string> = {};
@@ -173,6 +247,7 @@ export class Launchpad {
 
   /** Buy exactly `tokens` (base units) or sell `tokens` (base units) via swap2_with_transfer_hook. */
   async swap(owner: Keypair, pool: PublicKey, side: 'buy' | 'sell', tokens: bigint, purpose?: string, maxSolIn?: bigint) {
+    await gateHook(this);
     if (maxSolIn === undefined) { // SDK wraps maximumAmountIn into wSOL up front, so bound it by the wallet balance
       const bal = BigInt(await this.c.connection.getBalance(owner.publicKey));
       maxSolIn = bal > 30_000_000n ? bal - 30_000_000n : 1n; if (maxSolIn > 2_000_000_000n) maxSolIn = 2_000_000_000n;
@@ -186,14 +261,27 @@ export class Launchpad {
   }
   /** Buy with exact SOL in (used to fill the curve). */
   async buyExactIn(owner: Keypair, pool: PublicKey, lamportsIn: bigint, purpose: string) {
+    await gateHook(this);
     const tx = await this.dbc.pool.swap2WithTransferHook({ owner: owner.publicKey, pool, swapBaseForQuote: false, referralTokenAccount: null, swapMode: SwapMode.PartialFill, amountIn: new BN(lamportsIn.toString()), minimumAmountOut: new BN(0) } as any);
     tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
     return sendTx(this.c, tx, [owner], purpose);
   }
 
   async migrate(payer: Keypair, pool: PublicKey) {
-    const { transaction, firstPositionNftKeypair, secondPositionNftKeypair } = await this.dbc.migration.migrateToDammV2({ payer: payer.publicKey, pool, dammConfig: dammV2MigrationConfig(this.c.name) });
-    return sendTx(this.c, transaction, [payer, firstPositionNftKeypair, secondPositionNftKeypair], 'dbc: migration_damm_v2 (graduation)');
+    const damm = await dammV2MigrationConfigFor(this.c);   // throws ConfigPinRefusal before any tx is built
+    // hook gate (Token-2022 invokes the hook on the migration transfers): pinned id for this cluster, executable here
+    await gateHook(this);
+    // cluster check (throws ClusterCheckRefusal before any tx is built): the pool's DBC config and the DAMM v2 migration
+    // config must be owned by their programs on this cluster.
+    let st: any;
+    try { st = await this.dbc.state.getPool(pool); }
+    catch (e: any) { throw new ClusterCheckRefusal(`refusing: cluster check could not read DBC pool ${pool.toBase58()} (RPC error: ${String(e?.message ?? e).slice(0, 200)})`); }
+    const ps = st?.poolState ?? st;
+    if (!ps?.config) throw new ClusterCheckRefusal(`refusing: DBC pool ${pool.toBase58()} does not exist on this cluster`);
+    await assertClusterAccounts(this.c.connection, { dbcConfigs: [new PublicKey(ps.config)], dammV2Config: damm.config });
+    const { transaction, firstPositionNftKeypair, secondPositionNftKeypair } = await this.dbc.migration.migrateToDammV2({ payer: payer.publicKey, pool, dammConfig: damm.config });
+    return sendTx(this.c, transaction, [payer, firstPositionNftKeypair, secondPositionNftKeypair], 'dbc: migration_damm_v2 (graduation)',
+      damm.override ? `overrides: DAMM_V2_MIGRATION_CONFIG=${damm.override}` : undefined);
   }
 
   async tokenBalance(mint: PublicKey, owner: PublicKey): Promise<bigint> {
@@ -203,6 +291,7 @@ export class Launchpad {
   }
 
   async status(mint: PublicKey, wallet?: PublicKey) {
+    await gateHook(this);
     const conn = this.c.connection;
     const [cfgAcc, liftAcc, globalAcc, slot] = await Promise.all([
       conn.getAccountInfo(this.hook.configPda(mint)), conn.getAccountInfo(this.hook.liftPda(mint)), conn.getAccountInfo(this.hook.globalPda()), conn.getSlot('confirmed'),

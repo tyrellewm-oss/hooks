@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto';
 import { PublicKey, SystemProgram, TransactionInstruction, AccountMeta } from '@solana/web3.js';
 import type { CapConfig, Step } from './capMath.js';
+import { classifyCluster, type ClusterClass } from './cluster.js';
 
 export const TOKEN_2022 = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
 export const DBC_PROGRAM_ID = new PublicKey('dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN');
@@ -11,7 +12,37 @@ export const BPF_UPGRADEABLE = new PublicKey('BPFLoaderUpgradeab1e11111111111111
 export const DBC_POOL_AUTHORITY = PublicKey.findProgramAddressSync([Buffer.from('pool_authority')], DBC_PROGRAM_ID)[0];
 export const DAMM_V2_POOL_AUTHORITY = PublicKey.findProgramAddressSync([Buffer.from('pool_authority')], DAMM_V2_PROGRAM_ID)[0];
 
-export const DEFAULT_PROGRAM_ID = new PublicKey(process.env.HOOK_PROGRAM_ID ?? 'FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz');
+/** Hook program id pins per genesis-based cluster class (classifyCluster). null = no pinned value:
+ *  - mainnet / testnet: no deployed hook program yet. Resolution refuses, with or without HOOK_PROGRAM_ID; a later PR sets the pin.
+ *  - local (localhost URL + unknown genesis): HOOK_PROGRAM_ID must be set (local_validator.sh deploys the hook keypair's id).
+ *  - unknown: refused.
+ *  There is no fallback to the devnet id on any non-devnet class. */
+export const HOOK_PROGRAM_ID_DEVNET = 'FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz';
+export const HOOK_PROGRAM_ID_PINS: Readonly<Record<ClusterClass, string | null>> = Object.freeze({
+  devnet: HOOK_PROGRAM_ID_DEVNET, mainnet: null, testnet: null, local: null, unknown: null,
+});
+/** Offline default (litesvm tests, log attribution). Not read from env: on a live cluster the id comes from resolveHookProgramId. */
+export const DEFAULT_PROGRAM_ID = new PublicKey(HOOK_PROGRAM_ID_DEVNET);
+export class HookProgramPinRefusal extends Error {}
+export interface HookProgramResolution { programId: PublicKey; override: string | null; clusterClass: ClusterClass }
+/** Resolve the hook program id from the RPC's genesis hash (+ URL, only to recognise a local validator).
+ *  devnet and local: a valid HOOK_PROGRAM_ID override is allowed. mainnet/testnet: the override must equal the pin, and
+ *  no pin refuses. unknown: refuse. Throws HookProgramPinRefusal. */
+export function resolveHookProgramId(genesis: string, url: string | undefined, env: NodeJS.ProcessEnv = process.env): HookProgramResolution {
+  const cls = classifyCluster(genesis, url);
+  const raw = env.HOOK_PROGRAM_ID;
+  const override = raw !== undefined && raw !== '' ? raw : null;
+  const pinned = HOOK_PROGRAM_ID_PINS[cls];
+  const overridable = cls === 'devnet' || cls === 'local';
+  if (override === null) {
+    if (pinned === null) throw new HookProgramPinRefusal(`refusing: no pinned hook program id for cluster class '${cls}' (genesis ${genesis})${cls === 'local' ? '; set HOOK_PROGRAM_ID for a local validator' : ''}`);
+    return { programId: new PublicKey(pinned), override: null, clusterClass: cls };
+  }
+  if (!overridable && (pinned === null || override !== pinned))
+    throw new HookProgramPinRefusal(`refusing HOOK_PROGRAM_ID override ${override} on cluster class '${cls}' (genesis ${genesis}): ${pinned === null ? 'no pinned value, so no override is allowed' : `only the pinned value ${pinned} is allowed`}`);
+  let pk: PublicKey; try { pk = new PublicKey(override); } catch { throw new HookProgramPinRefusal(`HOOK_PROGRAM_ID override is not a valid address: ${override}`); }
+  return { programId: pk, override, clusterClass: cls };
+}
 
 const disc = (ns: string, name: string) => createHash('sha256').update(`${ns}:${name}`).digest().subarray(0, 8);
 export const IX = {
