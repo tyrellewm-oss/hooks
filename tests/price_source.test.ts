@@ -420,6 +420,26 @@ test('criterion 17 (independent source over HTTP, stand-in for the devnet run): 
   assert.equal(rd.r.status, 'refuse_indep_unavailable'); assert.equal(down.c.builds.length, 0);
 });
 
+test('criterion 17 pump before the run: a spot moved off the TWAP, with the independent price served over HTTP, refuses by the spot check or fails the swap on min_out', async () => {
+  const body = JSON.stringify({ [MINT]: { usdPrice: 0.2, blockId: SLOT, decimals: 6 }, [WSOL_MINT]: { usdPrice: 200, blockId: SLOT, decimals: 9 } });
+  const srv: Server = createServer((_q, s) => { s.writeHead(200, { 'content-type': 'application/json' }); s.end(body); });
+  await new Promise<void>(r => srv.listen(0, '127.0.0.1', () => r()));
+  const url = `http://127.0.0.1:${(srv.address() as any).port}/price/v3`;
+  let closed = false; const close = async () => { if (closed) return; closed = true; srv.closeAllConnections(); await new Promise<void>(r => srv.close(() => r())); };
+  try {
+    // Pump past the 300 bps band: the keeper refuses before it builds a swap.
+    const pumped = harness({ p: { indep_price_url: url }, realHttp: true, spotSqrt: (X64 * 102n) / 100n });
+    const rp = await pumped.run();
+    assert.equal(rp.r.status, 'refuse_spot_vs_twap'); assert.equal(pumped.c.builds.length, 0); assert.equal(pumped.c.sends, 0);
+    // Pump held inside a widened band: min_out stays on the TWAP, and the pool simulation fails closed.
+    const spotSqrt = isqrt((Q128 * 10n) / 11n);
+    const inside = harness({ p: { indep_price_url: url, max_spot_twap_dev_bps: 1500 }, realHttp: true, spotSqrt, quoteOut: x => (x * 11n) / 10n, fill: x => (x * 96n) / 100n });
+    const ri = await inside.run();
+    assert.equal(minOutOf(inside), 970_000n); assert.equal(ri.last.price!.min_out_source, 'twap');
+    assert.deepEqual(inside.c.simulated, ['fail_min_out']); assert.equal(ri.r.status, 'failed_swap');
+  } finally { await close(); }
+});
+
 // ================================================================ warm-up ceiling
 test('warm-up ceiling: a warm-up hold does not count toward auto-pause up to window + 15 min (chain time); just over it, the hold counts and pauses; the start is persisted and cleared when the warm-up is satisfied or graduation flips back', async () => {
   assert.equal(WARMUP_GRACE_S, 900); assert.equal(warmupCeilingS(ps()), 2700);

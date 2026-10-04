@@ -61,7 +61,7 @@ Config fails closed: a missing, unknown or out-of-range key, a 0 s window, any `
 ## Known limits
 - A missing or stale sampler means refuse (the safe default). The keeper pauses once the warm-up ceiling has passed.
 - Future-dated samples (block time after the current slot) are ignored.
-- No live mainnet test. Criterion 17's devnet run (a scripted "pump before run" on the devnet pool) hasn't been done. It's covered offline only, with a fake Jupiter HTTP server.
+- No live mainnet test. Criterion 17's HTTP up/down case and the scripted pump (spot past the band refuses; a pump inside a widened band fails the swap on min_out) run locally against a fake price server. A pump trade on the live devnet pool is not run; that spends devnet SOL and is waiting on King.
 - If our DAMM v2 pool is the only liquidity, Jupiter prices from that same pool. The independent check then catches a stale or broken read, not a pump. A pump held for the whole 30-min window gets through; the defence is the window plus the max per run.
 - **Needs confirmation:** with the spec's min_out formula, the quote leg also loses the impact bps. When the quote binds, min_out is up to `max_price_impact_bps` (200 bps) lower than the earlier WIP's `quoteOut × (1 − slippage)`.
 
