@@ -1,6 +1,7 @@
 // Ticket 8.3 operator tool: migrate the hook Global to v2 (set the launch key) or rotate the launch key.
 //   node --import tsx scripts/launch_authority.ts migrate --launch <pubkey> --admin <pubkey> [--payer <pubkey>] [--cluster local|devnet]
 //   node --import tsx scripts/launch_authority.ts rotate  --launch <pubkey> --admin <pubkey> [--cluster local|devnet]
+//   node --import tsx scripts/launch_authority.ts rotate-admin --new <pubkey> --admin <pubkey> [--cluster local|devnet]
 //   add --send --admin-key <name> [--payer-key <name>] to send (key files must already exist in the cluster's gitignored key dir)
 // DRY RUN by default: builds and simulates the tx, prints Global before (and the simulation logs), sends nothing.
 // Refuses any cluster that is not devnet or a local validator (genesis check) before a tx is built.
@@ -15,11 +16,12 @@ import { runGlobalChange, type GlobalOp } from '../sdk/launch_authority.js';
 
 export function parseArgs(argv: string[]) {
   const op = argv[0];
-  if (op !== 'migrate' && op !== 'rotate') throw new Error('usage: launch_authority.ts migrate|rotate --launch <pubkey> --admin <pubkey> [--payer <pubkey>] [--cluster local|devnet] [--send --admin-key <name> [--payer-key <name>]]');
+  if (op !== 'migrate' && op !== 'rotate' && op !== 'rotate-admin') throw new Error('usage: launch_authority.ts migrate|rotate --launch <pubkey> | rotate-admin --new <pubkey> --admin <pubkey> [--payer <pubkey>] [--cluster local|devnet] [--send --admin-key <name> [--payer-key <name>]]');
   const val = (f: string) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined; };
   const need = (f: string) => { const v = val(f); if (!v || v.startsWith('--')) throw new Error(`missing ${f}`); return v; };
   const admin = new PublicKey(need('--admin'));
-  return { op: op as GlobalOp, launch: new PublicKey(need('--launch')), admin, payer: new PublicKey(val('--payer') ?? admin.toBase58()),
+  const arg = op === 'rotate-admin' ? need('--new') : need('--launch');
+  return { op: op as GlobalOp, launch: new PublicKey(arg), admin, payer: new PublicKey(val('--payer') ?? admin.toBase58()),
     send: argv.includes('--send'), adminKey: val('--admin-key'), payerKey: val('--payer-key') };
 }
 /** Loads an EXISTING key file from the cluster's gitignored key dir. Never creates one. */

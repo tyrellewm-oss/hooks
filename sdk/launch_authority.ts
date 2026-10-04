@@ -7,7 +7,7 @@ import { classifyCluster, type ClusterClass } from './cluster.js';
 import { HookClient, decodeGlobal, GLOBAL_V1_LEN, GLOBAL_V2_LEN } from './hook.js';
 
 export class LaunchAuthorityRefusal extends Error { constructor(msg: string) { super(msg); this.name = 'LaunchAuthorityRefusal'; } }
-export type GlobalOp = 'migrate' | 'rotate';
+export type GlobalOp = 'migrate' | 'rotate' | 'rotate-admin';
 export interface GlobalSnapshot { address: string; length: number; lamports: number; base64: string; authority: string; lifted: boolean; launchAuthority: string | null }
 export interface LaConn {
   getGenesisHash(): Promise<string>;
@@ -40,6 +40,14 @@ export async function readGlobal(conn: Pick<LaConn, 'getAccountInfo'>, hook: Hoo
 export function checkGlobalChange(ch: GlobalChange, g: GlobalSnapshot): void {
   const no = (m: string): never => { throw new LaunchAuthorityRefusal(`refusing ${ch.op}: ${m}`); };
   if (ch.admin.toBase58() !== g.authority) no(`admin ${ch.admin.toBase58()} is not the Global authority ${g.authority}`);
+  if (ch.op === 'rotate-admin') {
+    if (ch.launch.equals(PublicKey.default)) no('the new admin is the zero key');
+    if (g.length !== GLOBAL_V2_LEN) no(`Global is ${g.length} bytes, not ${GLOBAL_V2_LEN} (migrate first)`);
+    if (!g.launchAuthority) no('the launch key is not set');
+    if (ch.launch.toBase58() === g.authority) no('the new admin is the current admin');
+    if (ch.launch.toBase58() === g.launchAuthority) no('the new admin equals the launch key');
+    return;
+  }
   if (ch.launch.equals(PublicKey.default)) no('the launch key is the zero key');
   if (ch.launch.toBase58() === g.authority) no('the launch key equals the admin key');
   if (ch.op === 'migrate' && g.length !== GLOBAL_V1_LEN) no(`Global is ${g.length} bytes, not ${GLOBAL_V1_LEN} (already migrated?)`);
@@ -51,7 +59,9 @@ export async function buildGlobalChangeTx(conn: LaConn, url: string, hook: HookC
   const cluster = await assertDevnetOrLocal(conn, url);   // before any read or build
   const before = await readGlobal(conn, hook);
   checkGlobalChange(ch, before);
-  const ix = ch.op === 'migrate' ? hook.migrateGlobalV2(ch.payer, ch.admin, ch.launch) : hook.setLaunchAuthority(ch.admin, ch.launch);
+  const ix = ch.op === 'migrate' ? hook.migrateGlobalV2(ch.payer, ch.admin, ch.launch)
+    : ch.op === 'rotate' ? hook.setLaunchAuthority(ch.admin, ch.launch)
+    : hook.rotateAdmin(ch.admin, ch.launch);
   const tx = new Transaction().add(ix);
   tx.feePayer = ch.op === 'migrate' ? ch.payer : ch.admin;
   tx.recentBlockhash = (await conn.getLatestBlockhash('confirmed')).blockhash;
