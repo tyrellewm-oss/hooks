@@ -1,6 +1,6 @@
 # Ticket #5: independent price source for the keeper buyback
 
-**Status (2026-10-04):** done on branch `feat/flywheel-price-source` (base `main` `1bfd402`, code commit `d139102`). Pushed. **No PR opened and not merged.** The PR step was skipped at the owner's request; `main` is unchanged. A reviewer still has to open the PR and merge it (see "Next steps").
+**Status (2026-10-04):** done on branch `feat/flywheel-price-source` (base `main` `1bfd402`, code commit `d139102`). Pushed. Not merged. `main` is unchanged until King merges the PR.
 
 Spec: research note `blocker5_price_source.md` (internal; §3 design and defaults, §4 criteria 1-17, mutants table).
 
@@ -66,7 +66,7 @@ Config fails closed: a missing, unknown or out-of-range key, a 0 s window, any `
 - **Needs confirmation:** with the spec's min_out formula, the quote leg also loses the impact bps. When the quote binds, min_out is up to `max_price_impact_bps` (200 bps) lower than the earlier WIP's `quoteOut × (1 − slippage)`.
 
 ## Next steps / open
-1. Open the PR `feat/flywheel-price-source` → `main` (title `keeper (ticket #5): independent price source`), review, merge (King). The `gh` CLI isn't installed on the Mac; use the GitHub web UI or install `gh`.
+1. Review the PR `feat/flywheel-price-source` → `main` and merge it (King). Nobody merges their own PR.
 2. Owner decisions: ★ values (window, bands, `require_independent`, max per run), where the sampler runs, mainnet RPC provider and Jupiter key choice.
 3. Criterion 17 live devnet run.
 4. Ticket 8.3 (launch authority) needs the Rust, Solana and Anchor toolchain; then 8.3b (admin rotation spec).
