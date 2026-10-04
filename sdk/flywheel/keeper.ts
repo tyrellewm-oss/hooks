@@ -9,11 +9,12 @@ import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk
 import { utils as anchorUtils } from '@coral-xyz/anchor';
 const bs58 = anchorUtils.bytes.bs58;
 import { splitFees, minOut, spotOutBtoA, deviationBps, planSwap, runIdFor, historyWarning, fmtSol, fmtTokens, pctOf } from './math.js';
-import { checkKeyConfig, KEEPER_KEY_ROLES, type KeeperConfig, type KeeperKeyRole, type SourceDbc, type SourceDamm } from './config.js';
+import { checkKeyConfig, KEEPER_KEY_ROLES, type KeeperConfig, type KeeperKeyRole, type Source, type SourceDbc, type SourceDamm } from './config.js';
 import { Store, durableWrite, ser } from './store.js';
 import { keeperStartChecks, KeyRuleRefusal } from '../keyrules.js';
 import { assertClusterAccounts, ClusterCheckRefusal } from '../cluster_check.js';
 import { classifyCluster } from '../cluster.js';
+import { loadRegistry, assertRegistryMint, RegistryRefusal } from '../registry.js';
 import { readHookAuthorities, resolveHookProgramId, type HookProgramResolution } from '../hook.js';
 import { assertMintHook, graduationPhase, mintHookAuthorityFor, MintHookRefusal } from '../mint_hook.js';
 import { redactPaths, redactDeep } from '../redact.js';
@@ -67,9 +68,9 @@ export class PausedMidrun extends FailClosed { constructor(public stage: string,
 /** The keys the keeper signs with (KEEPER_KEY_ROLES). No dev key: the dev payout is a pubkey in the config. */
 export interface KeySet { claim: Keypair; treasury: Keypair; gas: Keypair }
 const roleKey = (ks: KeySet, role: KeeperKeyRole): Keypair => (role === 'claim_signer' ? ks.claim : ks[role]);
-export interface StartDeps { loadKey: (name: string) => Keypair; connect: (cfg: KeeperConfig) => Promise<Connection>; log?: (s: string) => void }
+export interface StartDeps { loadKey: (name: string) => Keypair; connect: (cfg: KeeperConfig) => Promise<Connection>; log?: (s: string) => void; registry?: ReadonlySet<string> }
 /** Refusals that need no network (FW-22, FW-23). Throws KeyRuleRefusal; returns warnings (FW-25 on devnet). */
-export function preflightOffline(cfg: KeeperConfig, keys: KeySet): string[] {
+export function preflightOffline(cfg: KeeperConfig, keys: KeySet, registry?: ReadonlySet<string>): string[] {
   checkKeyConfig(cfg);
   // every loaded key goes through the §12a separation checks (built from the role list, so none can be skipped)
   const keeperKeys = Object.fromEntries(KEEPER_KEY_ROLES.map(r => [r, roleKey(keys, r).publicKey.toBase58()]));
@@ -81,12 +82,13 @@ export function preflightOffline(cfg: KeeperConfig, keys: KeySet): string[] {
     const pk = cfg.pinned_pubkeys[role];
     if (pk && roleKey(keys, role).publicKey.toBase58() !== pk) throw new KeyRuleRefusal(`refusing to start: key '${role}' does not match pinned pubkey`);
   }
+  assertRegistryMint(registry ?? loadRegistry(cfg.cluster), cfg.main_mint, 'main_mint');   // ticket 8.5: the keeper acts on registry mints only
   return warnings;
 }
 export async function startKeeper(cfg: KeeperConfig, overrides: string[], deps: StartDeps): Promise<Keeper> {
   checkKeyConfig(cfg);   // before any key file is opened: a dev keypair path is refused, never loaded
   const keys: KeySet = { claim: deps.loadKey(cfg.keys.claim_signer), treasury: deps.loadKey(cfg.keys.treasury), gas: deps.loadKey(cfg.keys.gas) };
-  const warnings = preflightOffline(cfg, keys);           // throws before any connection exists
+  const warnings = preflightOffline(cfg, keys, deps.registry);   // throws before any connection exists
   const conn = await deps.connect(cfg);
   const genesis = await conn.getGenesisHash();
   if (genesis === MAINNET_GENESIS) throw new KeyRuleRefusal('refusing: RPC is mainnet-beta');
@@ -223,7 +225,7 @@ export class Keeper {
   }
 
   // ---------- pinned checks (any mismatch → fail closed + auto-pause)
-  private async pinnedChecks() {
+  private async pinnedChecks(sources: Source[] = this.cfg.sources) {
     const c = this.cfg;
     const mintAi = await this.conn.getAccountInfo(this.mint, 'confirmed');
     if (!mintAi) throw new FailClosed('rpc_error', 'mint unreadable');
@@ -252,7 +254,7 @@ export class Keeper {
       if (!p.tokenAMint.equals(this.mint) || !p.tokenBMint.equals(NATIVE_MINT)) throw new FailClosed('mismatch_pool', 'route pool mints != (main mint, WSOL)', true);
       if (p.tokenAFlag !== (this.mainProg.equals(TOKEN_2022_PROGRAM_ID) ? 1 : 0) || p.tokenBFlag !== 0) throw new FailClosed('mismatch_pool', 'route pool token programs unexpected', true);
     }
-    for (const src of c.sources) {
+    for (const src of sources) {
       if (src.kind === 'damm_v2') {
         const pos: any = await this.cp.fetchPositionState(new PublicKey(src.position));
         if (!pos.nftMint.equals(new PublicKey(src.position_nft_mint)) || !pos.pool.equals(new PublicKey(src.pool))) throw new FailClosed('mismatch_position', 'position nft/pool != pinned', true);
@@ -308,14 +310,15 @@ export class Keeper {
     }
     try {
       await this.resolvePending(s, run);
-      await this.pinnedChecks();
+      const sources = this.registrySources(run);
+      await this.pinnedChecks(sources);
       const gas = BigInt(await this.conn.getBalance(this.keys.gas.publicKey, 'confirmed'));
       if (gas < B(this.cfg.gas_min_lamports)) throw new FailClosed('gas_low', `gas wallet ${fmtSol(gas)} SOL < min ${fmtSol(B(this.cfg.gas_min_lamports))}`);
       if (s.dev_baseline_raw === null) { s.dev_baseline_raw = (await this.tokenAmt(this.dWsol)).toString(); }
       if (s.first_supply_raw === null) { s.first_supply_raw = (await this.supply()).toString(); }
       this.save(s);
       // 1. claims
-      for (const src of this.cfg.sources) await this.claim(s, run, src);
+      for (const src of sources) await this.claim(s, run, src);
       // 2. split
       await this.split(s, run);
       // 3. gate
@@ -344,6 +347,22 @@ export class Keeper {
     }
   }
 
+  /** Ticket 8.5: the sources this run may act on, read from the mint registry each run. A DBC source counts when its
+   *  base mint is registered; a DAMM v2 source only when it is the route pool (pinned on chain to the main mint, which
+   *  startup requires in the registry). Any other source is skipped, with the reason in the run's warnings: no read,
+   *  quote, claim, swap, burn or send. An unreadable registry fails closed and auto-pauses. */
+  registrySources(run: RunLog): Source[] {
+    let reg: ReadonlySet<string>;
+    try { reg = loadRegistry(this.cfg.cluster); } catch (e: any) { throw e instanceof RegistryRefusal ? new FailClosed('registry', e.message, true) : e; }
+    return this.cfg.sources.filter(src => {
+      const ok = src.kind === 'dbc' ? reg.has(src.base_mint) : src.pool === this.cfg.route_pool && reg.has(this.cfg.main_mint);
+      if (!ok) {
+        const why = src.kind === 'dbc' ? `source dbc pool ${src.pool} skipped: base mint ${src.base_mint} is not in the mint registry` : `source damm_v2 pool ${src.pool} skipped: not the route pool of a registry mint`;
+        if (!run.warnings.includes(why)) { run.warnings.push(why); this.log(`[${run.run_id}] ${why}`); }
+      }
+      return ok;
+    });
+  }
   private async resolvePending(s: KeeperState, run: RunLog) {
     for (const [stage, st] of Object.entries(run.stages)) {
       if (st.status !== 'pending') continue;

@@ -16,6 +16,7 @@ import { preflightOffline, startKeeper, Keeper, initState, publicLog, newRun, ME
 import { applyOverrides, type KeeperConfig } from '../sdk/flywheel/config.js';
 import { Launchpad } from '../sdk/launch.js';
 import { HOOK_PROGRAM_ID_DEVNET, HookProgramPinRefusal, BPF_UPGRADEABLE } from '../sdk/hook.js';
+import { RegistryRefusal } from '../sdk/registry.js';
 
 const base = JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')) as KeeperConfig;
 const trapConn = () => new Proxy({}, { get: (_t, p) => { if (p === 'then') return undefined; throw new Error(`network used: ${String(p)}`); } }) as unknown as Connection;
@@ -196,11 +197,11 @@ test('FW-17: public log has addresses/sigs only — no key arrays, no internal p
 // ledger and returns a parsed tx with real pre/post token balances, so the keeper's own effect checks and
 // reconciliation run unchanged. No network.
 type Ledger = Record<string, bigint>;
-function midrun(onSend: (stage: string, h: { pause: () => void; envPause: () => void }) => void = () => {}) {
+function midrun(onSend: (stage: string, h: { pause: () => void; envPause: () => void }) => void = () => {}, over: Partial<KeeperConfig> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fw-mid-'));
   const ks = keys();
   const dbcSrc = base.sources.find(x => x.kind === 'dbc')!;
-  const cfg = cfgWith({ state_dir: join(dir, 'state'), public_log: join(dir, 'pub.json'), sources: [dbcSrc], max_swap_lamports_per_run: '1000000', min_claim_lamports: '1000000' });
+  const cfg = cfgWith({ state_dir: join(dir, 'state'), public_log: join(dir, 'pub.json'), sources: [dbcSrc], max_swap_lamports_per_run: '1000000', min_claim_lamports: '1000000', ...over });
   const k = new Keeper(cfg, [], trapConn(), ks, [], () => {});
   const tW = k.tWsol.toBase58(), tM = k.tMain.toBase58(), dW = k.dWsol.toBase58();
   const L: Ledger = { [tW]: 0n, [tM]: 0n, [dW]: 0n, supply: 1_000_000_000_000_000n };
@@ -357,4 +358,57 @@ test('§12a same-authority rule end to end: keeper start on mainnet with upgrade
   assert.equal(connected, 0);
   const w = preflightOffline(cfgWith({ cluster: 'devnet' }), k);   // real TDT authorities (9DVu… for both): warns, does not refuse
   assert.ok(w.some(x => /upgrade authority and lift authority are the same key 9DVu/.test(x)));
+});
+
+// ---------------- ticket 8.5: the keeper acts on mints in the registry (keeper/registry.json) only
+/** A midrun keeper that records every read the claim path could make, per pool. */
+function registryRun(sources: any[]) {
+  const m = midrun(() => {}, { sources });
+  const reads: string[] = []; const pinned: any[][] = [];
+  const getPool = (m.k as any).dbc.state.getPool;
+  (m.k as any).dbc = { state: { getPool: async (pk: PublicKey) => { reads.push(`dbc:${pk.toBase58()}`); return getPool(pk); }, getPoolConfig: async (pk: PublicKey) => { reads.push(`cfg:${pk.toBase58()}`); return {}; } } };
+  const cp = (m.k as any).cp;
+  (m.k as any).cp = { ...cp, fetchPoolState: async (pk: PublicKey) => { reads.push(`damm:${pk.toBase58()}`); throw new Error('damm read'); }, fetchPositionState: async (pk: PublicKey) => { reads.push(`pos:${pk.toBase58()}`); throw new Error('pos read'); } };
+  const claimIx = (m.k as any).dbcClaimIx; (m.k as any).dbcClaimIx = async (src: any, q: bigint) => { reads.push(`claimix:${src.pool}`); return claimIx(src, q); };
+  (m.k as any).pinnedChecks = async (srcs: any[]) => { pinned.push(srcs.map(x => x.pool)); };
+  return { ...m, reads, pinned };
+}
+const dbcSource = () => base.sources.find(x => x.kind === 'dbc')! as any;
+const foreignDbc = () => ({ kind: 'dbc', pool: Keypair.generate().publicKey.toBase58(), config: dbcSource().config, base_mint: Keypair.generate().publicKey.toBase58() });   // created on OUR config, mint not registered
+const foreignDamm = () => ({ kind: 'damm_v2', pool: Keypair.generate().publicKey.toBase58(), position: Keypair.generate().publicKey.toBase58(), position_nft_mint: Keypair.generate().publicKey.toBase58() });
+
+test('8.5: a pool on our config whose mint is not in the registry is ignored: no read, quote, claim, swap or burn; 0 sends; reason logged', async () => {
+  const f = foreignDbc(), d = foreignDamm();
+  const m = registryRun([f, d]);
+  const r = await m.k.runOnce(T0);
+  assert.deepEqual(m.sent, [], 'nothing sent'); assert.deepEqual(r.txs, []);
+  assert.ok(!m.reads.some(x => x.includes(f.pool) || x.includes(d.pool)), `no read of a skipped pool: ${m.reads.join(', ')}`);
+  assert.deepEqual(m.pinned, [[]], 'pinned checks see no skipped source');
+  const run = m.state().runs.at(-1)!;
+  assert.deepEqual(run.claims, [], 'no claim entry'); assert.equal(m.state().totals.spent_lamports, '0'); assert.equal(m.state().totals.burned_raw, '0');
+  assert.ok(run.warnings.includes(`source dbc pool ${f.pool} skipped: base mint ${f.base_mint} is not in the mint registry`), run.warnings.join(' | '));
+  assert.ok(run.warnings.includes(`source damm_v2 pool ${d.pool} skipped: not the route pool of a registry mint`), run.warnings.join(' | '));
+  assert.ok(JSON.parse(readFileSync(m.cfg.public_log, 'utf8')).runs.at(-1).warnings.some((w: string) => w.includes(f.pool)), 'the reason reaches the public log');
+  assert.equal(m.state().consecutive_failures, 0); assert.equal(m.state().paused, false);   // skipping is not a failure
+});
+
+test('8.5: a registry mint still runs (claim, dev, swap, burn) next to an ignored foreign pool', async () => {
+  const f = foreignDbc(); const m = registryRun([dbcSource(), f]);
+  const r = await m.k.runOnce(T0);
+  assert.equal(r.status, 'logged'); assert.deepEqual(m.sent, ['claim_dbc', 'dev', 'swap', 'burn']);
+  assert.deepEqual(m.pinned, [[dbcSource().pool]]);
+  assert.ok(m.reads.includes(`claimix:${dbcSource().pool}`)); assert.ok(!m.reads.some(x => x.includes(f.pool)), m.reads.join(', '));
+  const run = m.state().runs.at(-1)!; assert.deepEqual(run.claims.map(c => c.pool), [dbcSource().pool]);
+  assert.equal(run.warnings.filter(w => w.includes('skipped')).length, 1);
+});
+
+test('8.5: the keeper refuses to start on a main mint that is not in the registry (before any connection)', async () => {
+  const k = keys();
+  const foreign = Keypair.generate().publicKey.toBase58();
+  assert.throws(() => preflightOffline(cfgWith({ cluster: 'devnet', main_mint: foreign }), k), (e: any) => e instanceof RegistryRefusal && e instanceof KeyRuleRefusal && e.message === `refusing: main_mint ${foreign} is not in the mint registry`);
+  assert.doesNotThrow(() => preflightOffline(cfgWith({ cluster: 'devnet' }), k));
+  let connected = 0;
+  await assert.rejects(startKeeper(cfgWith({ cluster: 'devnet', main_mint: foreign, pinned_pubkeys: undefined }), [], { loadKey: n => (k as any)[n === 'deployer' ? 'claim' : n.replace('fw_', '')], connect: async () => { connected++; return trapConn(); }, log: () => {} }),
+    (e: any) => e instanceof RegistryRefusal);
+  assert.equal(connected, 0);
 });

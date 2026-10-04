@@ -190,7 +190,7 @@ test('migrate() via a cluster object: localhost URL + unknown genesis accepts th
 test('keeper on cluster "local": needs localhost URL + unknown genesis; remote URL or a known genesis is refused', async () => {
   const { readFileSync } = await import('node:fs');
   const cfg = { ...JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')), cluster: 'local', pinned_pubkeys: undefined };
-  const start = (rpcEndpoint: string, genesis: string) => startKeeper(cfg, [], { loadKey: () => Keypair.generate(), log: () => {},
+  const start = (rpcEndpoint: string, genesis: string) => startKeeper(cfg, [], { loadKey: () => Keypair.generate(), log: () => {}, registry: new Set([cfg.main_mint]),   // local mints are not in the committed registry
     connect: async () => ({ rpcEndpoint, getGenesisHash: async () => genesis, getAccountInfo: async () => { throw new Error('reached cluster check'); } }) as any });
   await assert.rejects(start('https://rpc.example.com', LOCAL_GENESIS), (e: any) => e instanceof KeyRuleRefusal && /not a local validator/.test(e.message));
   await assert.rejects(start('http://127.0.0.1:8899', TESTNET_GENESIS), (e: any) => e instanceof KeyRuleRefusal && /not a local validator/.test(e.message));
