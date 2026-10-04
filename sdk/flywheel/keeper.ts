@@ -15,6 +15,7 @@ import { keeperStartChecks, KeyRuleRefusal } from '../keyrules.js';
 import { assertClusterAccounts, ClusterCheckRefusal } from '../cluster_check.js';
 import { classifyCluster } from '../cluster.js';
 import { readHookAuthorities } from '../hook.js';
+import { assertMintHook, graduationPhase, mintHookAuthorityFor, MintHookRefusal } from '../mint_hook.js';
 
 export const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 const stageFail = (stage: string) => (stage.startsWith('claim') ? 'failed_claim' : stage === 'dev' ? 'failed_split' : `failed_${stage}`);
@@ -227,6 +228,14 @@ export class Keeper {
     const mainPool: any = await dbcPool(this.dbc, new PublicKey(c.main_dbc_pool));
     if (!mainPool) throw new FailClosed('mismatch_pool', 'main DBC pool not found', true);
     if (!mainPool.baseMint.equals(this.mint)) throw new FailClosed('mismatch_pool', 'main DBC pool base mint != main mint', true);
+    // blocker #7 (monitoring): the mint's TransferHook must match the graduation phase. Before graduation: the configured
+    // hook program and the pinned DBC signer (never one of our keys). After graduation: both unset. Anything else, or any
+    // read failure, fails closed and auto-pauses.
+    try {
+      const forbidden: Record<string, string | null> = { hook_upgrade_authority: c.hook_upgrade_authority, hook_lift_authority: c.hook_lift_authority, dev_payout: c.dev_payout };
+      for (const [role, kp] of Object.entries(this.keys)) forbidden[role] = (kp as Keypair).publicKey.toBase58();
+      await assertMintHook(this.conn, this.mint, graduationPhase(mainPool), { hookProgram: new PublicKey(c.hook_program), authority: mintHookAuthorityFor(c.cluster === 'devnet' || c.cluster === 'local' ? c.cluster : 'unknown'), forbidden });
+    } catch (e: any) { throw e instanceof MintHookRefusal ? new FailClosed('mismatch_mint_hook', e.message, true) : e; }
     if (c.route_pool) {
       const p: any = await this.cp.fetchPoolState(new PublicKey(c.route_pool)).catch(() => null);
       if (!p) throw new FailClosed('mismatch_pool', `route pool ${c.route_pool} is not a DAMM v2 pool`, true);

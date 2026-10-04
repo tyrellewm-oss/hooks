@@ -13,6 +13,7 @@ import { Launchpad, DAMM_V2_MIGRATION_CONFIG } from '../sdk/launch.js';
 import { startKeeper } from '../sdk/flywheel/keeper.js';
 import { KeyRuleRefusal } from '../sdk/keyrules.js';
 import type { KeeperConfig } from '../sdk/flywheel/config.js';
+import { fixtureMint } from './mint_hook_fixture.js';
 
 const BPF_UPGRADEABLE = new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111');
 const SYSTEM = new PublicKey('11111111111111111111111111111111');
@@ -79,11 +80,11 @@ test('assertClusterAccounts runs every check it is given: all good passes, any s
 // ---------------- wiring: the checks run before any tx is built
 function fakeLaunchpad(accts: Map<string, Info>, poolConfig: PublicKey, hook: PublicKey, counters: { built: number }) {
   return {
-    c: { name: 'devnet', label: 'devnet', connection: fakeConn(accts) },
+    c: { name: 'devnet', label: 'devnet', connection: fakeConn(new Map([...accts, [fixtureMint('tdt_post').pubkey.toBase58(), fixtureMint('tdt_post').info as Info]])) },
     hook: { programId: hook },
     configParams: () => ({}),
     dbc: {
-      state: { getPool: async () => ({ config: poolConfig }) },
+      state: { getPool: async () => ({ config: poolConfig, baseMint: fixtureMint('tdt_post').pubkey, migrationProgress: 3 }) },   // graduated TDT (blocker #7 check passes)
       migration: { migrateToDammV2: async () => { counters.built++; throw new Error('tx built'); } },
       partner: { createConfigWithTransferHook: async () => { counters.built++; throw new Error('tx built'); } },
     },

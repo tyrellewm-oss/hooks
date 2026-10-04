@@ -13,6 +13,7 @@ import { effectiveCap, nextChange, type Step } from './capMath.js';
 import { type Cluster, type ClusterName, type ClusterClass, explorerTx, nowIct, classifyCluster } from './cluster.js';
 import { launchConfigChecks, type Authorities } from './keyrules.js';
 import { assertClusterAccounts, checkDammV2Config, ClusterCheckRefusal } from './cluster_check.js';
+import { MintHookRefusal, mintHookAuthorityFor, assertPinNotOurs, assertMintHook, readMintTransferHook, mintHookProblems, graduationPhase, type GraduationPhase, type MintHookExpectation } from './mint_hook.js';
 
 /** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()).
  *  Primary source for the pin: Meteora DBC repo README at commit f552f20 (2026-09-09), section "Damm v2":
@@ -104,6 +105,8 @@ export async function sendTx(c: Cluster, tx: Transaction, signers: Keypair[], pu
 }
 
 export interface LaunchOpts {
+  /** Keeper keys and dev_payout (pubkeys) that must never hold the mint's TransferHook authority (blocker #7). */
+  keeperKeys?: Record<string, string>;
   name: string; symbol: string; uri?: string;
   steps: Step[]; uncappedAfter: bigint;           // hook cap schedule (slots)
   totalSupply?: number;                           // whole tokens
@@ -136,7 +139,7 @@ export function launchFeeConfig(o: Partial<LaunchOpts>) {
     creatorTradingFeePercentage: o.creatorTradingFeePercentage ?? d.creatorTradingFeePercentage, migrationFeeOption: o.migrationFeeOption ?? d.migrationFeeOption,
     percentageSupplyOnMigration: resolvePercentageSupplyOnMigration(o.percentageSupplyOnMigration) };
 }
-export interface LaunchRecord { name?: string; symbol?: string; cluster: string; label: string; time: string; programId: string; config: string; pool: string; mint: string; quoteMint: string; steps: { slotOffset: string; maxBps: number }[]; uncappedAfter: string; migrationQuoteThresholdSol: number; fee: any; txs: Record<string, string> }
+export interface LaunchRecord { name?: string; symbol?: string; cluster: string; label: string; time: string; programId: string; config: string; pool: string; mint: string; quoteMint: string; steps: { slotOffset: string; maxBps: number }[]; uncappedAfter: string; migrationQuoteThresholdSol: number; fee: any; txs: Record<string, string>; mintHookCheck?: string }
 
 /** DBC config params for a launch (pure; no network). Launchpad.configParams uses this. */
 export function curveConfigParams(o: Partial<LaunchOpts>) {
@@ -184,6 +187,49 @@ export async function resolveQaHookProgram(c: { connection: any; url?: string },
   return r.programId;
 }
 
+/** Blocker #7: what the mint's TransferHook must hold for this cluster. Runs the hook gate (pinned program id) and resolves
+ *  the pinned DBC signer for the genesis class (MintHookRefusal when unset: mainnet/testnet/unknown, no devnet fallback). */
+export async function mintHookExpectationFor(lp: { c: any; hook: HookClient; requestedHookProgram?: PublicKey }, forbidden: Record<string, string | null | undefined> = {}): Promise<MintHookExpectation> {
+  const r = await gateHook(lp);
+  const authority = mintHookAuthorityFor(r.clusterClass);
+  assertPinNotOurs(authority, forbidden);
+  return { hookProgram: r.programId, authority, forbidden };
+}
+/** The DBC pool's graduation phase plus the mint check for that phase (MintHookRefusal before any tx is built). */
+export async function assertPoolMintHook(lp: { c: any; hook: HookClient; dbc: any; requestedHookProgram?: PublicKey }, pool: PublicKey, want: GraduationPhase | 'any' = 'any', forbidden: Record<string, string | null | undefined> = {}): Promise<GraduationPhase> {
+  const exp = await mintHookExpectationFor(lp, forbidden);
+  let st: any;
+  try { st = await lp.dbc.state.getPool(pool); }
+  catch (e: any) { throw new MintHookRefusal(`refusing: cannot read DBC pool ${pool.toBase58()} (RPC error: ${String(e?.message ?? e).slice(0, 200)})`); }
+  const ps = st?.poolState ?? st;
+  if (!ps?.baseMint) throw new MintHookRefusal(`refusing: DBC pool ${pool.toBase58()} not found`);
+  const phase = graduationPhase(ps);
+  if (want !== 'any' && phase !== want) throw new MintHookRefusal(`refusing: DBC pool ${pool.toBase58()} is ${phase}-graduation, this step needs ${want}-graduation`);
+  await assertMintHook(lp.c.connection, new PublicKey(ps.baseMint), phase, exp);
+  return phase;
+}
+
+
+/** Monitoring flag for the mint's TransferHook (blocker #7): ok only when it matches the graduation phase. Read failures
+ *  and an unknown phase are flagged (ok: false), never treated as fine. The hook gate itself still throws. */
+export async function mintHookFlag(lp: { c: any; hook: HookClient; dbc: any; requestedHookProgram?: PublicKey }, mint: PublicKey, pool?: PublicKey): Promise<{ ok: boolean; phase: GraduationPhase | null; problems: string[] }> {
+  const r = await gateHook(lp);
+  let phase: GraduationPhase | null = null;
+  try {
+    const exp: MintHookExpectation = { hookProgram: r.programId, authority: mintHookAuthorityFor(r.clusterClass) };
+    const st: any = pool ? await lp.dbc.state.getPool(pool) : (await lp.dbc.state.getPoolByBaseMint(mint))?.account;
+    const ps = st?.poolState ?? st;
+    if (!ps?.baseMint) throw new MintHookRefusal(`no DBC pool found for mint ${mint.toBase58()}`);
+    if (!new PublicKey(ps.baseMint).equals(mint)) throw new MintHookRefusal(`DBC pool base mint ${new PublicKey(ps.baseMint).toBase58()} != ${mint.toBase58()}`);
+    phase = graduationPhase(ps);
+    const problems = mintHookProblems(await readMintTransferHook(lp.c.connection, mint), phase, exp);
+    return { ok: problems.length === 0, phase, problems };
+  } catch (e: any) {
+    return { ok: false, phase, problems: [String(e?.message ?? e)] };
+  }
+}
+
+
 export class Launchpad {
   dbc: DynamicBondingCurveClient;
   hook: HookClient;
@@ -213,6 +259,11 @@ export class Launchpad {
     return { upgradeAuthority: a.upgradeAuthority, liftAuthority: a.liftAuthority };
   }
 
+  /** Blocker #7 helpers (module functions, so they also run with the test fakes' `this`). */
+  mintHookExpectation(forbidden: Record<string, string | null | undefined> = {}) { return mintHookExpectationFor(this, forbidden); }
+  assertPoolMintHook(pool: PublicKey, want: GraduationPhase | 'any' = 'any', forbidden: Record<string, string | null | undefined> = {}) { return assertPoolMintHook(this, pool, want, forbidden); }
+  mintHookFlag(mint: PublicKey, pool?: PublicKey) { return mintHookFlag(this, mint, pool); }
+
   /** Partner config (transfer hook -> our program) + pool + hook config, by `deployer` (partner = creator = launcher in the beta). */
   async launch(deployer: Keypair, o: LaunchOpts): Promise<LaunchRecord> {
     // hook gate first (also when o.authorities is given): the hook program id pinned by genesis, executable here. Its
@@ -222,6 +273,10 @@ export class Launchpad {
     // upgrade != lift. Throws off devnet/local (by genesis class) before any tx is built; warns on devnet/local.
     const auth = o.authorities ?? (await this.hookAuthorities());
     for (const w of launchConfigChecks(gate.clusterClass, deployer.publicKey.toBase58(), auth)) console.warn(w);
+    // blocker #7: the pinned DBC signer that will hold the new mint's TransferHook authority resolves for this genesis
+    // class and is none of our keys. Refuses before any tx is built. (The program_id comparison runs on the mint itself.)
+    const mintHookForbidden = { dev: deployer.publicKey.toBase58(), upgrade: auth.upgradeAuthority, lift: auth.liftAuthority, ...(o.keeperKeys ?? {}) };
+    const mintHook = await mintHookExpectationFor(this, mintHookForbidden);
     const configKp = Keypair.generate();
     const mintKp = Keypair.generate();
     const txs: Record<string, string> = {};
@@ -250,14 +305,32 @@ export class Launchpad {
       quoteMint: NATIVE_MINT.toBase58(), steps: o.steps.map(s => ({ slotOffset: s.slotOffset.toString(), maxBps: s.maxBps })), uncappedAfter: o.uncappedAfter.toString(),
       migrationQuoteThresholdSol: o.migrationQuoteThresholdSol ?? 1, fee: { mode: 'FeeSchedulerLinear (anti-sniper fee schedule)', ...launchFeeConfig(o) }, txs,
     };
+    // blocker #7: the mint only exists now. The authority alone does not prove the mint is ours: the pinned signer is DBC's
+    // shared pool-authority PDA, the same for every DBC pool. So all of these are required: the DBC pool at the derived
+    // address has our config and our mint (still pre-graduation), and the mint's TransferHook holds our gated hook program
+    // (program_id comparison) and the pinned DBC signer.
+    let mintHookErr: Error | null = null;
+    try {
+      let st: any;
+      try { st = await this.dbc.state.getPool(pool); }
+      catch (e: any) { throw new MintHookRefusal(`refusing: cannot read the new DBC pool ${pool.toBase58()} (RPC error: ${String(e?.message ?? e).slice(0, 200)})`); }
+      const ps = st?.poolState ?? st;
+      if (!ps?.baseMint || !ps?.config) throw new MintHookRefusal(`refusing: new DBC pool ${pool.toBase58()} not found`);
+      if (!new PublicKey(ps.baseMint).equals(mintKp.publicKey)) throw new MintHookRefusal(`refusing: new DBC pool base mint ${new PublicKey(ps.baseMint).toBase58()} != our mint ${mintKp.publicKey.toBase58()}`);
+      if (!new PublicKey(ps.config).equals(configKp.publicKey)) throw new MintHookRefusal(`refusing: new DBC pool config ${new PublicKey(ps.config).toBase58()} != our config ${configKp.publicKey.toBase58()}`);
+      if (graduationPhase(ps) !== 'pre') throw new MintHookRefusal(`refusing: new DBC pool ${pool.toBase58()} is already past graduation`);
+      await assertMintHook(this.c.connection, mintKp.publicKey, 'pre', mintHook);
+    } catch (e: any) { mintHookErr = e; rec.mintHookCheck = `FAILED: ${e.message}`; }
+    if (!mintHookErr) rec.mintHookCheck = 'ok';
     mkdirSync(`launches/${this.c.name}`, { recursive: true });
     writeFileSync(`launches/${this.c.name}/${rec.mint}.json`, JSON.stringify(rec, null, 2));
+    if (mintHookErr) throw mintHookErr;
     return rec;
   }
 
   /** Buy exactly `tokens` (base units) or sell `tokens` (base units) via swap2_with_transfer_hook. */
   async swap(owner: Keypair, pool: PublicKey, side: 'buy' | 'sell', tokens: bigint, purpose?: string, maxSolIn?: bigint) {
-    await gateHook(this);
+    await assertPoolMintHook(this, pool, 'pre', { swapper: owner.publicKey.toBase58() });   // runs the hook gate; blocker #7
     if (maxSolIn === undefined) { // SDK wraps maximumAmountIn into wSOL up front, so bound it by the wallet balance
       const bal = BigInt(await this.c.connection.getBalance(owner.publicKey));
       maxSolIn = bal > 30_000_000n ? bal - 30_000_000n : 1n; if (maxSolIn > 2_000_000_000n) maxSolIn = 2_000_000_000n;
@@ -271,7 +344,7 @@ export class Launchpad {
   }
   /** Buy with exact SOL in (used to fill the curve). */
   async buyExactIn(owner: Keypair, pool: PublicKey, lamportsIn: bigint, purpose: string) {
-    await gateHook(this);
+    await assertPoolMintHook(this, pool, 'pre', { buyer: owner.publicKey.toBase58() });   // runs the hook gate; blocker #7
     const tx = await this.dbc.pool.swap2WithTransferHook({ owner: owner.publicKey, pool, swapBaseForQuote: false, referralTokenAccount: null, swapMode: SwapMode.PartialFill, amountIn: new BN(lamportsIn.toString()), minimumAmountOut: new BN(0) } as any);
     tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
     return sendTx(this.c, tx, [owner], purpose);
@@ -280,7 +353,7 @@ export class Launchpad {
   async migrate(payer: Keypair, pool: PublicKey) {
     const damm = await dammV2MigrationConfigFor(this.c);   // throws ConfigPinRefusal before any tx is built
     // hook gate (Token-2022 invokes the hook on the migration transfers): pinned id for this cluster, executable here
-    await gateHook(this);
+    const mintHook = await mintHookExpectationFor(this, { payer: payer.publicKey.toBase58() });   // runs the hook gate
     // cluster check (throws ClusterCheckRefusal before any tx is built): the pool's DBC config and the DAMM v2 migration
     // config must be owned by their programs on this cluster.
     let st: any;
@@ -289,6 +362,9 @@ export class Launchpad {
     const ps = st?.poolState ?? st;
     if (!ps?.config) throw new ClusterCheckRefusal(`refusing: DBC pool ${pool.toBase58()} does not exist on this cluster`);
     await assertClusterAccounts(this.c.connection, { dbcConfigs: [new PublicKey(ps.config)], dammV2Config: damm.config });
+    // blocker #7: migration runs after graduation, so the mint's TransferHook program and authority must both be unset
+    if (graduationPhase(ps) !== 'post') throw new MintHookRefusal(`refusing: DBC pool ${pool.toBase58()} has not graduated (migration progress ${ps.migrationProgress})`);
+    await assertMintHook(this.c.connection, new PublicKey(ps.baseMint), 'post', mintHook);
     const { transaction, firstPositionNftKeypair, secondPositionNftKeypair } = await this.dbc.migration.migrateToDammV2({ payer: payer.publicKey, pool, dammConfig: damm.config });
     return sendTx(this.c, transaction, [payer, firstPositionNftKeypair, secondPositionNftKeypair], 'dbc: migration_damm_v2 (graduation)',
       damm.override ? `overrides: DAMM_V2_MIGRATION_CONFIG=${damm.override}` : undefined);
@@ -300,8 +376,8 @@ export class Launchpad {
     return info ? unpackAccount(a, info, TOKEN_2022).amount : 0n;
   }
 
-  async status(mint: PublicKey, wallet?: PublicKey) {
-    await gateHook(this);
+  async status(mint: PublicKey, wallet?: PublicKey, pool?: PublicKey) {
+    const mintHookFlagOut = await mintHookFlag(this, mint, pool);   // runs the hook gate; blocker #7 (flags, never throws)
     const conn = this.c.connection;
     const [cfgAcc, liftAcc, globalAcc, slot] = await Promise.all([
       conn.getAccountInfo(this.hook.configPda(mint)), conn.getAccountInfo(this.hook.liftPda(mint)), conn.getAccountInfo(this.hook.globalPda()), conn.getSlot('confirmed'),
@@ -321,6 +397,7 @@ export class Launchpad {
         globalLifted: g.lifted, mintLifted: lift.lifted, raisedFloorBps: lift.raisedFloorBps, currentCap: cap === null ? null : cap.toString(),
         nextChange: (() => { if (cap === null) return null; const n = nextChange(cc, BigInt(slot)); return n ? { slot: n.slot.toString(), bps: n.bps } : null; })() });
     }
+    out.mintHook = mintHookFlagOut;
     if (wallet) out.walletBalance = (await this.tokenBalance(mint, wallet)).toString();
     return out;
   }
