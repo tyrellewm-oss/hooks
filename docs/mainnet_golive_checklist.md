@@ -20,7 +20,7 @@ This checklist describes what a go-live **would** need. Every transaction below 
 | G7 | Monitoring and the R4 stop rule: who watches the keeper, the alerts, and who can pause it | King | open |
 
 ## 1. Decisions King must make first (no defaults; agents don't guess)
-1. **Keys M1–M4:** who holds the program upgrade authority (multisig + timelock?), the Global admin (lift) key, the fee claimer / treasury, and the keeper hot keys (gas, claim signer).
+1. **Keys M1–M4:** who holds M1 the program upgrade authority (multisig + timelock?), M2 the Global admin (lift) key, M3 the fee claimer / treasury, and M4 the keeper hot keys (gas, claim signer).
 2. **Launch-key custody:** a hot key, or King signing each launch. 8.3 requires it to differ from the admin, upgrade and fee-claimer keys and from every keeper key.
 3. **Mint keypair:** generated on King's side. Agents only ever see the public key.
 4. **Fee / curve / supply preset** (`research/fee_curve_supply_options.md`) and **flat vs dynamic pool fee** after migration.
@@ -48,7 +48,7 @@ The post-check runs read-only after it lands.
 | T6 | Create pool + hook config (one tx), mint keypair from King | payer, **launch key**, mint keypair (King) | pre-send simulation: mint TransferHook == the pinned program + DBC signer; `buildCreatePoolTx` launch-key check | pool / mint / hook checks (blocker #7); `MintConfig.launcher` == the launch key |
 | T7 | Registry PR: add the mainnet mint to `keeper/registry.json` | repo PR (Agent A/B review, King merges) | exact mint string | site and keeper see only the registry mint |
 | T8 | Keeper setup: treasury / dev wSOL and token accounts | keeper gas | owners per M-keys; `dev_payout` == decision 5 | accounts exist with the right owners |
-| T9 | Keeper runs (recurring): claim → 15/85 split → price check → capped buyback → burn | keeper keys (hot, per M2) | `run` dry run first; price checks (#5) pass; max per run == decision 6 | every run reconciles; burn verified; public log written |
+| T9 | Keeper runs (recurring): claim → 15/85 split → price check → capped buyback → burn | keeper hot keys (M4: gas, claim signer) | `run` dry run first; price checks (#5) pass; max per run == decision 6 | every run reconciles; burn verified; public log written |
 
 Not on the list: `lift_global`, `lift_mint_cap`, `raise_mint_cap`, `set_launch_authority` and `rotate_admin`. These are emergency or rotation actions only. Each one is a separate, explicit King decision.
 
