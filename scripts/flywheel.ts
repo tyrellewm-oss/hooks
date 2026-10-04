@@ -76,12 +76,13 @@ async function send(c: Connection, ixs: TransactionInstruction[], signers: Keypa
 }
 
 async function balances(c: Connection) {
-  const names = ['deployer', 'buyerA', 'buyerB', 'fw_treasury', 'fw_dev', 'fw_gas', 'fw15_treasury', 'fw15_dev'];
+  // signing wallets by key name (pubkey read from the key file); the dev payout by its configured pubkey (no key file)
+  const names = ['deployer', 'buyerA', 'buyerB', 'fw_treasury', 'fw_gas', 'fw15_treasury'];
+  const wallets: [string, PublicKey][] = names.filter(n => existsSync(`.devnet-keys/${n}.json`)).map(n => [n, loadOrCreate('devnet', n).publicKey]);
+  wallets.push(['dev_payout', new PublicKey(cfg.dev_payout)]);
   let native = 0n, wsol = 0n; const rows: any[] = [];
   const mints = [...new Set([cfg.main_mint, ...cfg.sources.filter(s => s.kind === 'dbc').map((s: any) => s.base_mint)])];
-  for (const n of names) {
-    if (!existsSync(`.devnet-keys/${n}.json`)) continue;
-    const pk = loadOrCreate('devnet', n).publicKey;
+  for (const [n, pk] of wallets) {
     const b = BigInt(await c.getBalance(pk, 'confirmed'));
     const wa = getAssociatedTokenAddressSync(NATIVE_MINT, pk, true, TOKEN_PROGRAM_ID);
     const wi = await c.getAccountInfo(wa, 'confirmed');
@@ -133,8 +134,9 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
   if (cmd === 'balances') { const c = await devnetConn(); const b = await balances(c); console.log(JSON.stringify(b, null, 1)); ev({ kind: 'balances', label: arg('--label', ''), ...b }); return; }
   if (cmd === 'setup') {
     const c = await devnetConn();
-    const dep = loadKey(cfg.keys.claim_signer), T = loadKey(cfg.keys.treasury), D = loadKey(cfg.keys.dev), G = loadKey(cfg.keys.gas);
-    console.log(JSON.stringify({ treasury: T.publicKey.toBase58(), dev: D.publicKey.toBase58(), gas: G.publicKey.toBase58(), claim_signer: dep.publicKey.toBase58() }));
+    const dep = loadKey(cfg.keys.claim_signer), T = loadKey(cfg.keys.treasury), G = loadKey(cfg.keys.gas);
+    const D = { publicKey: new PublicKey(cfg.dev_payout) };   // payout destination only: no dev key is loaded
+    console.log(JSON.stringify({ treasury: T.publicKey.toBase58(), dev_payout: D.publicKey.toBase58(), gas: G.publicKey.toBase58(), claim_signer: dep.publicKey.toBase58() }));
     const gasTarget = BigInt(Math.round(Number(arg('--gas-sol', '0.05')) * 1e9));
     const gb = BigInt(await c.getBalance(G.publicKey));
     if (gb < gasTarget) await send(c, [SystemProgram.transfer({ fromPubkey: dep.publicKey, toPubkey: G.publicKey, lamports: gasTarget - gb })], [dep], `setup:fund-gas:${gasTarget - gb}`);

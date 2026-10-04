@@ -18,15 +18,14 @@
   "keys": {
     "claim_signer": "deployer",
     "treasury": "fw15_treasury",
-    "dev": "fw15_dev",
     "gas": "fw_gas"
   },
   "pinned_pubkeys": {
     "claim_signer": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
     "treasury": "96YYyNUPwxqZyebc9KbsPPWqzKDosUhJceYdmp3CBjth",
-    "dev": "Fyf3yL8DTiYR1ho2bdbUTro1Uq5d5Qss5KjYkqSgfVdP",
     "gas": "D7ZmAZ9dpVBVFkR268dMnu1uPVKFUF9ZFJDZdXzdCbGt"
   },
+  "dev_payout": "Fyf3yL8DTiYR1ho2bdbUTro1Uq5d5Qss5KjYkqSgfVdP",
   "hook_program": "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz",
   "hook_upgrade_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
   "hook_lift_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",

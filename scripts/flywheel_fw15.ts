@@ -1,6 +1,6 @@
 // FW-15 setup (DEVNET ONLY): fresh launch left UNFILLED (isMigrated = 0) + one small curve buy so the DBC partner fee > min_claim,
-// then writes keeper/devnet.fw15.json (separate treasury/dev throwaways so the TDT keeper's reconciliation stays exact).
-//   tsx scripts/flywheel_fw15.ts [--max-lamports 30000000]
+// then writes keeper/devnet.fw15.json (separate treasury throwaway + dev payout pubkey so the TDT keeper's reconciliation stays exact).
+//   tsx scripts/flywheel_fw15.ts --dev-payout <pubkey> [--max-lamports 30000000]
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { NATIVE_MINT, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction } from '@solana/spl-token';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -8,14 +8,18 @@ import { resolveCluster } from '../sdk/cluster.js';
 import { loadOrCreate } from '../sdk/keys.js';
 import { Launchpad, sendTx } from '../sdk/launch.js';
 import { resolveSchedule } from '../sdk/schedules.js';
+import { devPayoutArg } from '../sdk/flywheel/config.js';
 
 const argv = process.argv.slice(2);
 const arg = (k: string, d?: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 (async () => {
+  const devPayout = devPayoutArg(argv);   // required, validated before any RPC call
   const c = await resolveCluster('devnet');   // genesis-checked
   const lp = new Launchpad(c);
   const deployer = loadOrCreate('devnet', 'deployer'), A = loadOrCreate('devnet', 'buyerA'), G = loadOrCreate('devnet', 'fw_gas');
-  const T = loadOrCreate('devnet', 'fw15_treasury'), D = loadOrCreate('devnet', 'fw15_dev');
+  const T = loadOrCreate('devnet', 'fw15_treasury');
+  // dev payout: a pubkey only, named by the operator (--dev-payout). The keeper never signs as dev.
+  const D = { publicKey: new PublicKey(devPayout) };
   const sched = resolveSchedule(undefined, 'devnet');
   const rec = await lp.launch(deployer, { name: 'Flywheel FW15 Test', symbol: 'FW15', steps: sched.steps, uncappedAfter: sched.uncappedAfter, migrationQuoteThresholdSol: 1 });
   console.log(JSON.stringify({ mint: rec.mint, pool: rec.pool, config: rec.config }));
@@ -33,8 +37,9 @@ const arg = (k: string, d?: string) => { const i = argv.indexOf(k); return i >= 
   const base = JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8'));
   const cfg = { ...base, name: 'devnet-fw15', main_mint: rec.mint, main_dbc_pool: rec.pool, route_pool: null,
     sources: [{ kind: 'dbc', pool: rec.pool, config: rec.config, base_mint: rec.mint }],
-    keys: { ...base.keys, treasury: 'fw15_treasury', dev: 'fw15_dev' },
-    pinned_pubkeys: { ...base.pinned_pubkeys, treasury: T.publicKey.toBase58(), dev: D.publicKey.toBase58() },
+    keys: { ...base.keys, treasury: 'fw15_treasury' },
+    pinned_pubkeys: { ...base.pinned_pubkeys, treasury: T.publicKey.toBase58() },
+    dev_payout: D.publicKey.toBase58(),
     state_dir: '.flywheel/devnet-fw15', public_log: 'flywheel/devnet-fw15.json' };
   writeFileSync('keeper/devnet.fw15.json', JSON.stringify(cfg, null, 2) + '\n');
   console.log(JSON.stringify({ launch: rec.txs, buy: r.sig, atas: r2.sig, config: 'keeper/devnet.fw15.json' }));
