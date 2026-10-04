@@ -16,6 +16,9 @@ import { assertClusterAccounts, ClusterCheckRefusal } from '../cluster_check.js'
 import { classifyCluster } from '../cluster.js';
 import { readHookAuthorities, resolveHookProgramId, type HookProgramResolution } from '../hook.js';
 import { assertMintHook, graduationPhase, mintHookAuthorityFor, MintHookRefusal } from '../mint_hook.js';
+import { redactPaths, redactDeep } from '../redact.js';
+/** FW-17: every line the keeper prints or publishes goes through this (console output ends up in pasted logs). */
+const redactLine = (t: unknown) => redactPaths(t);
 
 export const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 const stageFail = (stage: string) => (stage.startsWith('claim') ? 'failed_claim' : stage === 'dev' ? 'failed_split' : `failed_${stage}`);
@@ -98,8 +101,9 @@ export async function startKeeper(cfg: KeeperConfig, overrides: string[], deps: 
   try { ({ upgradeAuthority: upg, liftAuthority: lift } = await readHookAuthorities(conn, new PublicKey(cfg.hook_program))); }
   catch (e: any) { throw new KeyRuleRefusal(`refusing: cannot read hook authorities (${e?.message ?? e})`); }
   if (upg !== cfg.hook_upgrade_authority || lift !== cfg.hook_lift_authority) throw new KeyRuleRefusal(`refusing: pinned hook authorities do not match chain (upgrade ${upg}, lift ${lift})`);
-  for (const w of warnings) (deps.log ?? console.log)(w);
-  return new Keeper(cfg, overrides, conn, keys, warnings, deps.log ?? console.log);
+  const keeper = new Keeper(cfg, overrides, conn, keys, warnings, deps.log ?? console.log);
+  for (const w of warnings) keeper.log(w);   // FW-17: through Keeper.log, which redacts
+  return keeper;
 }
 
 // ---------------------------------------------------------------- keeper
@@ -110,6 +114,7 @@ export class Keeper {
   /** devnet test knobs only: crash after a stage (FW-8), corrupt spot read (FW-14), break log path (FW-14). */
   faults: { crashAfter?: string; crashSend?: string; spotSkew?: boolean };
   constructor(public cfg: KeeperConfig, public overrides: string[], public conn: Connection, public keys: KeySet, public startWarnings: string[], public log: (s: string) => void) {
+    const sink = log; this.log = (t: string) => sink(redactLine(t));   // FW-17: Keeper.log lines (FAILED, PENDING, log write failed, ...) are redacted
     this.store = new Store(cfg.state_dir);
     this.cp = new CpAmm(conn); this.dbc = new DynamicBondingCurveClient(conn, 'confirmed');
     this.mint = new PublicKey(cfg.main_mint); this.mainProg = new PublicKey(cfg.main_token_program);
@@ -581,17 +586,17 @@ export function newRun(runId: string, overrides: string[], status: string, reaso
 /** §10 public log: HookedPad-compatible top level + per-run detail. Addresses and sigs only (FW-17). */
 export function publicLog(s: KeeperState, cfg: KeeperConfig) {
   const supply = B(s.last_supply_raw ?? s.first_supply_raw);
-  const redact = (t: string) => t.replace(/(?<![:\w/])\/(?:[\w.\-]+\/)+[\w.\-]+/g, '<path>');   // FW-17: no internal paths in the public log
+  const redact = redactLine;   // FW-17: no internal paths in the public log (sdk/redact.ts); every string below is redacted
   const strip = (r: RunLog) => { const { stages, overrides, ...rest } = r; return { ...rest, reason: redact(rest.reason), test_knobs: overrides.map(redact) }; };
-  return {
-    cluster: s.cluster, mint: s.mint, decimals: s.decimals, live: !s.paused, paused: s.paused, pause_reason: s.pause_reason.replace(/(?<![:\w/])\/(?:[\w.\-]+\/)+[\w.\-]+/g, '<path>'),
+  return redactDeep({
+    cluster: s.cluster, mint: s.mint, decimals: s.decimals, live: !s.paused, paused: s.paused, pause_reason: redact(s.pause_reason),
     state: s.paused ? 'paused' : s.runs.at(-1)?.status === 'waiting_for_graduation' ? 'waiting_for_graduation' : 'active',
     claimedSol: fmtSol(B(s.totals.claimed_lamports)), devSol: fmtSol(B(s.totals.dev_lamports)), spentSol: fmtSol(B(s.totals.spent_lamports)), reserveSol: fmtSol(B(s.pending_lamports)),
     burnedTokens: fmtTokens(B(s.totals.burned_raw), s.decimals), supplyTokens: fmtTokens(supply, s.decimals), pctOfSupply: pctOf(B(s.totals.burned_raw), B(s.first_supply_raw)),
     totals_raw: { ...s.totals, pending_lamports: s.pending_lamports, unsplit_lamports: s.unsplit_lamports, unburned_raw: s.unburned_raw },
     burns: s.burns.map(b => ({ at: b.at, tokens: b.tokens, sol: b.sol, sig: b.sig, run_id: b.run_id })),
     runs: s.runs.map(strip), current_run: s.current ? strip(s.current) : null, route_pool: cfg.route_pool, main_dbc_pool: cfg.main_dbc_pool,
-  };
+  }, redact);
 }
 /** DBC SDK getPool returns { poolState } (1.5.13); unwrap defensively. */
 const unwrapAcc = (x: any) => (x && x.poolState ? x.poolState : x);

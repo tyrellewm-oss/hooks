@@ -4,7 +4,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Keypair } from '@solana/web3.js';
 import { utils as anchorUtils } from '@coral-xyz/anchor';
+import { readFileSync } from 'node:fs';
 import { redactPaths, redactingReplacer, redactedJson, redactDeep } from '../sdk/redact.js';
+import { initState, newRun, publicLog, Keeper, FailClosed } from '../sdk/flywheel/keeper.js';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+import http from 'node:http';
+import { inspect } from 'node:util';
+import { serverError } from '../app/errors.js';
 
 const same = (s: string) => assert.equal(redactPaths(s), s, `must not be redacted: ${s}`);
 const to = (s: string, want: string) => assert.equal(redactPaths(s), want, `redaction of: ${s}`);
@@ -177,4 +187,135 @@ test('FW-17: redactDeep converts class instances, null-prototype objects and Err
   assert.equal(d.date, date); assert.equal(d.u8, u8); assert.equal(d.pk, pk); assert.equal(d.cyc.self, '[Circular]');
   noUser(JSON.stringify(d), 'redactDeep'); noUser(redactedJson({ box: new Box(), np, e }), 'redactedJson');
   const shared = { k: `/Users/${UN}` }; assert.deepEqual(redactDeep([shared, shared]), [{ k: '<path>' }, { k: '<path>' }]);   // a repeated (not circular) reference is copied
+});
+
+test('FW-17: publicLog applies the helper to pause_reason, run reasons and test knobs', () => {
+  const base = JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8'));
+  const sig = anchorUtils.bytes.bs58.encode(Uint8Array.from({ length: 64 }, (_, i) => (i * 53 + 5) & 255));
+  const url = `https://explorer.solana.com/tx/${sig}?cluster=devnet`;
+  const s = initState(base); s.paused = true;
+  s.pause_reason = `log write failed: EACCES /root, mkdir '/srv/my dir/fw.json' (file:///srv/my%20user/x) see ${url}`;
+  s.runs.push(newRun('devnet-x', ['FW_PUBLIC_LOG=/tmp', 'FW_PUBLIC_LOG=C:\\Users\\me\\fw.json', 'FW_MAX_SWAP_LAMPORTS=1000000'], 'failed_log', 'EEXIST ~/fw/x.json, ratio 15/85'));
+  const out = publicLog(s, base) as any;
+  assert.equal(out.pause_reason, `log write failed: EACCES <path>, mkdir '<path>' (<path>) see ${url}`);
+  assert.deepEqual(out.runs[0].test_knobs, ['FW_PUBLIC_LOG=<path>', 'FW_PUBLIC_LOG=<path>', 'FW_MAX_SWAP_LAMPORTS=1000000']);
+  assert.equal(out.runs[0].reason, 'EEXIST <path>');   // after a home prefix the rest of the line goes
+});
+
+test('FW-17: the CLI evidence log is built with redactedJson (source check; the CLI is not run offline)', () => {
+  const src = readFileSync('scripts/flywheel.ts', 'utf8');
+  const ev = src.split('\n').find(l => l.startsWith('const ev = ')) ?? '';
+  assert.match(ev, /appendFileSync\(evlog, redactedJson\(\{[^\n]*\}(?:, \w+)?\) \+ '\\n'\)/, 'ev must build its line with redactedJson (values redacted before serialising)');
+  assert.doesNotMatch(src, /JSON\.stringify\([^\n]*\)\.replace\(/, 'no redaction pass over an already-serialised line');
+  assert.match(src, /error: (?:R|redact\w*)\(String\(e\?\.message \?\? e\)\)\.slice\(0, 300\)/, 'the CLI error is redacted first, then cut');
+  assert.doesNotMatch(src, /error: String\(e\?\.message \?\? e\)\.slice/, 'no unredacted cut');
+});
+
+test('FW-17: publicLog redacts every string (warnings, claim notes, reasons from thrown errors and stacks), not just the named fields', () => {
+  const base = JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8'));
+  const e = new Error(`ENOENT: open '${HOME}${UN}/fw.json'`); e.stack = `Error: ${e.message}\n    at f (C:\\Users\\${UN}\\a.ts:1:2)`;
+  const s = initState(base); s.paused = true; s.pause_reason = `auto-pause: ${e.message}`;
+  const r = newRun('devnet-y', [`FW_STATE_DIR=/Users/${UN}/st`], 'failed_internal', String(e.message).slice(0, 400));
+  r.warnings.push(`warn: ${e.stack}`, `file:///Users/${UN.replace(' ', '%20')}/x`);
+  (r.claims as any[]).push({ source: 'dbc', pool: 'P', claimable_before: '0', claimed_lamports: '0', claimed_vs_read_lamports: '0', rent_refund_lamports: '0', sig: '', skipped: `/mnt/c/Users/${UN}/x` });
+  s.runs.push(r); s.current = { ...r, run_id: 'devnet-z' };
+  const txt = JSON.stringify(publicLog(s, base));
+  noUser(txt, 'publicLog'); assert.match(txt, /<path>/);
+  assert.equal((publicLog(s, base) as any).mint, base.main_mint);   // addresses untouched
+});
+
+test('FW-17: the site deep-redacts every JSON body (source check; the server is not started offline)', () => {
+  const src = readFileSync('app/server.ts', 'utf8');
+  assert.match(src, /const send = [^\n]*\n\s*if \(type === 'application\/json'\) obj = redactDeep\(obj\);/, 'send() must deep-redact the whole JSON body');
+  assert.equal((src.match(/\bres\.end\(/g) ?? []).length, 1, 'only send() writes a response body');
+});
+
+test('FW-17: a 500 from the site logs a redacted error (message, stack, cause) and sends a redacted body', async () => {
+  const logged: string[] = [];
+  const srv = http.createServer((_req, res) => {
+    try {
+      const cause = new Error(`EACCES: open '${HOME}${UN}/launches/x.json'`); cause.stack = `Error: ${cause.message}\n    at read (/Users/${UN}/app/a.ts:1:2)`;
+      const e: any = new Error(`tokenView failed at C:\\Users\\${UN}\\launches`, { cause }); e.stack = `Error: ${e.message}\n    at tokenView (${HOME}${UN}/app/server.ts:70:3)\n    at ~/${UN}/x.ts:1:1`; e.path = `${HOME}${UN}/x`;
+      throw e;
+    } catch (e) {   // the site's catch: serverError logs, send() deep-redacts the body
+      const body = redactDeep(serverError(e, (...a) => logged.push(a.map(x => (typeof x === 'string' ? x : inspect(x, { depth: 10 }))).join(' '))));
+      res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify(body));
+    }
+  });
+  await new Promise<void>(r => srv.listen(0, '127.0.0.1', () => r()));
+  try {
+    const port = (srv.address() as any).port;
+    const r = await fetch(`http://127.0.0.1:${port}/api/token/x`); const txt = await r.text();
+    assert.equal(r.status, 500); noUser(txt, 'response'); assert.match(JSON.parse(txt).error, /^tokenView failed at <path>$/);
+    assert.equal(logged.length, 1); noUser(logged[0], 'console.error');
+    for (const want of ['tokenView failed at <path>', 'at tokenView (<path>', 'EACCES: open', 'at read (<path>', "path: '<path>'"]) assert.ok(logged[0].includes(want), `${want} in ${logged[0]}`);
+  } finally { srv.closeAllConnections(); srv.close(); }
+  const src = readFileSync('app/server.ts', 'utf8');
+  assert.match(src, /\} catch \(e: any\) \{ return send\(res, 500, serverError\(e\)\); \}/, 'the site\'s catch goes through serverError');
+  assert.equal((src.match(/console\.(error|warn)\(/g) ?? []).length, 0, 'no other console.error in the server');
+});
+
+// ---------------- console sinks (pasted logs end up in PRs): Keeper.log and the CLI
+const kcfg = (dir: string, o: Record<string, unknown> = {}) => ({ ...JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')), state_dir: join(dir, 'state'), public_log: join(dir, 'pub.json'), ...o });
+const kkeys = () => ({ claim: Keypair.generate(), treasury: Keypair.generate(), gas: Keypair.generate() });
+const homeDir = () => { const d = mkdtempSync(join(tmpdir(), 'fw17-')); const h = join(d, 'Users', UN); mkdirSync(h, { recursive: true }); writeFileSync(join(h, 'afile'), 'x'); return { d, h }; };
+
+test('FW-17: Keeper.log lines are redacted (FAILED, log write failed, PENDING, PAUSED, warnings)', async () => {
+  const { d, h } = homeDir(); const lines: string[] = [];
+  const k = new Keeper(kcfg(d, { public_log: join(h, 'afile', 'fw.json') }) as any, [], {} as any, kkeys(), [], t => lines.push(t));
+  const r = await k.runOnce();                                   // public log unwritable → failed_log; the error names the path
+  assert.equal(r.status, 'failed_log'); assert.ok(lines.some(l => /FAILED failed_log: log write failed/.test(l)), lines.join('\n'));
+  (k as any).log(`[x] PENDING: confirm timeout for ${HOME}${UN}/sig.json`); (k as any).log(`log write failed: EACCES '/Users/${UN}/fw.json'`);
+  (k as any).log(`[x] PAUSED MID-RUN before swap (C:\\Users\\${UN}\\PAUSE)`);
+  assert.equal(lines.length, 4); for (const l of lines) noUser(l, l);
+  assert.match(lines[1], /^\[x\] PENDING: confirm timeout for <path>$/);
+});
+
+test('FW-17: a JSON-escaped UNC path in a reconciliation failure leaks neither into pause_reason (public log) nor into the FAILED line', () => {
+  const { d } = homeDir(); const lines: string[] = [];
+  const k = new Keeper(kcfg(d) as any, [], {} as any, kkeys(), [], t => lines.push(t));
+  const s = initState(k.cfg); const run = newRun('devnet-r', [], 'logged', '');
+  const r = { ok: false, err: `\\\\srv\\${UN}\\x`, treasury_wsol_raw: '1' };
+  (k as any).finishFail(s, run, new FailClosed('reconcile_mismatch', `reconciliation failed: ${JSON.stringify(r)}`, true), true);   // the keeper's reconcile failure, as thrown at the reconcile stage
+  const pub = readFileSync(k.cfg.public_log, 'utf8'); const pj = JSON.parse(pub);
+  noUser(pub, 'public log'); assert.match(pj.pause_reason, /^reconcile_mismatch: reconciliation failed: \{"ok":false,"err":"<path>/);
+  assert.equal(pj.paused, true); assert.equal(lines.length, 1); noUser(lines[0], lines[0]); assert.match(lines[0], /FAILED reconcile_mismatch/);
+  const src = readFileSync('sdk/flywheel/keeper.ts', 'utf8'); assert.match(src, /new FailClosed\('reconcile_mismatch', `reconciliation failed: \$\{JSON\.stringify\(r\)\}`, true\)/, 'the reason format tested above is the keeper\'s');
+});
+
+const TSX = pathToFileURL(resolve('node_modules/tsx/dist/loader.mjs')).href;
+const cli = (args: string[], cwd = process.cwd()) => spawnSync(process.execPath, ['--import', TSX, resolve('scripts/flywheel.ts'), ...args], { cwd, encoding: 'utf8', timeout: 60_000, env: { ...process.env, FW_RPC_URL: 'http://127.0.0.1:9' } });
+
+test('FW-17 smoke: the keeper CLI parses and starts (help exits 0)', () => {
+  const r = cli(['help']); assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /flywheel/i);
+});
+
+test('CI parse check: runs in ci.sh and fails on a file that does not parse (a statement swallowed by a comment)', () => {
+  assert.match(readFileSync('scripts/ci.sh', 'utf8'), /\nnode scripts\/parse_check\.mjs \| tail -3; \[ "\$\{PIPESTATUS\[0\]\}" = 0 \] \|\| fail=1\n/);
+  const d = mkdtempSync(join(tmpdir(), 'parse-')); const bad = join(d, 'bad.ts'), good = join(d, 'good.ts');
+  writeFileSync(bad, "(async () => {\n  run();\n})().catch(e => { log(e);   // note process.exit(1); });\n"); writeFileSync(good, "(async () => {\n  run();\n})().catch(e => { log(e); process.exit(1); });\n");
+  const pc = (f: string) => spawnSync(process.execPath, ['scripts/parse_check.mjs', f], { encoding: 'utf8' });
+  const b = pc(bad); assert.equal(b.status, 1, b.stdout); assert.match(b.stdout, /PARSE ERROR .*bad\.ts/);
+  assert.equal(pc(good).status, 0);
+  const all = spawnSync(process.execPath, ['scripts/parse_check.mjs'], { encoding: 'utf8' }); assert.equal(all.status, 0, all.stdout); assert.match(all.stdout, /^\d{2,} files parsed, 0 failed$/m);
+});
+
+test('FW-17: the CLI ERROR line is redacted (config load and command errors) and the evidence line too', () => {
+  const { d } = homeDir();
+  const a = cli(['help', '--config', `${HOME}${UN}/nope.json`], d);          // config load fails before the command runs
+  assert.equal(a.status, 1); assert.match(a.stderr, /^ERROR: ENOENT/m); noUser(a.stderr + a.stdout, 'config error');
+  writeFileSync(join(d, '~'), 'x');                                           // a FILE named ~ → mkdir '~/Jane Name/s' fails with ENOTDIR
+  const cfgPath = join(d, 'cfg.json'); writeFileSync(cfgPath, JSON.stringify(kcfg(d, { state_dir: `~/${UN}/s` })));
+  const b = cli(['pause', '--config', cfgPath], d);
+  assert.equal(b.status, 1, b.stderr); assert.match(b.stderr, /^ERROR: ENOTDIR/m); noUser(b.stderr + b.stdout, 'command error');
+  const ev = readFileSync(join(d, 'flywheel', 'devnet-events.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.equal(ev.at(-1).kind, 'error'); assert.match(ev.at(-1).error, /^ENOTDIR/); noUser(JSON.stringify(ev), 'evidence');
+});
+
+test('FW-17: everything the CLI prints goes through say() (redacted values, then serialised) or the redacted ERROR line (source check)', () => {
+  const src = readFileSync('scripts/flywheel.ts', 'utf8');
+  assert.match(src, /const say = \(v: unknown, indent\?: number\) => console\.log\(typeof v === 'string' \? R\(v\) : JSON\.stringify\(redactDeep\(v, R\), null, indent\)\);/);
+  assert.match(src, /const die = \(e: any\): never => \{ console\.error\(`ERROR: \$\{R\(String\(e\?\.message \?\? e\)\)\}`\); process\.exit\(1\); \};/);
+  assert.equal((src.match(/console\.(log|error|warn|info)\(/g) ?? []).length, 2, 'only say() and die() write to the console');
+  assert.doesNotMatch(src, /say\(JSON\.stringify/, 'objects are passed to say() unserialised');
 });

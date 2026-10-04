@@ -12,6 +12,8 @@ import { loadOrCreate, deployerName } from '../sdk/keys.js';
 import { Launchpad, listLaunches, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration } from '../sdk/launch.js';
 import { validate, RELEASE_LIMITS, type Step } from '../sdk/capMath.js';
 import { parseRestrictionsLifted } from '../sdk/hook.js';
+import { redactDeep } from '../sdk/redact.js';
+import { serverError } from './errors.js';
 
 const argv = process.argv.slice(2);
 const PORT = Number(process.env.PORT ?? 5175);
@@ -70,7 +72,9 @@ async function tokenView(mintStr: string) {
 }
 
 async function body(req: http.IncomingMessage): Promise<any> { let d = ''; for await (const ch of req) d += ch; return d ? JSON.parse(d) : {}; }
-const send = (res: http.ServerResponse, code: number, obj: any, type = 'application/json') => { res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }); res.end(type === 'application/json' ? JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) : obj); };
+const send = (res: http.ServerResponse, code: number, obj: any, type = 'application/json') => {
+  if (type === 'application/json') obj = redactDeep(obj);   // FW-17: every JSON body is public; all strings (keys too) are redacted
+  res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }); res.end(type === 'application/json' ? JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) : obj); };
 const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
 
 http.createServer(async (req, res) => {
@@ -115,5 +119,5 @@ http.createServer(async (req, res) => {
     const p = join('app/public', file);
     if (!p.startsWith('app/public') || !existsSync(p)) return send(res, 404, { error: 'not found' });
     return send(res, 200, readFileSync(p, 'utf8'), MIME[extname(p)] ?? 'text/plain');
-  } catch (e: any) { console.error(e); return send(res, 500, { error: String(e?.message ?? e) }); }
+  } catch (e: any) { return send(res, 500, serverError(e)); }   // FW-17: the console line is redacted too (app/errors.ts)
 }).listen(PORT, '127.0.0.1', () => console.log(`launch page [${c.label}] http://127.0.0.1:${PORT}  program ${lp.hook.programId.toBase58()}`));

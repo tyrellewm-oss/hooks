@@ -23,14 +23,19 @@ import { fmtSol } from '../sdk/flywheel/math.js';
 import { loadOrCreate } from '../sdk/keys.js';
 import { parseSendMode, banner, isolateState, dryRunConnection } from '../sdk/flywheel/dryrun.js';
 import { DEVNET_GENESIS, DEVNET_RPC_DEFAULT, assertNotMainnet, explorerTx } from '../sdk/cluster.js';
+import { redactPaths, redactDeep, redactedJson } from '../sdk/redact.js';
 
 const argv = process.argv.slice(2);
 const cmd = argv[0] ?? 'help';
 const arg = (k: string, d?: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
-const { cfg, overrides } = loadConfig(arg('--config', 'keeper/devnet.tdt.json')!);
+const R = (t: unknown) => redactPaths(t);   // FW-17: one redaction for everything this CLI prints or logs
+/** Console output (pasted logs end up in PRs): strings are redacted; objects are redacted value by value, then serialised. */
+const say = (v: unknown, indent?: number) => console.log(typeof v === 'string' ? R(v) : JSON.stringify(redactDeep(v, R), null, indent));
+const die = (e: any): never => { console.error(`ERROR: ${R(String(e?.message ?? e))}`); process.exit(1); };
+const { cfg, overrides } = (() => { try { return loadConfig(arg('--config', 'keeper/devnet.tdt.json')!); } catch (e) { return die(e); } })();
 const evlog = 'flywheel/devnet-events.jsonl'; // CLI-level evidence log (addresses + sigs only)
 const MODE = parseSendMode(argv);
-const ev = (o: Record<string, unknown>) => { mkdirSync('flywheel', { recursive: true }); appendFileSync(evlog, JSON.stringify({ at: new Date().toISOString(), config: cfg.name, ...o }).replace(/(?<![:\w/])\/(?:[\w.\-]+\/)+[\w.\-]+/g, '<path>') + '\n'); };
+const ev = (o: Record<string, unknown>) => { mkdirSync('flywheel', { recursive: true }); appendFileSync(evlog, redactedJson({ at: new Date().toISOString(), config: cfg.name, ...o }, R) + '\n'); }; // FW-17: string values redacted before JSON escaping
 
 const rpcUrl = () => { const u = process.env.FW_RPC_URL ?? process.env.DEVNET_RPC ?? DEVNET_RPC_DEFAULT; assertNotMainnet(u); return u; };
 const loadKey = (name: string) => { if (!existsSync(`.devnet-keys/${name}.json`) && !name.startsWith('fw_')) throw new Error(`missing key ${name}`); return loadOrCreate('devnet', name); };
@@ -54,9 +59,9 @@ async function dryRunOnce(): Promise<number> {
   try {
     const r = await k.runOnce();
     const unchanged = iso.realUnchanged();
-    console.log(JSON.stringify({ dry_run: true, ...r, txs: r.txs.map(x => `(simulated) ${x}`), steps: dry.steps, real_state_unchanged: unchanged }, null, 1));
-    for (const st of dry.steps) console.log(`DRY ${st.stage.padEnd(10)} ${st.simulated.padEnd(9)} ${st.units ?? '-'} CU ${JSON.stringify(st.effect)}${st.err ? ` err=${JSON.stringify(st.err)}` : ''}`);
-    console.log(`DRY RUN complete: nothing broadcast; real state ${unchanged ? 'unchanged' : 'CHANGED (bug)'}. Re-run with --send to broadcast.`);
+    say({ dry_run: true, ...r, txs: r.txs.map(x => `(simulated) ${x}`), steps: dry.steps, real_state_unchanged: unchanged }, 1);
+    for (const st of dry.steps) say(`DRY ${st.stage.padEnd(10)} ${st.simulated.padEnd(9)} ${st.units ?? '-'} CU ${JSON.stringify(st.effect)}${st.err ? ` err=${JSON.stringify(st.err)}` : ''}`);
+    say(`DRY RUN complete: nothing broadcast; real state ${unchanged ? 'unchanged' : 'CHANGED (bug)'}. Re-run with --send to broadcast.`);
     if (!unchanged) return 4;
     return r.status.startsWith('failed') || r.status.includes('mismatch') || dry.steps.some(x => x.simulated === 'error') ? 3 : 0;
   } finally { iso.cleanup(); }
@@ -70,7 +75,7 @@ async function send(c: Connection, ixs: TransactionInstruction[], signers: Keypa
   for (let i = 0; i < 60; i++) { const st = (await c.getSignatureStatuses([sig])).value[0]; if (st?.confirmationStatus === 'confirmed' || st?.confirmationStatus === 'finalized') break; if ((await c.getBlockHeight()) > lastValidBlockHeight) throw new Error(`${purpose}: expired ${sig}`); await new Promise(r => setTimeout(r, 2000)); }
   let t = null; for (let i = 0; i < 10 && !t; i++) { t = await c.getTransaction(sig, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 }); if (!t) await new Promise(r => setTimeout(r, 1000)); }
   const ok = !t?.meta?.err;
-  console.log(`${ok ? 'OK  ' : 'FAIL'} ${purpose} ${explorerTx(sig, 'devnet')}`);
+  say(`${ok ? 'OK  ' : 'FAIL'} ${purpose} ${explorerTx(sig, 'devnet')}`);
   ev({ kind: 'tx', purpose, sig, ok, fee: t?.meta?.fee, link: explorerTx(sig, 'devnet') });
   return { sig, ok, fee: t?.meta?.fee ?? 0 };
 }
@@ -126,17 +131,17 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
 }
 
 (async () => {
-  if (cmd === 'pause') { const st = new Store(cfg.state_dir); mkdirSync(cfg.state_dir, { recursive: true }); writeFileSync(st.pauseFile, `paused ${new Date().toISOString()}\n`); console.log('PAUSE file set'); ev({ kind: 'pause' }); return; }
+  if (cmd === 'pause') { const st = new Store(cfg.state_dir); mkdirSync(cfg.state_dir, { recursive: true }); writeFileSync(st.pauseFile, `paused ${new Date().toISOString()}\n`); say('PAUSE file set'); ev({ kind: 'pause' }); return; }
   if (cmd === 'unpause') {
     const st = new Store(cfg.state_dir); if (existsSync(st.pauseFile)) unlinkSync(st.pauseFile);
-    const s = st.loadState(() => initState(cfg)); s.paused = false; s.pause_reason = ''; s.consecutive_failures = 0; st.saveState(s); console.log('unpaused (manual)'); ev({ kind: 'unpause' }); return;
+    const s = st.loadState(() => initState(cfg)); s.paused = false; s.pause_reason = ''; s.consecutive_failures = 0; st.saveState(s); say('unpaused (manual)'); ev({ kind: 'unpause' }); return;
   }
-  if (cmd === 'balances') { const c = await devnetConn(); const b = await balances(c); console.log(JSON.stringify(b, null, 1)); ev({ kind: 'balances', label: arg('--label', ''), ...b }); return; }
+  if (cmd === 'balances') { const c = await devnetConn(); const b = await balances(c); say(b, 1); ev({ kind: 'balances', label: arg('--label', ''), ...b }); return; }
   if (cmd === 'setup') {
     const c = await devnetConn();
     const dep = loadKey(cfg.keys.claim_signer), T = loadKey(cfg.keys.treasury), G = loadKey(cfg.keys.gas);
     const D = { publicKey: new PublicKey(cfg.dev_payout) };   // payout destination only: no dev key is loaded
-    console.log(JSON.stringify({ treasury: T.publicKey.toBase58(), dev_payout: D.publicKey.toBase58(), gas: G.publicKey.toBase58(), claim_signer: dep.publicKey.toBase58() }));
+    say({ treasury: T.publicKey.toBase58(), dev_payout: D.publicKey.toBase58(), gas: G.publicKey.toBase58(), claim_signer: dep.publicKey.toBase58() });
     const gasTarget = BigInt(Math.round(Number(arg('--gas-sol', '0.05')) * 1e9));
     const gb = BigInt(await c.getBalance(G.publicKey));
     if (gb < gasTarget) await send(c, [SystemProgram.transfer({ fromPubkey: dep.publicKey, toPubkey: G.publicKey, lamports: gasTarget - gb })], [dep], `setup:fund-gas:${gasTarget - gb}`);
@@ -144,7 +149,7 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
     const want: [PublicKey, PublicKey, PublicKey][] = [[NATIVE_MINT, T.publicKey, TOKEN_PROGRAM_ID], [NATIVE_MINT, D.publicKey, TOKEN_PROGRAM_ID]];
     for (const m of new Set([cfg.main_mint, ...cfg.sources.filter(s => s.kind === 'dbc').map((s: any) => s.base_mint)])) want.push([new PublicKey(m), T.publicKey, TOKEN_2022_PROGRAM_ID]);
     for (const [m, o, p] of want) { const a = getAssociatedTokenAddressSync(m, o, false, p); if (!(await c.getAccountInfo(a))) ixs.push(createAssociatedTokenAccountIdempotentInstruction(G.publicKey, a, o, m, p)); }
-    if (ixs.length) await send(c, ixs, [G], `setup:create-token-accounts:${ixs.length}`); else console.log('token accounts exist');
+    if (ixs.length) await send(c, ixs, [G], `setup:create-token-accounts:${ixs.length}`); else say('token accounts exist');
     return;
   }
   if (cmd === 'simulate') {
@@ -157,7 +162,7 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
       const sim = await c.simulateTransaction(tx, undefined, [k.tWsol]);
       const post = sim.value.accounts?.[0] ? unpackAccount(k.tWsol, { ...sim.value.accounts[0], data: Buffer.from(sim.value.accounts[0].data[0], 'base64'), owner: new PublicKey(sim.value.accounts[0].owner) } as any, TOKEN_PROGRAM_ID).amount.toString() : null;
       const out = { source: src.kind, claimable_read: claimable || undefined, err: sim.value.err, units: sim.value.unitsConsumed, treasury_wsol_after_sim: post, logs_tail: sim.value.logs?.slice(-4) };
-      console.log(JSON.stringify(out, null, 1)); ev({ kind: 'simulate', ...out });
+      say(out, 1); ev({ kind: 'simulate', ...out });
     }
     // also show v1 claim_trading_fee rejects the transfer-hook pool (spec v1.2 correction)
     const src: any = cfg.sources.find(s => s.kind === 'dbc');
@@ -166,28 +171,28 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
       v1.feePayer = k.keys.gas.publicKey; v1.recentBlockhash = (await c.getLatestBlockhash()).blockhash;
       const sim = await c.simulateTransaction(v1);
       const out = { source: 'dbc v1 claim_trading_fee (expected to fail)', err: sim.value.err, logs_tail: sim.value.logs?.filter(l => /Error|mismatch/i.test(l)).slice(-3) };
-      console.log(JSON.stringify(out, null, 1)); ev({ kind: 'simulate', ...out });
+      say(out, 1); ev({ kind: 'simulate', ...out });
     }
     return;
   }
   if (cmd === 'sigs') { // FW-13 evidence: newest signature per keeper address
     const c = await devnetConn(); const out: Record<string, any> = {};
     for (const n of [cfg.keys.claim_signer, cfg.keys.treasury, cfg.keys.gas]) { const pk = loadKey(n).publicKey; const s = await c.getSignaturesForAddress(pk, { limit: 1 }); out[n] = { pubkey: pk.toBase58(), newest: s[0]?.signature ?? null, slot: s[0]?.slot ?? null }; }
-    console.log(JSON.stringify(out)); ev({ kind: 'sigs', label: arg('--label', ''), ...out }); return;
+    say(out); ev({ kind: 'sigs', label: arg('--label', ''), ...out }); return;
   }
-  if (cmd === 'quote') { const k = await keeper(); for (const l of (arg('--lamports', '1000000')!).split(',')) { const q = await k.quote(BigInt(l)); console.log(JSON.stringify({ in: l, out: q.out.toString(), impact_bps: q.impactBps, spot_out: q.spotOut.toString() })); } return; }
-  if (cmd === 'trade-buy') { const c = await devnetConn(); const r = await tradeOne(c, 'buy', BigInt(arg('--lamports')!)); console.log(JSON.stringify(r)); ev({ kind: 'scripted_trade', ...r }); return; }
-  if (cmd === 'trade-sell') { const c = await devnetConn(); const r = await tradeOne(c, 'sell', BigInt(arg('--tokens')!)); console.log(JSON.stringify(r)); ev({ kind: 'scripted_trade', ...r }); return; }
-  if (cmd === 'trade') { const c = await devnetConn(); const r = await trade(c, BigInt(arg('--lamports', '100000000')!)); console.log(JSON.stringify(r)); return; }
+  if (cmd === 'quote') { const k = await keeper(); for (const l of (arg('--lamports', '1000000')!).split(',')) { const q = await k.quote(BigInt(l)); say({ in: l, out: q.out.toString(), impact_bps: q.impactBps, spot_out: q.spotOut.toString() }); } return; }
+  if (cmd === 'trade-buy') { const c = await devnetConn(); const r = await tradeOne(c, 'buy', BigInt(arg('--lamports')!)); say(r); ev({ kind: 'scripted_trade', ...r }); return; }
+  if (cmd === 'trade-sell') { const c = await devnetConn(); const r = await tradeOne(c, 'sell', BigInt(arg('--tokens')!)); say(r); ev({ kind: 'scripted_trade', ...r }); return; }
+  if (cmd === 'trade') { const c = await devnetConn(); const r = await trade(c, BigInt(arg('--lamports', '100000000')!)); say(r); return; }
   if (cmd === 'run') {
-    console.log(banner(MODE, cfg, 'run'));
+    say(banner(MODE, cfg, 'run'));
     if (MODE === 'dry_run') process.exit(await dryRunOnce());
-    const k = await keeper(); const r = await k.runOnce(); console.log(JSON.stringify(r)); ev({ kind: 'run', ...r, overrides });
+    const k = await keeper(); const r = await k.runOnce(); say(r); ev({ kind: 'run', ...r, overrides });
     process.exit(r.status.startsWith('failed') || r.status.includes('mismatch') ? 3 : 0);
   }
   if (cmd === 'loop') {
     const runs = Number(arg('--runs', '5')); const tradeL = arg('--trade-lamports');
-    console.log(banner(MODE, cfg, `loop --runs ${runs}`));
+    say(banner(MODE, cfg, `loop --runs ${runs}`));
     if (MODE === 'dry_run') {
       if (tradeL) throw new Error('--trade-lamports sends scripted trades; it requires --send');
       let worst = 0;
@@ -204,7 +209,7 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
       const w = cfg.cadence_seconds * 1000; const next = Math.floor(Date.now() / w) * w + w; 
       if (tradeL) { const r = await trade(k.conn, BigInt(tradeL)); ev({ kind: 'scripted_trade', ...r }); }
       const wait = next - Date.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait + 1500));
-      const r = await k.runOnce(); console.log(JSON.stringify(r)); ev({ kind: 'run', ...r, overrides, loop_index: i });
+      const r = await k.runOnce(); say(r); ev({ kind: 'run', ...r, overrides, loop_index: i });
     }
     return;
   }
@@ -221,7 +226,7 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
     const t = log.totals_raw;
     const out = { sigs: arr.length, unresolved: bad, claimed_ok: claimed.toString() === t.claimed_lamports, dev_ok: dev.toString() === t.dev_lamports, spent_ok: spent.toString() === t.spent_lamports, burned_ok: burned.toString() === t.burned_raw,
       burns_paired_with_swap: log.runs.filter((r: any) => r.burn?.sig).every((r: any) => r.swap?.status === 'confirmed'), totals: t };
-    console.log(JSON.stringify(out, null, 1)); ev({ kind: 'verify', ...out }); return;
+    say(out, 1); ev({ kind: 'verify', ...out }); return;
   }
-  console.log(readFileSync(new URL(import.meta.url)).toString().split('\n').slice(0, 15).join('\n'));
-})().catch(e => { console.error(`ERROR: ${e?.message ?? e}`); ev({ kind: 'error', cmd, error: String(e?.message ?? e).slice(0, 300) }); process.exit(1); });
+  say(readFileSync(new URL(import.meta.url)).toString().split('\n').slice(0, 15).join('\n'));
+})().catch(e => { try { ev({ kind: 'error', cmd, error: R(String(e?.message ?? e)).slice(0, 300) }); } finally { die(e); } });   // FW-17: redact, then cut; the console line is redacted too
