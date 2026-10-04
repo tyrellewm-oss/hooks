@@ -12,7 +12,7 @@ import { HookClient, DEFAULT_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgr
 import { effectiveCap, nextChange, type Step } from './capMath.js';
 import { type Cluster, type ClusterName, type ClusterClass, explorerTx, nowIct, classifyCluster } from './cluster.js';
 import { launchConfigChecks, type Authorities } from './keyrules.js';
-import { assertClusterAccounts, ClusterCheckRefusal } from './cluster_check.js';
+import { assertClusterAccounts, checkDammV2Config, ClusterCheckRefusal } from './cluster_check.js';
 
 /** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()).
  *  Primary source for the pin: Meteora DBC repo README at commit f552f20 (2026-09-09), section "Damm v2":
@@ -59,6 +59,14 @@ export async function dammV2MigrationConfigFor(c: Pick<Cluster, 'name' | 'connec
   try { genesis = await c.connection.getGenesisHash(); }   // fail closed: an RPC error never falls back to a default cluster
   catch (e: any) { throw new ConfigPinRefusal(`refusing: cannot read the genesis hash to pin DAMM_V2_MIGRATION_CONFIG (${String(e?.message ?? e).slice(0, 200)})`); }
   return resolveDammV2MigrationConfig(genesis, c.name, env, c.url);
+}
+
+/** The DAMM v2 migration config a post-migration check works against: the same genesis-pinned resolution as migrate(),
+ *  then the cluster check that the account exists and is owned by DAMM v2 (ConfigPinRefusal / ClusterCheckRefusal). */
+export async function postMigrationDammConfig(c: Pick<Cluster, 'name' | 'connection'> & { url?: string }, env: NodeJS.ProcessEnv = process.env): Promise<DammConfigResolution> {
+  const r = await dammV2MigrationConfigFor(c, env);
+  await checkDammV2Config(c.connection, r.config);
+  return r;
 }
 
 export interface TxRecord { time: string; cluster: string; label: string; purpose: string; sig: string; ok: boolean; err?: string; hookError?: string | null; hookCode?: number | null; link: string; capHit?: any; events?: any[]; note?: string }
