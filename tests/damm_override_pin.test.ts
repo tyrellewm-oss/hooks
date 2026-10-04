@@ -3,8 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Keypair, Connection } from '@solana/web3.js';
-import { DEVNET_GENESIS, MAINNET_GENESIS } from '../sdk/cluster.js';
+import { DEVNET_GENESIS, MAINNET_GENESIS, TESTNET_GENESIS, classifyCluster, isLocalhostRpc } from '../sdk/cluster.js';
 import { DBC_PROGRAM_ID, DAMM_V2_PROGRAM_ID } from '../sdk/hook.js';
+import { ClusterCheckRefusal } from '../sdk/cluster_check.js';
+import { startKeeper } from '../sdk/flywheel/keeper.js';
+import { KeyRuleRefusal } from '../sdk/keyrules.js';
 import { Launchpad, txlogFile, resolveDammV2MigrationConfig, ConfigPinRefusal, DAMM_V2_MIGRATION_CONFIG, DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN } from '../sdk/launch.js';
 
 const LOCAL_GENESIS = Keypair.generate().publicKey.toBase58();   // a local validator has its own random genesis
@@ -12,8 +15,8 @@ const other = () => Keypair.generate().publicKey.toBase58();
 const env = (v?: string) => (v === undefined ? {} : { DAMM_V2_MIGRATION_CONFIG: v }) as NodeJS.ProcessEnv;
 
 test('no override → pinned per-cluster value (devnet, mainnet, local)', () => {
-  for (const [g, name, want, by] of [[DEVNET_GENESIS, 'devnet', DAMM_V2_MIGRATION_CONFIG.devnet, 'devnet'], [MAINNET_GENESIS, 'devnet', DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN, 'mainnet'], [LOCAL_GENESIS, 'local', DAMM_V2_MIGRATION_CONFIG.local, 'other']] as const) {
-    const r = resolveDammV2MigrationConfig(g, name, env());
+  for (const [g, name, want, by, url] of [[DEVNET_GENESIS, 'devnet', DAMM_V2_MIGRATION_CONFIG.devnet, 'devnet', undefined], [MAINNET_GENESIS, 'devnet', DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN, 'mainnet', undefined], [LOCAL_GENESIS, 'local', DAMM_V2_MIGRATION_CONFIG.local, 'local', 'http://127.0.0.1:8899']] as const) {
+    const r = resolveDammV2MigrationConfig(g, name, env(), url);
     assert.equal(r.config.toBase58(), want); assert.equal(r.override, null); assert.equal(r.clusterByGenesis, by);
   }
   assert.equal(resolveDammV2MigrationConfig(DEVNET_GENESIS, 'devnet', env('')).override, null);   // empty = unset
@@ -131,4 +134,61 @@ test('getGenesisHash rejects → migrate() refuses with 0 tx builds (no fallback
     } finally { if (prev === undefined) delete process.env.DAMM_V2_MIGRATION_CONFIG; else process.env.DAMM_V2_MIGRATION_CONFIG = prev; }
     assert.equal(built, 0); assert.equal(poolReads, 0);
   }
+});
+
+// Local validator rule (genesis-based, three outcomes). The URL alone never decides.
+const LOCAL_URLS = ['http://127.0.0.1:8899', 'http://localhost:8899', 'http://[::1]:8899'];
+const REMOTE_URLS = [undefined, 'https://rpc.example.com', 'http://127.0.0.1.example.com:8899', 'http://localhost.example.com', 'not a url'];
+test('classifyCluster: devnet/mainnet/testnet by genesis regardless of URL; local only for localhost + unknown genesis', () => {
+  for (const u of [...LOCAL_URLS, ...REMOTE_URLS]) {
+    assert.equal(classifyCluster(DEVNET_GENESIS, u), 'devnet'); assert.equal(classifyCluster(MAINNET_GENESIS, u), 'mainnet'); assert.equal(classifyCluster(TESTNET_GENESIS, u), 'testnet');
+  }
+  for (const u of LOCAL_URLS) { assert.ok(isLocalhostRpc(u), u); assert.equal(classifyCluster(LOCAL_GENESIS, u), 'local'); }
+  for (const u of REMOTE_URLS) { assert.ok(!isLocalhostRpc(u), String(u)); assert.equal(classifyCluster(LOCAL_GENESIS, u), 'unknown'); }
+});
+test('DAMM pin matrix: localhost + mainnet/testnet genesis stays strict (URL never decides)', () => {
+  for (const u of LOCAL_URLS) {
+    assert.throws(() => resolveDammV2MigrationConfig(MAINNET_GENESIS, 'local', env(other()), u), ConfigPinRefusal);
+    assert.equal(resolveDammV2MigrationConfig(MAINNET_GENESIS, 'local', env(), u).config.toBase58(), DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN);
+    assert.throws(() => resolveDammV2MigrationConfig(TESTNET_GENESIS, 'local', env(other()), u), ConfigPinRefusal);   // testnet: no pin
+    assert.throws(() => resolveDammV2MigrationConfig(TESTNET_GENESIS, 'local', env(), u), /no pinned DAMM_V2_MIGRATION_CONFIG/);
+  }
+});
+test('DAMM pin matrix: localhost + unknown genesis → local (override allowed, default = cloned pin)', () => {
+  for (const u of LOCAL_URLS) {
+    const x = other(); const r = resolveDammV2MigrationConfig(LOCAL_GENESIS, 'local', env(x), u);
+    assert.equal(r.config.toBase58(), x); assert.equal(r.override, x); assert.equal(r.clusterByGenesis, 'local');
+    assert.equal(resolveDammV2MigrationConfig(LOCAL_GENESIS, 'local', env(), u).config.toBase58(), DAMM_V2_MIGRATION_CONFIG.local);
+  }
+});
+test('DAMM pin matrix: non-localhost + unknown genesis → refused, with or without an override', () => {
+  for (const u of REMOTE_URLS) {
+    assert.throws(() => resolveDammV2MigrationConfig(LOCAL_GENESIS, 'local', env(other()), u), ConfigPinRefusal);
+    assert.throws(() => resolveDammV2MigrationConfig(LOCAL_GENESIS, 'local', env(), u), /no pinned DAMM_V2_MIGRATION_CONFIG for cluster class 'unknown'/);
+  }
+});
+test('migrate() via a cluster object: localhost URL + unknown genesis accepts the override; same genesis on a remote URL refuses before any build', async () => {
+  const prev = process.env.DAMM_V2_MIGRATION_CONFIG; const x = other(); process.env.DAMM_V2_MIGRATION_CONFIG = x;
+  try {
+    for (const [url, ok] of [['http://127.0.0.1:8899', true], ['https://rpc.example.com', false]] as const) {
+      let usedConfig = '', built = 0;
+      const connection: any = { getGenesisHash: async () => LOCAL_GENESIS, getAccountInfo: async () => { throw new Error('stop at cluster check'); } };
+      const fake: any = { c: { name: 'local', url, connection }, hook: { programId: Keypair.generate().publicKey }, dbc: { state: { getPool: async () => ({ config: Keypair.generate().publicKey }) }, migration: { migrateToDammV2: async (a: any) => { built++; usedConfig = a.dammConfig.toBase58(); return {}; } } } };
+      // ok: resolution passed and the next gate (the cluster check) is what stops it
+      if (ok) await assert.rejects(Launchpad.prototype.migrate.call(fake, Keypair.generate(), Keypair.generate().publicKey), (e: any) => e instanceof ClusterCheckRefusal && /stop at cluster check/.test(e.message));
+      else await assert.rejects(Launchpad.prototype.migrate.call(fake, Keypair.generate(), Keypair.generate().publicKey), (e: any) => e instanceof ConfigPinRefusal && /class 'unknown'/.test(e.message));
+      assert.equal(built, 0); void usedConfig;
+    }
+  } finally { if (prev === undefined) delete process.env.DAMM_V2_MIGRATION_CONFIG; else process.env.DAMM_V2_MIGRATION_CONFIG = prev; }
+});
+
+test('keeper on cluster "local": needs localhost URL + unknown genesis; remote URL or a known genesis is refused', async () => {
+  const { readFileSync } = await import('node:fs');
+  const cfg = { ...JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')), cluster: 'local', pinned_pubkeys: undefined };
+  const start = (rpcEndpoint: string, genesis: string) => startKeeper(cfg, [], { loadKey: () => Keypair.generate(), log: () => {},
+    connect: async () => ({ rpcEndpoint, getGenesisHash: async () => genesis, getAccountInfo: async () => { throw new Error('reached cluster check'); } }) as any });
+  await assert.rejects(start('https://rpc.example.com', LOCAL_GENESIS), (e: any) => e instanceof KeyRuleRefusal && /not a local validator/.test(e.message));
+  await assert.rejects(start('http://127.0.0.1:8899', TESTNET_GENESIS), (e: any) => e instanceof KeyRuleRefusal && /not a local validator/.test(e.message));
+  await assert.rejects(start('http://127.0.0.1:8899', DEVNET_GENESIS), (e: any) => e instanceof KeyRuleRefusal && /not a local validator/.test(e.message));
+  await assert.rejects(start('http://127.0.0.1:8899', LOCAL_GENESIS), (e: any) => e instanceof KeyRuleRefusal && /reached cluster check/.test(e.message));
 });

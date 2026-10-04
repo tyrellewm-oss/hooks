@@ -10,7 +10,7 @@ import { appendFileSync, mkdirSync, writeFileSync, readFileSync, existsSync, rea
 import { dirname, join } from 'node:path';
 import { HookClient, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
-import { type Cluster, type ClusterName, explorerTx, nowIct, DEVNET_GENESIS, MAINNET_GENESIS } from './cluster.js';
+import { type Cluster, type ClusterName, type ClusterClass, explorerTx, nowIct, classifyCluster } from './cluster.js';
 import { launchConfigChecks, type Authorities } from './keyrules.js';
 import { assertClusterAccounts, ClusterCheckRefusal } from './cluster_check.js';
 
@@ -20,34 +20,45 @@ import { assertClusterAccounts, ClusterCheckRefusal } from './cluster_check.js';
  *  the default migrationFeeOption in DEFAULT_LAUNCH_FEES). The flat/Customizable option 6 would instead be
  *  A8gMrEPJkacWkcb3DGwtJwTe16HktSEfvwtuDh2MCtck, so it is not used here. The pinned account was checked on mainnet:
  *  owned by the DAMM v2 program, non-executable, 328 bytes. Same address on every cluster (the local validator clones
- *  the devnet account). The env override `DAMM_V2_MIGRATION_CONFIG` is a devnet test knob:
- *  on any cluster whose genesis hash is not devnet's (mainnet, a local validator, anything else) it is refused
- *  unless it exactly equals the pinned mainnet value. Resolution happens before any migration tx is built. */
+ *  the devnet account). The env override `DAMM_V2_MIGRATION_CONFIG` is a test knob, gated by the genesis-based class
+ *  (classifyCluster): devnet → any valid override; local (localhost URL + unknown genesis) → any valid override;
+ *  mainnet/testnet → the override must equal that class's pin, and a class without a pin refuses; unknown → refuse.
+ *  Resolution happens before any migration tx is built. */
 export const DAMM_V2_MIGRATION_CONFIG: Record<ClusterName, string> = {
   devnet: '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd',
-  local: '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd', // local validator clones the devnet account
+  local: '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd', // scripts/local_validator.sh clones this account from devnet
 };
 export const DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN = '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd';
+/** Per-class pins. null = no pinned value: resolution on that class refuses (with or without an override). */
+export const DAMM_V2_MIGRATION_CONFIG_PINS: Record<ClusterClass, string | null> = {
+  devnet: DAMM_V2_MIGRATION_CONFIG.devnet, mainnet: DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN, testnet: null,
+  local: DAMM_V2_MIGRATION_CONFIG.local, unknown: null,
+};
 export class ConfigPinRefusal extends Error {}
-export interface DammConfigResolution { config: PublicKey; override: string | null; clusterByGenesis: 'devnet' | 'mainnet' | 'other' }
-/** Resolve the migration DAMM v2 config from the RPC's genesis hash (not from a name or URL). Throws ConfigPinRefusal. */
-export function resolveDammV2MigrationConfig(genesis: string, name: ClusterName, env: NodeJS.ProcessEnv = process.env): DammConfigResolution {
-  const byGenesis = genesis === DEVNET_GENESIS ? 'devnet' : genesis === MAINNET_GENESIS ? 'mainnet' : 'other';
+export interface DammConfigResolution { config: PublicKey; override: string | null; clusterByGenesis: ClusterClass }
+/** Resolve the migration DAMM v2 config from the RPC's genesis hash (+ the RPC URL, only to recognise a local validator).
+ *  The cluster name is not used for the decision. Throws ConfigPinRefusal. */
+export function resolveDammV2MigrationConfig(genesis: string, _name: ClusterName, env: NodeJS.ProcessEnv = process.env, url?: string): DammConfigResolution {
+  const cls = classifyCluster(genesis, url);
   const raw = env.DAMM_V2_MIGRATION_CONFIG;
   const override = raw !== undefined && raw !== '' ? raw : null;
-  const pinned = byGenesis === 'devnet' ? DAMM_V2_MIGRATION_CONFIG.devnet : byGenesis === 'mainnet' ? DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN : DAMM_V2_MIGRATION_CONFIG[name];
-  if (override === null) return { config: new PublicKey(pinned), override: null, clusterByGenesis: byGenesis };
-  if (byGenesis !== 'devnet' && override !== DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN)
-    throw new ConfigPinRefusal(`refusing DAMM_V2_MIGRATION_CONFIG override ${override} on a non-devnet cluster (genesis ${genesis}): only the pinned value ${DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN} is allowed`);
+  const pinned = DAMM_V2_MIGRATION_CONFIG_PINS[cls];
+  const overridable = cls === 'devnet' || cls === 'local';
+  if (override === null) {
+    if (pinned === null) throw new ConfigPinRefusal(`refusing: no pinned DAMM_V2_MIGRATION_CONFIG for cluster class '${cls}' (genesis ${genesis})`);
+    return { config: new PublicKey(pinned), override: null, clusterByGenesis: cls };
+  }
+  if (!overridable && (pinned === null || override !== pinned))
+    throw new ConfigPinRefusal(`refusing DAMM_V2_MIGRATION_CONFIG override ${override} on a non-devnet cluster (class '${cls}', genesis ${genesis}): ${pinned === null ? 'no pinned value, so no override is allowed' : `only the pinned value ${pinned} is allowed`}`);
   let pk: PublicKey; try { pk = new PublicKey(override); } catch { throw new ConfigPinRefusal(`DAMM_V2_MIGRATION_CONFIG override is not a valid address: ${override}`); }
-  return { config: pk, override, clusterByGenesis: byGenesis };
+  return { config: pk, override, clusterByGenesis: cls };
 }
 /** Same resolution for a connected cluster (one genesis read). */
-export async function dammV2MigrationConfigFor(c: Pick<Cluster, 'name' | 'connection'>, env: NodeJS.ProcessEnv = process.env): Promise<DammConfigResolution> {
+export async function dammV2MigrationConfigFor(c: Pick<Cluster, 'name' | 'connection'> & { url?: string }, env: NodeJS.ProcessEnv = process.env): Promise<DammConfigResolution> {
   let genesis: string;
   try { genesis = await c.connection.getGenesisHash(); }   // fail closed: an RPC error never falls back to a default cluster
   catch (e: any) { throw new ConfigPinRefusal(`refusing: cannot read the genesis hash to pin DAMM_V2_MIGRATION_CONFIG (${String(e?.message ?? e).slice(0, 200)})`); }
-  return resolveDammV2MigrationConfig(genesis, c.name, env);
+  return resolveDammV2MigrationConfig(genesis, c.name, env, c.url);
 }
 
 export interface TxRecord { time: string; cluster: string; label: string; purpose: string; sig: string; ok: boolean; err?: string; hookError?: string | null; hookCode?: number | null; link: string; capHit?: any; events?: any[]; note?: string }
