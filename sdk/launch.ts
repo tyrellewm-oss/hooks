@@ -36,6 +36,19 @@ export const DAMM_V2_MIGRATION_CONFIG_PINS: Record<ClusterClass, string | null> 
   local: DAMM_V2_MIGRATION_CONFIG.local, unknown: null,
 };
 export class ConfigPinRefusal extends Error {}
+export class LaunchKeygenRefusal extends Error { constructor(m: string) { super(m); this.name = 'LaunchKeygenRefusal'; } }
+/** Generating the DBC config and mint keypairs in this process is a devnet/local convenience only. On any other genesis
+ *  class (mainnet, testnet, unknown) the mint keypair belongs to the signing side (M1-M4 mainnet key decision): this code
+ *  takes public keys only. Today the hook gate also refuses mainnet/testnet/unknown, but only because no hook pin is set
+ *  there; this guard does not depend on that. */
+export function assertLaunchKeygenAllowed(cls: ClusterClass): void {
+  if (cls !== 'devnet' && cls !== 'local') throw new LaunchKeygenRefusal(`refusing: launch() generates the config and mint keypairs locally, which is allowed only on devnet/local genesis (cluster class '${cls}')`);
+}
+/** The only place launch() creates keypairs: guard first, then generate. */
+export function launchKeypairsFor(cls: ClusterClass): { config: Keypair; mint: Keypair } {
+  assertLaunchKeygenAllowed(cls);
+  return { config: Keypair.generate(), mint: Keypair.generate() };
+}
 export interface DammConfigResolution { config: PublicKey; override: string | null; clusterByGenesis: ClusterClass }
 /** Resolve the migration DAMM v2 config from the RPC's genesis hash (+ the RPC URL, only to recognise a local validator).
  *  The cluster name is not used for the decision. Throws ConfigPinRefusal. */
@@ -302,6 +315,7 @@ export class Launchpad {
     // hook gate first (also when o.authorities is given): the hook program id pinned by genesis, executable here. Its
     // genesis class (not the Cluster's name) decides warn-vs-refuse in the §12a checks below.
     const gate = await gateHook(this);
+    assertLaunchKeygenAllowed(gate.clusterClass);   // before any read or build: local keypair generation is devnet/local only
     // §12a preflight (FW-24): feeClaimer (= deployer here) must differ from the hook upgrade and lift authorities, and
     // upgrade != lift. Throws off devnet/local (by genesis class) before any tx is built; warns on devnet/local.
     const auth = o.authorities ?? (await this.hookAuthorities());
@@ -310,8 +324,7 @@ export class Launchpad {
     // class and is none of our keys. Refuses before any tx is built. (The program_id comparison runs on the mint itself.)
     const mintHookForbidden = { dev: deployer.publicKey.toBase58(), upgrade: auth.upgradeAuthority, lift: auth.liftAuthority, ...(o.keeperKeys ?? {}) };
     const mintHook = await mintHookExpectationFor(this, mintHookForbidden);
-    const configKp = Keypair.generate();
-    const mintKp = Keypair.generate();
+    const { config: configKp, mint: mintKp } = launchKeypairsFor(gate.clusterClass);
     const txs: Record<string, string> = {};
     const params = this.configParams(o);
     const cfgTx = await this.dbc.partner.createConfigWithTransferHook({
