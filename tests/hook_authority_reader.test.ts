@@ -41,10 +41,13 @@ test('real parser on recorded devnet data → upgrade and lift authority = expec
 });
 
 test('both callers use the shared reader: Launchpad.hookAuthorities and startKeeper see the same values', async () => {
-  const lp: any = { c: { connection: conn(chain()) }, hook: hc };
-  assert.deepEqual(await Launchpad.prototype.hookAuthorities.call(lp), { upgradeAuthority: EXPECTED, liftAuthority: EXPECTED, launchAuthority: null });
+  // the devnet Global after the 8.3 migration (tests/fixtures/devnet_global_migration.json): 74 bytes, launch key set
+  const MIG = JSON.parse(readFileSync('tests/fixtures/devnet_global_migration.json', 'utf8'));
+  const migrated = chain({ [FX.global.pubkey]: { owner: PROGRAM, data: Buffer.from(MIG.global.after.data_base64, 'base64') } as any });
+  const lp: any = { c: { connection: conn(migrated) }, hook: hc };
+  assert.deepEqual(await Launchpad.prototype.hookAuthorities.call(lp), { upgradeAuthority: EXPECTED, liftAuthority: EXPECTED, launchAuthority: MIG.launch_authority });
   const cfg = { ...JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')), pinned_pubkeys: undefined } as KeeperConfig;
-  const k = await startKeeper(cfg, [], { loadKey: () => Keypair.generate(), connect: async () => conn(chain()) as any, log: () => {} });
+  const k = await startKeeper(cfg, [], { loadKey: () => Keypair.generate(), connect: async () => conn(migrated) as any, log: () => {} });
   assert.ok(k);   // pinned 9DVu… matched the parsed chain data
 });
 
