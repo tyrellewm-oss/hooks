@@ -17,6 +17,9 @@ const ADMIN_NEQ = 'require_keys_neq!(new_authority, admin, HookError::ConfigFroz
 const LEN = 'require!(d.len() == GLOBAL_V2_LEN, HookError::ConfigFrozen);';
 const LAUNCH_READ = 'let launch = launch_authority_of(&d).ok_or(error!(HookError::ConfigFrozen))?;';
 const COPY = 'g.try_borrow_mut_data()?[8..40].copy_from_slice(new_authority.as_ref());';
+const CANON = 'require_keys_eq!(g.key(), canonical, HookError::Unauthorized);';
+const OWNER = 'require_keys_eq!(*g.owner, crate::ID, HookError::Unauthorized);';
+const DISC = 'require!(d.len() >= 8 && &d[..8] == Global::DISCRIMINATOR, HookError::Unauthorized);';
 type Mutant = { name: string; file: string; edits: [string, string][] };
 const M: Mutant[] = [
   { name: 'M1 admin signer check removed', file: LIB, edits: [[SIGNER, '']] },
@@ -29,6 +32,9 @@ const M: Mutant[] = [
   { name: 'M8a script defaults to send', file: CLI, edits: [["send: argv.includes('--send')", "send: !argv.includes('--dry-run')"]] },
   { name: 'M8b tool sends on a dry run', file: LA, edits: [['  if (!o.send) {', '  if (o.send === false) {']] },
   { name: 'M8c tool accepts a mainnet genesis', file: LA, edits: [["if (cls !== 'devnet' && cls !== 'local') throw", "if (cls === 'unknown') throw"]] },
+  { name: 'X1 canonical address check removed', file: LIB, edits: [[CANON, '']] },
+  { name: 'X2 owner check removed', file: LIB, edits: [[OWNER, '']] },
+  { name: 'X3 discriminator check removed', file: LIB, edits: [[DISC, '']] },
 ];
 
 const filter = process.argv[2];

@@ -126,6 +126,7 @@ test('AC-10 a mint launched before the rotate keeps its launcher; a later launch
   const first = w.launchWith(w.launch); assert.ok(first.r.ok);
   const next = key(); w.env.fund(next.publicKey);
   assert.ok(w.rotateAdmin(w.admin, next.publicKey).ok);
+  fails(w.launchWith(next).r, 'Unauthorized');
   const cfg = decodeMintConfig(w.env.accountData(w.env.hook.configPda(first.mint))!);
   assert.ok(cfg.launcher.equals(w.launch.publicKey));
   const second = w.launchWith(w.launch); assert.ok(second.r.ok);

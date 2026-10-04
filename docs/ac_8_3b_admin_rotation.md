@@ -9,11 +9,11 @@ Code refs below are the pre-8.3 tree at `0e676c7` unless marked "8.3". `lib.rs` 
 ## 0. What the source says today (verified)
 - `Global` = `{ authority: Pubkey, lifted: bool, bump: u8 }` (state.rs L5–12). Space is 42 bytes. `authority` is the lift-switch admin.
 - `initialize_global` sets that key once (lib.rs L43–56). Only the program upgrade authority can call it (L345). It refuses the zero key (L44) and a second run (`create_pda_once`, ConfigFrozen).
-- There is **no instruction that changes `authority` after init.** `lift_global`, `lift_mint_cap` and `raise_mint_cap` all use `has_one = authority` (L396, L403).
-- **8.3 (other agent, not landed on this branch):** after `migrate_global_v2`, Global is 74 bytes. Bytes 0..42 keep today's meaning. `launch_authority` is bytes 42..74, read by `launch_authority_of()`, which returns "not set" when the length is under 74 or those bytes are zero. The Rust `Global` struct stays 42 bytes. `set_launch_authority` rotates the **launch** key and is admin-only. It is not this ticket.
+- Before this ticket, nothing changed `authority` after init. `lift_global`, `lift_mint_cap` and `raise_mint_cap` still use `has_one = authority`. `rotate_admin` is the instruction that writes bytes 8..40.
+- **8.3 is on this branch** (stacked at `ab8c0cc`). After `migrate_global_v2`, Global is 74 bytes. Bytes 0..42 keep today's meaning. `launch_authority` is bytes 42..74, read by `launch_authority_of()`, which returns "not set" when the length is under 74 or those bytes are zero. The Rust `Global` struct stays 42 bytes. `set_launch_authority` rotates the **launch** key and is admin-only. 8.3b does not edit it.
 - `write_account` (lib.rs L327–331) serializes a whole value from offset 0. A rotate must not use it: a full rewrite is the clobber mutant.
 - Error names stay `Unauthorized` and `ConfigFrozen` (errors.rs L3–11). The launch page is keyed on those names. Don't add new names.
-- Off-chain, `sdk/keyrules.ts` is still the three-key rule on this branch. 8.3 turns it into the four-role rule. 8.3b consumes that, and does not re-specify it.
+- Off-chain, `sdk/keyrules.ts` on this branch is 8.3's four-role rule. 8.3b does not edit it and does not add a rule.
 
 ## 1. On-chain change
 One instruction, `rotate_admin(new_authority)`.
@@ -79,6 +79,9 @@ Devnet only: the program change is for the devnet hook. No mainnet program, no m
 | M6 | `new == current admin` accepted | AC-4 |
 | M7 | Old admin still passes `has_one = authority` after the rotate (stale key cached, or the write went somewhere other than bytes 8..40) | AC-8 |
 | M8 | Script or builder defaults to send, or accepts a mainnet genesis | AC-12, AC-13 |
+| X1 | Canonical-address check removed | AC-11 |
+| X2 | Owner check removed | AC-11 |
+| X3 | Discriminator check removed | AC-11 |
 
 ## 6. Devnet SOL
 No resize and no new account. Rent is unchanged. The only cost is the devnet transaction fee, and only when `--send` is passed. This ticket does not upgrade the program by itself: it ships in the same devnet upgrade as 8.3, whose buffer rent is estimated in the 8.3 spec §6.
