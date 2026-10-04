@@ -8,17 +8,24 @@ import { Keypair } from '@solana/web3.js';
 import { resolveCluster, DEVNET_GENESIS, MAINNET_GENESIS, TESTNET_GENESIS } from '../sdk/cluster.js';
 
 let genesis = '';
-// Loopback only: one server on 127.0.0.1 (localhost) and one on 127.0.0.2 (loopback, but not a localhost URL by the rule).
-let server: Server, remote: Server; let port = 0, remotePort = 0;
+// Loopback only: one server on 127.0.0.1 (localhost) and, where the OS allows it, one on 127.0.0.2 (loopback, but not a
+// localhost URL by the rule). macOS has no 127.0.0.2 without an `ifconfig lo0 alias`, so the "not localhost" case also runs
+// as http://localhost.:<port> (a trailing dot is not the exact spelling, yet it reaches the 127.0.0.1 server).
+let server: Server, remote: Server | null = null; let port = 0, remotePort = 0; let noAlias = '';
 const rpc = () => createServer((req, res) => {
   let body = ''; req.on('data', d => (body += d)); req.on('end', () => {
     const r = JSON.parse(body); res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ jsonrpc: '2.0', id: r.id, result: r.method === 'getGenesisHash' ? genesis : null }));
   });
 });
-const listen = (s: Server, host: string) => new Promise<number>(ok => s.listen(0, host, () => ok((s.address() as AddressInfo).port)));
-before(async () => { server = rpc(); remote = rpc(); port = await listen(server, '127.0.0.1'); remotePort = await listen(remote, '127.0.0.2'); });
-after(async () => { await new Promise<void>(ok => server.close(() => ok())); await new Promise<void>(ok => remote.close(() => ok())); });
+const listen = (s: Server, host: string) => new Promise<number>((ok, no) => { s.once('error', no); s.listen(0, host, () => ok((s.address() as AddressInfo).port)); });
+before(async () => {
+  server = rpc(); port = await listen(server, '127.0.0.1');
+  const r = rpc();
+  try { remotePort = await listen(r, '127.0.0.2'); remote = r; }
+  catch (e: any) { noAlias = `127.0.0.2 not bindable here (${e?.code ?? e}; macOS: sudo ifconfig lo0 alias 127.0.0.2)`; }
+});
+after(async () => { await new Promise<void>(ok => server.close(() => ok())); if (remote) await new Promise<void>(ok => remote!.close(() => ok())); });
 async function resolveLocal(url: string, g: string) {
   genesis = g; const saved = process.env.LOCAL_RPC; process.env.LOCAL_RPC = url;
   try { return await resolveCluster('local'); } finally { if (saved === undefined) delete process.env.LOCAL_RPC; else process.env.LOCAL_RPC = saved; }
@@ -36,6 +43,10 @@ test('resolveCluster("local"): localhost URL + devnet or testnet genesis → ref
     await assert.rejects(resolveLocal(`http://127.0.0.1:${port}`, g), /refusing: not a local validator/);
   await assert.rejects(resolveLocal(`http://127.0.0.1:${port}`, MAINNET_GENESIS), /refusing: RPC is mainnet-beta/);
 });
-test('resolveCluster("local"): unknown genesis on a non-localhost URL → refused (the URL test is exact, 127.0.0.2 is not localhost)', async () => {
+test('resolveCluster("local"): unknown genesis on a non-localhost URL → refused (the URL test is exact: localhost. is not localhost)', async () => {
+  await assert.rejects(resolveLocal(`http://localhost.:${port}`, UNKNOWN), /refusing: not a local validator .*got unknown/);
+});
+test('resolveCluster("local"): unknown genesis on 127.0.0.2 (loopback, not a localhost URL) → refused', async (t) => {
+  if (noAlias) { t.skip(noAlias); return; }   // the reason is named in the test output, never a silent pass
   await assert.rejects(resolveLocal(`http://127.0.0.2:${remotePort}`, UNKNOWN), /refusing: not a local validator .*got unknown/);
 });

@@ -50,6 +50,7 @@ const M: Mutant[] = [
   { name: 'M15c TS decoder accepts any length', file: HOOK, edits: [['if (b.length !== GLOBAL_V1_LEN && b.length < GLOBAL_V2_LEN) throw', 'if (false) throw']] },
   { name: 'M16 migrate script defaults to send', file: CLI, edits: [["send: argv.includes('--send')", "send: !argv.includes('--dry-run')"]] },
   { name: 'M16b tool sends on a dry run', file: LA, edits: [['  if (!o.send) {', '  if (o.send === false) {']] },
+  { name: 'M16d dry run passes a legacy Transaction with a config (throws on a real Connection)', file: LA, edits: [['conn.simulateTransaction(new VersionedTransaction(tx.compileMessage()), {', 'conn.simulateTransaction(tx, {']] },
   { name: 'M16c tool accepts a mainnet genesis', file: LA, edits: [["if (cls !== 'devnet' && cls !== 'local') throw", "if (cls === 'unknown') throw"]] },
 ];
 

@@ -104,7 +104,7 @@ PROPTEST_CASES=1000000 cargo test -p cap-math --release
 pnpm build                       # = scripts/build.sh (cargo build-sbf; release build, test-slots OFF)
 anchor build                     # alternative if your anchor toolchain works (anchor idl build doesn't in our setup)
 ```
-Last run (LOCAL, 2026-10-04): `CI_SKIP_CARGO=1 pnpm check` ALL GREEN, 113/113 node tests.
+Last run (LOCAL, macOS arm64, 2026-10-04): `CI_PROGRAM_HOST=1 pnpm check` ALL GREEN: cap-math cargo tests + proptests (20,000 cases), program host tests 2/2, 398 node tests pass, 2 named skips (the anonymised full replay fixtures are not in the repo; the 127.0.0.2 case needs `sudo ifconfig lo0 alias 127.0.0.2` on macOS).
 
 ## Toolchain
 Versions come from the repo's pins where there is one (`Anchor.toml`, `Cargo.toml`, `pnpm-lock.yaml`); otherwise the tested version is given.

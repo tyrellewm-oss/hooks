@@ -211,3 +211,14 @@ test('instruction discriminators are the Anchor ones and the account discriminat
   assert.equal(IX.migrateGlobalV2.length, 8); assert.equal(IX.setLaunchAuthority.length, 8);
   assert.deepEqual(Buffer.from(FX.global.data_base64, 'base64').subarray(0, 8), ACC.Global);
 });
+
+test('AC-15 devnet half (recorded): the real devnet migration kept bytes 0..42 and wrote the launch key at 42..74; the keeper configs pin that key', () => {
+  const m = JSON.parse(readFileSync('tests/fixtures/devnet_global_migration.json', 'utf8'));
+  const before = Buffer.from(m.global.before.data_base64, 'base64'), after = Buffer.from(m.global.after.data_base64, 'base64');
+  assert.equal(before.toString('base64'), FX.global.data_base64, 'before = the earlier recorded devnet Global');
+  assert.equal(before.length, GLOBAL_V1_LEN); assert.equal(after.length, GLOBAL_V2_LEN);
+  assert.deepEqual(after.subarray(0, GLOBAL_V1_LEN), before);
+  const g = decodeGlobal(after); assert.equal(g.launchAuthority!.toBase58(), m.launch_authority); assert.equal(g.authority.toBase58(), '9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu');
+  assert.notEqual(m.launch_authority, g.authority.toBase58());
+  for (const f of ['keeper/devnet.tdt.json', 'keeper/devnet.fw15.json']) assert.equal(JSON.parse(readFileSync(f, 'utf8')).hook_launch_authority, m.launch_authority, f);
+});
