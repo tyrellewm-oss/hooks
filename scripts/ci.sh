@@ -20,12 +20,15 @@ out=$(node --import tsx --test --test-timeout=60000 tests/*.test.ts 2>&1); rc=$?
 echo "$out" | grep -E '^# (tests|pass|fail|skipped)'
 # skipped tests are listed by name so a missing input (e.g. the replay full fixtures, kept outside the repo) is visible
 echo "$out" | grep -E '^ *ok [0-9]+ - .*# SKIP' | sed -E 's/^ *ok [0-9]+ - /SKIPPED: /' || true
-step "forbidden words (AC-27, case-insensitive) in UI + page copy"
+step "forbidden words (AC-27, case-insensitive) in UI (app/public, web/src) + page copy"
 WORDS='\bsafe\b|\bsecure\b|(^|[^n])audited|anti-bundle|antibundle|sniper-proof|bot-proof|rug-proof|rugproof|honeypot-free|no admin|0 keys|\bmoon\b|100x|guaranteed|\bprofit|\breturns\b|investment opportunity|presale|\bfloor\b|pump it'
-if grep -rniE "$WORDS" app/public research/page_content.json research/page_content.md; then echo "FORBIDDEN WORD FOUND"; fail=1; else echo "none found"; fi
+if grep -rniE "$WORDS" app/public web/src web/index.html research/page_content.json research/page_content.md; then echo "FORBIDDEN WORD FOUND"; fail=1; else echo "none found"; fi
 step "secret scan: no keypair-like 64-byte arrays, no .env, no key dirs tracked (full history)"
 if git log --all -p | grep -nE '\[([0-9]{1,3},\s*){63}[0-9]{1,3}\]' >/dev/null; then echo "KEYPAIR-LIKE ARRAY IN HISTORY"; fail=1; else echo "history clean"; fi
 if git ls-files | grep -E '(^|/)\.env($|\.)|\.devnet-keys|\.local-keys|keypair\.json$|id\.json$' | grep -v '.env.example'; then echo "SECRET FILE TRACKED"; fail=1; else echo "no secret files tracked"; fi
 step "no mainnet endpoints in code/config (AC-30)"
-if grep -rniE 'mainnet-beta|api\.mainnet|mainnet\.helius|https?://[^ ]*mainnet' --include='*.ts' --include='*.js' --include='*.json' --include='*.toml' --include='*.sh' sdk scripts app Anchor.toml package.json | grep -v 'assertNotMainnet\|refusing\|MAINNET_GENESIS\|/mainnet/i'; then echo "MAINNET REFERENCE"; fail=1; else echo "none"; fi
+if grep -rniE 'mainnet-beta|api\.mainnet|mainnet\.helius|https?://[^ ]*mainnet' --include='*.ts' --include='*.tsx' --include='*.js' --include='*.json' --include='*.toml' --include='*.sh' sdk scripts app web/src web/vite.config.ts Anchor.toml package.json | grep -v 'assertNotMainnet\|refusing\|MAINNET_GENESIS\|/mainnet/i'; then echo "MAINNET REFERENCE"; fail=1; else echo "none"; fi
+step "web/ front end: typecheck (tsc --noEmit; needs web/node_modules)"
+if [ -d web/node_modules ]; then (cd web && npx tsc --noEmit) && echo "web typecheck ok" || { echo "WEB TYPECHECK FAILED"; fail=1; }
+else echo "SKIPPED: web/node_modules missing (run: cd web && pnpm install)"; fi
 echo; [ $fail = 0 ] && echo "CI: ALL GREEN" || echo "CI: FAILED"; exit $fail
