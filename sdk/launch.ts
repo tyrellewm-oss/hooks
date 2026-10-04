@@ -9,15 +9,37 @@ import {
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { HookClient, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
-import { type Cluster, type ClusterName, explorerTx, nowIct } from './cluster.js';
+import { type Cluster, type ClusterName, explorerTx, nowIct, DEVNET_GENESIS, MAINNET_GENESIS } from './cluster.js';
 import { launchConfigChecks, type Authorities } from './keyrules.js';
 
-/** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()). Env DAMM_V2_MIGRATION_CONFIG overrides. */
+/** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()).
+ *  Pinned values are DBC SDK 1.5.13 `DAMM_V2_MIGRATION_FEE_ADDRESS[FixedBps25]` (the same address on every cluster; the
+ *  local validator clones the devnet account). The env override `DAMM_V2_MIGRATION_CONFIG` is a devnet test knob:
+ *  on any cluster whose genesis hash is not devnet's (mainnet, a local validator, anything else) it is refused
+ *  unless it exactly equals the pinned mainnet value. Resolution happens before any migration tx is built. */
 export const DAMM_V2_MIGRATION_CONFIG: Record<ClusterName, string> = {
   devnet: '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd',
   local: '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd', // local validator clones the devnet account
 };
-export const dammV2MigrationConfig = (c: ClusterName) => new PublicKey(process.env.DAMM_V2_MIGRATION_CONFIG ?? DAMM_V2_MIGRATION_CONFIG[c]);
+export const DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN = '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd';
+export class ConfigPinRefusal extends Error {}
+export interface DammConfigResolution { config: PublicKey; override: string | null; clusterByGenesis: 'devnet' | 'mainnet' | 'other' }
+/** Resolve the migration DAMM v2 config from the RPC's genesis hash (not from a name or URL). Throws ConfigPinRefusal. */
+export function resolveDammV2MigrationConfig(genesis: string, name: ClusterName, env: NodeJS.ProcessEnv = process.env): DammConfigResolution {
+  const byGenesis = genesis === DEVNET_GENESIS ? 'devnet' : genesis === MAINNET_GENESIS ? 'mainnet' : 'other';
+  const raw = env.DAMM_V2_MIGRATION_CONFIG;
+  const override = raw !== undefined && raw !== '' ? raw : null;
+  const pinned = byGenesis === 'devnet' ? DAMM_V2_MIGRATION_CONFIG.devnet : byGenesis === 'mainnet' ? DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN : DAMM_V2_MIGRATION_CONFIG[name];
+  if (override === null) return { config: new PublicKey(pinned), override: null, clusterByGenesis: byGenesis };
+  if (byGenesis !== 'devnet' && override !== DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN)
+    throw new ConfigPinRefusal(`refusing DAMM_V2_MIGRATION_CONFIG override ${override} on a non-devnet cluster (genesis ${genesis}): only the pinned value ${DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN} is allowed`);
+  let pk: PublicKey; try { pk = new PublicKey(override); } catch { throw new ConfigPinRefusal(`DAMM_V2_MIGRATION_CONFIG override is not a valid address: ${override}`); }
+  return { config: pk, override, clusterByGenesis: byGenesis };
+}
+/** Same resolution for a connected cluster (one genesis read). */
+export async function dammV2MigrationConfigFor(c: Pick<Cluster, 'name' | 'connection'>, env: NodeJS.ProcessEnv = process.env): Promise<DammConfigResolution> {
+  return resolveDammV2MigrationConfig(await c.connection.getGenesisHash(), c.name, env);
+}
 
 export interface TxRecord { time: string; cluster: string; label: string; purpose: string; sig: string; ok: boolean; err?: string; hookError?: string | null; hookCode?: number | null; link: string; capHit?: any; events?: any[]; note?: string }
 
@@ -192,8 +214,10 @@ export class Launchpad {
   }
 
   async migrate(payer: Keypair, pool: PublicKey) {
-    const { transaction, firstPositionNftKeypair, secondPositionNftKeypair } = await this.dbc.migration.migrateToDammV2({ payer: payer.publicKey, pool, dammConfig: dammV2MigrationConfig(this.c.name) });
-    return sendTx(this.c, transaction, [payer, firstPositionNftKeypair, secondPositionNftKeypair], 'dbc: migration_damm_v2 (graduation)');
+    const damm = await dammV2MigrationConfigFor(this.c);   // throws ConfigPinRefusal before any tx is built
+    const { transaction, firstPositionNftKeypair, secondPositionNftKeypair } = await this.dbc.migration.migrateToDammV2({ payer: payer.publicKey, pool, dammConfig: damm.config });
+    return sendTx(this.c, transaction, [payer, firstPositionNftKeypair, secondPositionNftKeypair], 'dbc: migration_damm_v2 (graduation)',
+      damm.override ? `overrides: DAMM_V2_MIGRATION_CONFIG=${damm.override}` : undefined);
   }
 
   async tokenBalance(mint: PublicKey, owner: PublicKey): Promise<bigint> {
