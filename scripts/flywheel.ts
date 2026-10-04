@@ -170,6 +170,7 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
   }
   if (cmd === 'verify') {
     const c = await devnetConn(); const log = JSON.parse(readFileSync(cfg.public_log, 'utf8'));
+    if (log.current_run) log.runs = [...log.runs, log.current_run];   // an open (e.g. paused mid-run) run already moved totals
     const sigs = new Set<string>(); for (const r of log.runs) { for (const t of r.txs ?? []) sigs.add(t); } for (const b of log.burns) sigs.add(b.sig);
     const arr = [...sigs]; let bad: string[] = [];
     for (let i = 0; i < arr.length; i += 100) { const st = await c.getSignatureStatuses(arr.slice(i, i + 100), { searchTransactionHistory: true }); st.value.forEach((v, j) => { if (!v) bad.push(arr[i + j]); }); }

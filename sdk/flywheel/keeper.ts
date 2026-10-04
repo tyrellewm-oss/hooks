@@ -30,6 +30,8 @@ export interface RunLog {
   burn?: { burned_raw: string; tx_supply_change_raw: string; token_delta_raw: string; supply_before: string; supply_after: string; verified: boolean; sig: string };
   reconcile?: Record<string, string | boolean>;
   gas_lamports: string; txs: string[]; stages: Record<string, StageRec>;
+  /** set while the run is stopped by a mid-run pause (the stage it stopped before); history kept in midrun_pauses */
+  stopped_before?: string; midrun_pauses?: { at: string; before: string; by: string }[];
 }
 export interface KeeperState {
   version: 1; name: string; cluster: string; mint: string; decimals: number;
@@ -52,6 +54,8 @@ const add = (a: string, b: bigint) => (B(a) + b).toString();
 
 // ---------------------------------------------------------------- errors
 export class FailClosed extends Error { constructor(public code: string, msg: string, public pause = false) { super(msg); } }
+/** A pause seen immediately before a send: nothing was built, signed, journaled or sent for `stage`. Not a failure. */
+export class PausedMidrun extends FailClosed { constructor(public stage: string, public by: string) { super('paused_midrun', `paused (${by}) before ${stage}; nothing sent`); } }
 
 // ---------------------------------------------------------------- startup (pure first, then network)
 export interface KeySet { claim: Keypair; treasury: Keypair; dev: Keypair; gas: Keypair }
@@ -126,6 +130,9 @@ export class Keeper {
   private memo(runId: string, stage: string) { return new TransactionInstruction({ programId: MEMO_PROGRAM_ID, keys: [], data: Buffer.from(`flywheel:${runId}:${stage}`) }); }
   /** Journal-first send. Returns the confirmed parsed tx, or throws FailClosed. Never re-sends a stage that has a sig unless that sig is provably expired and never landed. */
   private async sendStage(s: KeeperState, run: RunLog, stage: string, ixs: TransactionInstruction[], signers: Keypair[], intent: Record<string, string>, opts: { skipPreflight?: boolean } = {}): Promise<ParsedTransactionWithMeta> {
+    // pause gate before EVERY send (claim, dev, swap, burn): same sources as the run-start check
+    const by = this.pauseSource(s);
+    if (by) throw new PausedMidrun(stage, by);
     const prev = run.stages[stage];
     if (prev && prev.status === 'confirmed') throw new Error(`BUG: stage ${stage} already confirmed`);
     if (prev && prev.status === 'pending') throw new Error(`BUG: stage ${stage} pending must be resolved first`);
@@ -232,21 +239,33 @@ export class Keeper {
     }
   }
 
+  /** The single pause check, used at run start and immediately before every send. '' = not paused.
+   *  Sources: config/env flag (FW_PAUSED, also re-read live), PAUSE file, sticky state pause (auto-pause or an earlier pause). */
+  pauseSource(s?: KeeperState): string {
+    if (this.cfg.paused || process.env.FW_PAUSED === '1') return 'config/env flag';
+    if (this.store.pausedByFile()) return 'PAUSE file';
+    if (s?.paused) return `auto-pause: ${s.pause_reason}`;
+    return '';
+  }
+
   // ---------- one run
   async runOnce(nowMs = Date.now()): Promise<RunOutcome> {
     const s = this.store.loadState(() => initState(this.cfg));
     const runId = runIdFor(this.cfg.cluster, nowMs, this.cfg.cadence_seconds);
     // pause = zero txs, and no RPC calls that could send anything
-    const pausedBy = this.cfg.paused ? 'config/env flag' : this.store.pausedByFile() ? 'PAUSE file' : s.paused ? `auto-pause: ${s.pause_reason}` : '';
+    const pausedBy = this.pauseSource(s);
     if (pausedBy) {
       if (!s.runs.some(r => r.run_id === runId)) s.runs.push(newRun(runId, this.overrides, 'paused', pausedBy));
-      if (this.cfg.paused || this.store.pausedByFile()) { s.paused = true; s.pause_reason ||= pausedBy; }
+      if (!pausedBy.startsWith('auto-pause')) { s.paused = true; s.pause_reason ||= pausedBy; }
       this.save(s); this.publish(s);
       this.log(`[${runId}] paused (${pausedBy}) — zero txs`);
       return { run_id: runId, status: 'paused', reason: pausedBy, txs: [] };
     }
     let run: RunLog;
-    if (s.current) { run = s.current; this.log(`[${run.run_id}] resuming in-progress run (status ${run.status})`); }
+    if (s.current) {
+      run = s.current; this.log(`[${run.run_id}] resuming in-progress run (status ${run.status}${run.stopped_before ? `, stopped before ${run.stopped_before}` : ''})`);
+      if (run.status === 'paused_midrun') { run.status = 'planned'; run.reason = ''; delete run.stopped_before; }   // amounts are re-planned from state below
+    }
     else {
       if (s.runs.some(r => r.run_id === runId)) { this.log(`[${runId}] window already ran — no-op, zero txs`); return { run_id: runId, status: 'noop_window_done', reason: 'window already ran', txs: [] }; }
       run = newRun(runId, this.overrides, 'planned', ''); run.warnings.push(...this.startWarnings); s.current = run;
@@ -284,6 +303,7 @@ export class Keeper {
       if (run.status === 'planned') run.status = 'logged';
       return this.finishOk(s, run);
     } catch (e: any) {
+      if (e instanceof PausedMidrun) return this.finishPausedMidrun(s, run, e);
       if (Object.values(run.stages).some(x => x.status === 'pending')) {
         run.status = 'pending'; run.reason = e.message; try { this.save(s); this.publish(s); } catch {}
         this.log(`[${run.run_id}] PENDING: ${e.message}`);
@@ -349,6 +369,8 @@ export class Keeper {
     } else throw new Error(`unknown stage ${stage}`);
   }
 
+  /** One claim per source. The DBC partner claim (`claim_trading_fee2`) works both before and after graduation (devnet TDT:
+   *  claimed after migration); the DAMM v2 position claim collects the post-graduation pool's LP fees. */
   private async claim(s: KeeperState, run: RunLog, src: SourceDbc | SourceDamm) {
     const stage = src.kind === 'dbc' ? 'claim_dbc' : 'claim_damm';
     if (run.stages[stage]?.status === 'confirmed' || run.claims.find(c => c.source === src.kind && c.skipped)) return;
@@ -455,7 +477,7 @@ export class Keeper {
       const k = swapIxs[0].keys.map(x => x.pubkey.toBase58());
       if (!k.includes(this.tWsol.toBase58()) || !k.includes(this.tMain.toBase58())) throw new FailClosed('failed_internal', 'swap ix does not use treasury ATAs');
       const tx = await this.sendStage(s, run, 'swap', swapIxs, [this.keys.treasury], { in_lamports: plan.inLamports.toString(), min_out_raw: mo.toString() }, { skipPreflight: !!c.force_fail_swap })
-        .catch(e => { if (run.swap) { run.swap.status = 'failed'; run.swap.sig = run.stages.swap?.sig ?? ''; } throw e; });
+        .catch(e => { if (run.swap) { if (e instanceof PausedMidrun) run.swap.status = 'not_sent'; else { run.swap.status = 'failed'; run.swap.sig = run.stages.swap?.sig ?? ''; } } throw e; });
       this.applyEffect(s, run, 'swap', tx);
     }
     // burn only what this run's swap produced (FW-19: never a burn without a swap in the same run)
@@ -498,6 +520,19 @@ export class Keeper {
     this.log(`[${run.run_id}] ${run.status} ${run.reason} txs=${run.txs.length}`);
     return { run_id: run.run_id, status: run.status, reason: run.reason, txs: run.txs };
   }
+  /** Mid-run pause: nothing further is sent. The run stays open (s.current) so that after a manual unpause it resumes:
+   *  confirmed stages are never repeated, unsplit/pending amounts are re-planned from state, and a confirmed swap is still
+   *  burned inside the same run (FW-19). Not a failure: the auto-pause counter is untouched. */
+  private finishPausedMidrun(s: KeeperState, run: RunLog, e: PausedMidrun): RunOutcome {
+    run.status = 'paused_midrun'; run.reason = e.message; run.stopped_before = e.stage;
+    (run.midrun_pauses ??= []).push({ at: new Date().toISOString(), before: e.stage, by: e.by });
+    run.carryover_lamports = s.pending_lamports; run.carryover_reason = 'paused_midrun';
+    s.paused = true; s.pause_reason ||= `${e.by} (mid-run, before ${e.stage})`;
+    s.current = run;
+    try { this.save(s); this.publish(s); } catch (we: any) { this.log(`log write failed: ${we.message}`); }
+    this.log(`[${run.run_id}] PAUSED MID-RUN before ${e.stage} (${e.by}) — nothing further sent; txs this run=${run.txs.length}`);
+    return { run_id: run.run_id, status: 'paused_midrun', reason: e.message, txs: run.txs };
+  }
   private finishFail(s: KeeperState, run: RunLog, e: FailClosed, persist: boolean): RunOutcome {
     run.status = e.code.startsWith('failed_') || ['burn_mismatch', 'reconcile_mismatch', 'claim_mismatch'].includes(e.code) ? e.code : `failed_${e.code}`;
     run.reason = e.message; run.finished_at = new Date().toISOString();
@@ -530,7 +565,7 @@ export function publicLog(s: KeeperState, cfg: KeeperConfig) {
     burnedTokens: fmtTokens(B(s.totals.burned_raw), s.decimals), supplyTokens: fmtTokens(supply, s.decimals), pctOfSupply: pctOf(B(s.totals.burned_raw), B(s.first_supply_raw)),
     totals_raw: { ...s.totals, pending_lamports: s.pending_lamports, unsplit_lamports: s.unsplit_lamports, unburned_raw: s.unburned_raw },
     burns: s.burns.map(b => ({ at: b.at, tokens: b.tokens, sol: b.sol, sig: b.sig, run_id: b.run_id })),
-    runs: s.runs.map(strip), route_pool: cfg.route_pool, main_dbc_pool: cfg.main_dbc_pool,
+    runs: s.runs.map(strip), current_run: s.current ? strip(s.current) : null, route_pool: cfg.route_pool, main_dbc_pool: cfg.main_dbc_pool,
   };
 }
 /** DBC SDK getPool returns { poolState } (1.5.13); unwrap defensively. */
