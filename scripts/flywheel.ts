@@ -2,8 +2,11 @@
 //   tsx scripts/flywheel.ts <cmd> [--config keeper/devnet.tdt.json] ...
 //   setup [--gas-sol 0.05]        fund gas wallet from deployer, pre-create treasury/dev token accounts (gas pays rent)
 //   simulate                      build both claim txs and simulate them (no send)
-//   run                           one keeper run (current cadence window)
-//   loop --runs N [--trade-lamports L]   N scheduled runs, one per window; optional scripted trades before each run
+//   run [--send]                  one keeper run (current cadence window). DRY RUN by default: every step is built and
+//                                 simulated, nothing is broadcast, saved state/journal/public log are not changed.
+//                                 --send broadcasts for real.
+//   loop --runs N [--send] [--trade-lamports L]   N scheduled runs, one per window (dry run unless --send;
+//                                 scripted trades send txs, so --trade-lamports requires --send)
 //   trade --lamports L            scripted trade on route pool by buyerB: buy L lamports of main token, then sell all back
 //   pause | unpause               PAUSE file on/off (unpause also clears auto-pause)
 //   balances                      throwaway wallet totals (native + wSOL) and main-token holdings
@@ -18,6 +21,7 @@ import { startKeeper, Keeper, MEMO_PROGRAM_ID, initState, dbcPool } from '../sdk
 import { Store } from '../sdk/flywheel/store.js';
 import { fmtSol } from '../sdk/flywheel/math.js';
 import { loadOrCreate } from '../sdk/keys.js';
+import { parseSendMode, banner, isolateState, dryRunConnection } from '../sdk/flywheel/dryrun.js';
 import { DEVNET_GENESIS, DEVNET_RPC_DEFAULT, assertNotMainnet, explorerTx } from '../sdk/cluster.js';
 
 const argv = process.argv.slice(2);
@@ -25,6 +29,7 @@ const cmd = argv[0] ?? 'help';
 const arg = (k: string, d?: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const { cfg, overrides } = loadConfig(arg('--config', 'keeper/devnet.tdt.json')!);
 const evlog = 'flywheel/devnet-events.jsonl'; // CLI-level evidence log (addresses + sigs only)
+const MODE = parseSendMode(argv);
 const ev = (o: Record<string, unknown>) => { mkdirSync('flywheel', { recursive: true }); appendFileSync(evlog, JSON.stringify({ at: new Date().toISOString(), config: cfg.name, ...o }).replace(/(?<![:\w/])\/(?:[\w.\-]+\/)+[\w.\-]+/g, '<path>') + '\n'); };
 
 const rpcUrl = () => { const u = process.env.FW_RPC_URL ?? process.env.DEVNET_RPC ?? DEVNET_RPC_DEFAULT; assertNotMainnet(u); return u; };
@@ -37,6 +42,25 @@ async function devnetConn(): Promise<Connection> {
   return c;
 }
 async function keeper(): Promise<Keeper> { return startKeeper(cfg, overrides, { loadKey, connect: async () => devnetConn() }); }
+/** Dry-run keeper: same code path, throwaway state copy, connection that only simulates (see sdk/flywheel/dryrun.ts). */
+async function dryKeeper() {
+  const iso = isolateState(cfg); let dry!: ReturnType<typeof dryRunConnection>;
+  const k = await startKeeper(iso.cfg, overrides, { loadKey, connect: async () => { dry = dryRunConnection(await devnetConn(), iso.cfg.state_dir); return dry.conn; } });
+  dry.bind({ feePayer: k.keys.gas.publicKey, tWsol: k.tWsol, tMain: k.tMain, dWsol: k.dWsol, mint: k.mint, mainProg: k.mainProg, mainMint: cfg.main_mint });
+  return { k, dry, iso };
+}
+async function dryRunOnce(): Promise<number> {
+  const { k, dry, iso } = await dryKeeper();
+  try {
+    const r = await k.runOnce();
+    const unchanged = iso.realUnchanged();
+    console.log(JSON.stringify({ dry_run: true, ...r, txs: r.txs.map(x => `(simulated) ${x}`), steps: dry.steps, real_state_unchanged: unchanged }, null, 1));
+    for (const st of dry.steps) console.log(`DRY ${st.stage.padEnd(10)} ${st.simulated.padEnd(9)} ${st.units ?? '-'} CU ${JSON.stringify(st.effect)}${st.err ? ` err=${JSON.stringify(st.err)}` : ''}`);
+    console.log(`DRY RUN complete: nothing broadcast; real state ${unchanged ? 'unchanged' : 'CHANGED (bug)'}. Re-run with --send to broadcast.`);
+    if (!unchanged) return 4;
+    return r.status.startsWith('failed') || r.status.includes('mismatch') || dry.steps.some(x => x.simulated === 'error') ? 3 : 0;
+  } finally { iso.cleanup(); }
+}
 
 async function send(c: Connection, ixs: TransactionInstruction[], signers: Keypair[], purpose: string, skipPreflight = false) {
   const tx = new Transaction().add(new TransactionInstruction({ programId: MEMO_PROGRAM_ID, keys: [], data: Buffer.from(`flywheel:${purpose}`) }), ...ixs);
@@ -154,11 +178,25 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
   if (cmd === 'trade-sell') { const c = await devnetConn(); const r = await tradeOne(c, 'sell', BigInt(arg('--tokens')!)); console.log(JSON.stringify(r)); ev({ kind: 'scripted_trade', ...r }); return; }
   if (cmd === 'trade') { const c = await devnetConn(); const r = await trade(c, BigInt(arg('--lamports', '100000000')!)); console.log(JSON.stringify(r)); return; }
   if (cmd === 'run') {
+    console.log(banner(MODE, cfg, 'run'));
+    if (MODE === 'dry_run') process.exit(await dryRunOnce());
     const k = await keeper(); const r = await k.runOnce(); console.log(JSON.stringify(r)); ev({ kind: 'run', ...r, overrides });
     process.exit(r.status.startsWith('failed') || r.status.includes('mismatch') ? 3 : 0);
   }
   if (cmd === 'loop') {
-    const runs = Number(arg('--runs', '5')); const tradeL = arg('--trade-lamports'); const k = await keeper();
+    const runs = Number(arg('--runs', '5')); const tradeL = arg('--trade-lamports');
+    console.log(banner(MODE, cfg, `loop --runs ${runs}`));
+    if (MODE === 'dry_run') {
+      if (tradeL) throw new Error('--trade-lamports sends scripted trades; it requires --send');
+      let worst = 0;
+      for (let i = 0; i < runs; i++) {
+        const w = cfg.cadence_seconds * 1000; const next = Math.floor(Date.now() / w) * w + w;
+        if (i > 0) { const wait = next - Date.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait + 1500)); }
+        worst = Math.max(worst, await dryRunOnce());   // each iteration starts from a fresh copy of the (unchanged) real state
+      }
+      process.exit(worst);
+    }
+    const k = await keeper();
     for (let i = 0; i < runs; i++) {
       // wait for the next cadence window (unattended schedule)
       const w = cfg.cadence_seconds * 1000; const next = Math.floor(Date.now() / w) * w + w; 
@@ -183,5 +221,5 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
       burns_paired_with_swap: log.runs.filter((r: any) => r.burn?.sig).every((r: any) => r.swap?.status === 'confirmed'), totals: t };
     console.log(JSON.stringify(out, null, 1)); ev({ kind: 'verify', ...out }); return;
   }
-  console.log(readFileSync(new URL(import.meta.url)).toString().split('\n').slice(0, 12).join('\n'));
+  console.log(readFileSync(new URL(import.meta.url)).toString().split('\n').slice(0, 15).join('\n'));
 })().catch(e => { console.error(`ERROR: ${e?.message ?? e}`); ev({ kind: 'error', cmd, error: String(e?.message ?? e).slice(0, 300) }); process.exit(1); });

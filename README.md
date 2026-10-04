@@ -163,6 +163,23 @@ pnpm qa-schedule <mint> --cluster devnet
 - Cost estimate: about 2.8 SOL of rent for the 393 KB program plus about 0.5–1 SOL for the demos (estimate). All devnet SOL, no real value.
 - Every devnet tx is appended to `txlog/devnet.jsonl` (local, gitignored) with its explorer link (`?cluster=devnet`), ICT time and purpose.
 
+## Flywheel keeper (devnet)
+
+Fee keeper: claim → 15/85 split → capped buyback on DAMM v2 → verified burn. Code in `sdk/flywheel/`, CLI in `scripts/flywheel.ts`, devnet configs in `keeper/`, dry-run write-up in `flywheel_dryrun_log.md`.
+
+**`run` and `loop` are DRY RUNS by default.** A dry run executes the real keeper code path against a throwaway copy of the saved state. It builds and simulates each step (`simulateTransaction`, read-only) and broadcasts nothing. The saved state, journal and public log are not changed, so a later real run starts from exactly the same place. Only an explicit `--send` broadcasts. Each command prints a `DRY RUN` or `SENDING` banner first.
+
+```bash
+node --import tsx scripts/flywheel.ts run  --config keeper/devnet.tdt.json              # DRY RUN (default): simulate each step, print the plan
+node --import tsx scripts/flywheel.ts run  --config keeper/devnet.tdt.json --send       # SENDING: one real run (current cadence window)
+node --import tsx scripts/flywheel.ts loop --config keeper/devnet.tdt.json --runs 5     # 5 dry runs, one per window
+node --import tsx scripts/flywheel.ts loop --config keeper/devnet.tdt.json --runs 5 --send
+node --import tsx scripts/flywheel.ts pause|unpause|verify --config keeper/devnet.tdt.json
+node --import tsx scripts/flywheel.ts help                                             # full command list
+```
+
+In a dry run, a step that can only succeed after an earlier step has landed (the burn needs the swap's tokens) is reported as `dependent` rather than as an error. `loop --trade-lamports` sends scripted test trades, so it requires `--send`. The setup and test-trade commands (`setup`, `trade*`) are devnet operator tools that send when invoked.
+
 ## Launch page
 ```bash
 pnpm page                    # LOCAL (needs pnpm validator)  -> http://127.0.0.1:5175
