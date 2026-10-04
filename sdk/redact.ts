@@ -38,9 +38,36 @@ export const WINDOWS_PATH = new RegExp(String.raw`(?<![\w\\])[A-Za-z]:[\\/]+(?:$
 /** Absolute POSIX paths. Multi-component as before, plus a single component (/root, /tmp, /x/) that starts with a letter, '_' or '.'. */
 export const POSIX_PATH = new RegExp(String.raw`(?<![\w/~\\])\/(?:${SEG}(?=\/)|\.?[A-Za-z_][\w%$\-]*(?:\.+[\w%$\-]+)*)${segs('/')}`, 'g');
 
-/** Redacts one value. Anything that is not a string is converted first (undefined and null become ''). */
+/** Secrets (ticket #5): the value of every environment variable named here is replaced with '<secret>' wherever it
+ *  appears, as given, trimmed and percent-encoded. The value is read from the environment at each call, so every sink
+ *  that redacts (Keeper.log, the public log, CLI output and evidence lines, the site's send() and serverError) covers it
+ *  from the moment it is set, whatever the order of construction. Any non-empty value is redacted, whatever its length. */
+export const SECRET_ENV_VARS = ['FW_JUPITER_API_KEY'] as const;
+export function secretValues(env: NodeJS.ProcessEnv = process.env): string[] {
+  const out = new Set<string>();
+  for (const n of SECRET_ENV_VARS) {
+    const v = env[n];
+    if (typeof v !== 'string' || !v.trim()) continue;
+    for (const x of [v, v.trim(), encodeURIComponent(v.trim())]) if (x) out.add(x);
+  }
+  return [...out].sort((a, b) => b.length - a.length);
+}
+/** user:pass@ (or user@) userinfo in a URL: the userinfo becomes '<secret>'. */
+export const URL_USERINFO = /\b([a-z][a-z0-9+.\-]*:\/\/)[^\s\/?#@'"`<>]+@/gi;
+/** Credential-like query or form parameters (apikey, api_key, api-key, x-api-key, key, token, access_token, auth,
+ *  password, secret) after '?', '&', ';', whitespace, a quote or the start of the text: the value becomes '<secret>'. */
+export const SECRET_PARAM = /(^|[?&;\s"'`])((?:x-)?api[_\-]?key|key|token|access[_\-]?token|auth|password|secret)=([^&\s"'`#<>]+)/gi;
+/** Replaces every secret value (see SECRET_ENV_VARS) with '<secret>', then any URL userinfo and credential query
+ *  parameter values. */
+export function redactSecrets(t: string, env: NodeJS.ProcessEnv = process.env): string {
+  let s = t;
+  for (const v of secretValues(env)) s = s.split(v).join('<secret>');
+  return s.replace(URL_USERINFO, '$1<secret>@').replace(SECRET_PARAM, '$1$2=<secret>');
+}
+
+/** Redacts one value. Anything that is not a string is converted first (undefined and null become ''). Secrets go first. */
 export function redactPaths(t: unknown): string {
-  return String(t ?? '')
+  return redactSecrets(String(t ?? ''))
     .replace(HOME_ROOT, '<path>')
     .replace(QUOTED_PATH, '$1<path>$1')
     .replace(FILE_URL, '<path>')

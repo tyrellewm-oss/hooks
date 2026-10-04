@@ -236,6 +236,7 @@ function midrun(onSend: (stage: string, h: { pause: () => void; envPause: () => 
   (k as any).dbc = { state: { getPool: async () => ({ partnerQuoteFee: { toString: () => dbcFee.toString() }, isMigrated: 1 }) } };
   (k as any).dbcClaimIx = async () => new TransactionInstruction({ programId: MEMO_PROGRAM_ID, keys: [{ pubkey: ks.claim.publicKey, isSigner: true, isWritable: false }], data: Buffer.from('claim') });
   (k as any).quote = async (inL: bigint) => ({ out: inL * 1000n, impactBps: 10, spotOut: inL * 1000n, pool: {} });
+  (k as any).priceCheck = async (_s: any, _r: any, plan: any) => minOut(plan.quoteOut, cfg.max_slippage_bps);   // ticket #5 checks are tested in tests/price_source.test.ts
   (k as any).cp = { swap: async () => ({ instructions: [new TransactionInstruction({ programId: CP_AMM_PROGRAM_ID, data: Buffer.alloc(1),
     keys: [{ pubkey: ks.treasury.publicKey, isSigner: true, isWritable: false }, ...[k.tWsol, k.tMain].map(pubkey => ({ pubkey, isSigner: false, isWritable: true }))] })] }) };
   const state = () => k.store.loadState(() => initState(cfg));

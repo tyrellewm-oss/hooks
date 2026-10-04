@@ -85,6 +85,7 @@ Environment variables (names only; all optional):
 | `REPLAY_FIXTURES_DIR` | `scripts/replay_report.ts` | Research replay fixtures directory |
 | `CI_SKIP_CARGO`, `CI_PROGRAM_HOST`, `PROPTEST_CASES` | `scripts/ci.sh`, `crates/cap-math` | CI switches (skip cargo tests / run program host tests / proptest case count) |
 | `CLONE_URL` | `scripts/local_validator.sh` | devnet RPC to clone Meteora programs from |
+| `FW_JUPITER_API_KEY` | `sdk/flywheel/price_source.ts` | optional Jupiter Price API key for the keeper's independent price check; sent only as the `x-api-key` header and redacted everywhere. Unset: keyless |
 
 ## Tests
 ```bash
@@ -94,6 +95,7 @@ CI_SKIP_CARGO=1 pnpm check       # same without the cargo step (JS/copy-only cha
 pnpm test                        # node --test tests/*.test.ts (litesvm integration, parity, copy, schedules, replay)
 node --import tsx --test tests/replay.test.ts   # replay tests only (uses tests/fixtures/replay_v0.min.json)
 node --import tsx scripts/replay_report.ts      # regenerate docs/replay_results_v0.md (needs REPLAY_FIXTURES_DIR)
+node --import tsx scripts/mutants_price_source.ts   # mutation check of the keeper price checks (each mutant must fail a test)
 cargo test -p cap-math                          # cap math unit + proptests
 PROPTEST_CASES=1000000 cargo test -p cap-math --release
 pnpm build                       # = scripts/build.sh (cargo build-sbf; release build, test-slots OFF)
