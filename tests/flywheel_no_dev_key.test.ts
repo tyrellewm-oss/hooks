@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { Keypair, PublicKey, Connection } from '@solana/web3.js';
 import { NATIVE_MINT, TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, decodeTransferCheckedInstruction } from '@solana/spl-token';
 import { FailClosed } from '../sdk/flywheel/keeper.js';
-import { checkKeyConfig, loadConfig, KEEPER_KEY_ROLES, type KeeperConfig } from '../sdk/flywheel/config.js';
+import { checkKeyConfig, loadConfig, devPayoutArg, KEEPER_KEY_ROLES, type KeeperConfig } from '../sdk/flywheel/config.js';
 import { startKeeper, preflightOffline, Keeper, initState, newRun, type KeySet } from '../sdk/flywheel/keeper.js';
 import { KeyRuleRefusal } from '../sdk/keyrules.js';
 import { HookClient, ACC, BPF_UPGRADEABLE, DBC_PROGRAM_ID } from '../sdk/hook.js';
@@ -163,4 +163,19 @@ test('dev stage reconcile: deltas equal to the 15% intent confirm; any other dev
     await assert.rejects(bad.run(), (e: any) => e instanceof FailClosed && e.code === 'reconcile_mismatch' && /dev transfer deltas/.test(e.message));
     assert.equal(bad.s.totals.dev_lamports, '0');
   }
+});
+
+test('fw15 setup requires --dev-payout <pubkey> (valid, on-curve), checked before any RPC call; no generated dev address', () => {
+  const w = pk();
+  assert.equal(devPayoutArg(['--dev-payout', w, '--max-lamports', '1']), w);
+  assert.throws(() => devPayoutArg([]), refused(/--dev-payout <pubkey> is required/));
+  assert.throws(() => devPayoutArg(['--dev-payout']), refused(/is required/));
+  assert.throws(() => devPayoutArg(['--dev-payout', '--max-lamports', '1']), refused(/is required/));
+  assert.throws(() => devPayoutArg(['--dev-payout', 'not-an-address']), refused(/not a valid address/));
+  assert.throws(() => devPayoutArg(['--dev-payout', PublicKey.findProgramAddressSync([Buffer.from('x')], TOKEN_PROGRAM_ID)[0].toBase58()]), refused(/off-curve/));
+  const src = readFileSync('scripts/flywheel_fw15.ts', 'utf8');
+  assert.match(src, /const devPayout = devPayoutArg\(argv\);/);
+  assert.ok(src.indexOf('devPayoutArg(argv)') < src.indexOf('resolveCluster('));
+  assert.match(src, /dev_payout: D\.publicKey\.toBase58\(\)/); assert.match(src, /new PublicKey\(devPayout\)/);
+  assert.doesNotMatch(src, /Keypair\.generate|fw15_dev|dev_payout as string/);
 });

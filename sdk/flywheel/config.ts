@@ -58,6 +58,17 @@ export function checkKeyConfig(cfg: KeeperConfig): void {
   if (!PublicKey.isOnCurve(pk.toBytes())) throw new KeyRuleRefusal(`refusing: dev_payout ${d} is off-curve (a PDA); it must be a wallet address`);
 }
 
+/** `--dev-payout <pubkey>` for setup scripts (scripts/flywheel_fw15.ts): required, and validated like `dev_payout`
+ *  (a valid, on-curve wallet address). The operator names the dev wallet; nothing is generated or thrown away. */
+export function devPayoutArg(argv: string[]): string {
+  const i = argv.indexOf('--dev-payout');
+  const d = i >= 0 ? argv[i + 1] : undefined;
+  if (!d || d.startsWith('--')) throw new KeyRuleRefusal('refusing: --dev-payout <pubkey> is required (the dev wallet that receives the 15% payout)');
+  let pk: PublicKey; try { pk = new PublicKey(d); } catch { throw new KeyRuleRefusal(`refusing: --dev-payout is not a valid address: ${d}`); }
+  if (!PublicKey.isOnCurve(pk.toBytes())) throw new KeyRuleRefusal(`refusing: --dev-payout ${d} is off-curve (a PDA); it must be a wallet address`);
+  return pk.toBase58();
+}
+
 /** Env overrides are test knobs (devnet). Returns the config plus a list of active overrides (logged in every run). */
 export function loadConfig(path: string, env: NodeJS.ProcessEnv = process.env): { cfg: KeeperConfig; overrides: string[] } {
   const cfg = JSON.parse(readFileSync(path, 'utf8')) as KeeperConfig;
