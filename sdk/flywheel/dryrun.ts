@@ -37,7 +37,7 @@ const fileHash = (p: string) => (existsSync(p) ? createHash('sha256').update(rea
 export function isolateState(cfg: KeeperConfig) {
   const dir = mkdtempSync(join(tmpdir(), 'fw-dryrun-'));
   const stateDir = join(dir, 'state'); mkdirSync(stateDir, { recursive: true });
-  for (const f of ['state.json', 'PAUSE']) if (existsSync(join(cfg.state_dir, f))) copyFileSync(join(cfg.state_dir, f), join(stateDir, f));
+  for (const f of ['state.json', 'PAUSE', 'price_samples.jsonl']) if (existsSync(join(cfg.state_dir, f))) copyFileSync(join(cfg.state_dir, f), join(stateDir, f));
   const watched = [join(cfg.state_dir, 'state.json'), join(cfg.state_dir, 'journal.jsonl'), join(cfg.state_dir, 'PAUSE'), cfg.public_log];
   const before = watched.map(fileHash);
   return {

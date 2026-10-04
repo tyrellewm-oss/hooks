@@ -14,7 +14,9 @@ import { Store, durableWrite, ser } from './store.js';
 import { keeperStartChecks, KeyRuleRefusal } from '../keyrules.js';
 import { assertClusterAccounts, ClusterCheckRefusal } from '../cluster_check.js';
 import { classifyCluster } from '../cluster.js';
-import { loadRegistry, assertRegistryMint, RegistryRefusal, REGISTRY_PATH } from '../registry.js';
+import { loadRegistry, assertRegistryMint, assertRegistryPoolPair, RegistryRefusal, RegistryPairRefusal, REGISTRY_PATH } from '../registry.js';
+import { checkPriceConfig, computeTwap, checkSpotVsTwap, checkIndepVsTwap, fetchIndependent, anchoredMinOut, readSamples, samplesPath, devBps, PriceRefusal, PriceConfigRefusal, warmupCeilingS, indepApiKey, type HttpGet } from './price_source.js';
+import { redactSecrets } from '../redact.js';   // ticket #5: secrets in failure reasons
 import { readHookAuthorities, resolveHookProgramId, type HookProgramResolution } from '../hook.js';
 import { assertMintHook, graduationPhase, mintHookAuthorityFor, MintHookRefusal } from '../mint_hook.js';
 import { redactPaths, redactDeep } from '../redact.js';
@@ -36,6 +38,8 @@ export interface RunLog {
   swap?: { route: string; pool: string; in_lamports: string; min_out_raw: string; out_raw: string; quote_out_raw: string; spot_out_raw: string; slippage_bps: number; price_impact_bps: number; spot_deviation_bps: number; halvings: number; forced_fail: boolean; sig: string; status: string };
   burn?: { burned_raw: string; tx_supply_change_raw: string; token_delta_raw: string; supply_before: string; supply_after: string; verified: boolean; sig: string };
   reconcile?: Record<string, string | boolean>;
+  /** ticket #5: the price decision (TWAP, spot, independent price, deviations, min_out, refusal) */
+  price?: Record<string, string | number | boolean>;
   gas_lamports: string; txs: string[]; stages: Record<string, StageRec>;
   /** set while the run is stopped by a mid-run pause (the stage it stopped before); history kept in midrun_pauses */
   stopped_before?: string; midrun_pauses?: { at: string; before: string; by: string }[];
@@ -46,6 +50,11 @@ export interface KeeperState {
   totals: { claimed_lamports: string; dev_lamports: string; spent_lamports: string; burned_raw: string; gas_lamports: string; rent_refund_lamports: string };
   dev_baseline_raw: string | null; first_supply_raw: string | null; last_supply_raw: string | null;
   consecutive_failures: number; paused: boolean; pause_reason: string;
+  /** ticket #5: chain slot/time of the first run that saw graduation (samples before it never count); cleared if the pool reads as not graduated */
+  price_grad?: { slot: number; t: number } | null;
+  /** ticket #5: chain slot/time (and latest sampler session) when the current warm-up hold began. Survives sampler and
+   *  keeper restarts; cleared when the TWAP check passes the warm-up (window satisfied) or graduation flips back. */
+  price_hold?: { slot: number; t: number; session: string | null } | null;
   price_history_x1e9: string[]; burns: { at: string; tokens: string; sol: string; sig: string; run_id: string; burned_raw: string; in_lamports: string }[];
   current: RunLog | null; runs: RunLog[];
 }
@@ -60,7 +69,7 @@ const B = (s: string | undefined | null) => BigInt(s ?? '0');
 const add = (a: string, b: bigint) => (B(a) + b).toString();
 
 // ---------------------------------------------------------------- errors
-export class FailClosed extends Error { constructor(public code: string, msg: string, public pause = false) { super(msg); } }
+export class FailClosed extends Error { constructor(public code: string, msg: string, public pause = false, public noCount = false) { super(msg); } }
 /** A pause seen immediately before a send: nothing was built, signed, journaled or sent for `stage`. Not a failure. */
 export class PausedMidrun extends FailClosed { constructor(public stage: string, public by: string) { super('paused_midrun', `paused (${by}) before ${stage}; nothing sent`); } }
 
@@ -72,6 +81,7 @@ export interface StartDeps { loadKey: (name: string) => Keypair; connect: (cfg: 
 /** Refusals that need no network (FW-22, FW-23). Throws KeyRuleRefusal; returns warnings (FW-25 on devnet). */
 export function preflightOffline(cfg: KeeperConfig, keys: KeySet, registryPath: string = REGISTRY_PATH): string[] {
   checkKeyConfig(cfg);
+  checkPriceConfig(cfg);   // ticket #5: a missing or invalid price_source value refuses to start
   // every loaded key goes through the §12a separation checks (built from the role list, so none can be skipped)
   const keeperKeys = Object.fromEntries(KEEPER_KEY_ROLES.map(r => [r, roleKey(keys, r).publicKey.toBase58()]));
   for (const [role, pk] of Object.entries(keeperKeys))
@@ -87,6 +97,7 @@ export function preflightOffline(cfg: KeeperConfig, keys: KeySet, registryPath: 
 }
 export async function startKeeper(cfg: KeeperConfig, overrides: string[], deps: StartDeps): Promise<Keeper> {
   checkKeyConfig(cfg);   // before any key file is opened: a dev keypair path is refused, never loaded
+  checkPriceConfig(cfg);   // ticket #5: before any key file is opened or any connection
   const keys: KeySet = { claim: deps.loadKey(cfg.keys.claim_signer), treasury: deps.loadKey(cfg.keys.treasury), gas: deps.loadKey(cfg.keys.gas) };
   const warnings = preflightOffline(cfg, keys, deps.registryPath);   // throws before any connection exists
   const conn = await deps.connect(cfg);
@@ -329,6 +340,8 @@ export class Keeper {
       const main: any = await dbcPool(this.dbc, new PublicKey(this.cfg.main_dbc_pool));
       if (!main.isMigrated) {
         run.status = 'waiting_for_graduation'; run.reason = 'main token DBC pool isMigrated = 0: no swap, buyback held';
+        if (s.price_grad) { s.price_grad = null; run.warnings.push('graduation no longer reads as complete: price window reset'); }   // ticket #5: no price source is queried here
+        if (s.price_hold) s.price_hold = null;   // ticket #5: the warm-up hold restarts with the next graduation
         run.carryover_lamports = s.pending_lamports; run.carryover_reason = 'waiting_for_graduation';
         await this.reconcile(s, run);
         return this.finishOk(s, run);
@@ -345,7 +358,7 @@ export class Keeper {
       // (s.current) with that stage untouched (never re-sent); the keeper pauses until an operator resumes it.
       if (e instanceof FailClosed && e.code === 'registry') return this.finishFail(s, run, e, true);
       if (Object.values(run.stages).some(x => x.status === 'pending')) {
-        run.status = 'pending'; run.reason = e.message; try { this.save(s); this.publish(s); } catch {}
+        run.status = 'pending'; run.reason = redactSecrets(String(e.message)); try { this.save(s); this.publish(s); } catch {}
         this.log(`[${run.run_id}] PENDING: ${e.message}`);
         return { run_id: run.run_id, status: 'pending', reason: e.message, txs: run.txs };
       }
@@ -495,7 +508,7 @@ export class Keeper {
   }
 
   /** Quote via the SDK on a fresh pool read; spot from an independent fresh read immediately before (hard check). */
-  async quote(inLamports: bigint): Promise<{ out: bigint; impactBps: number; spotOut: bigint; pool: any }> {
+  async quote(inLamports: bigint): Promise<{ out: bigint; impactBps: number; spotOut: bigint; pool: any; spotSqrtX64?: bigint }> {
     const poolPk = new PublicKey(this.cfg.route_pool!);
     const spotPool: any = await this.cp.fetchPoolState(poolPk);
     let sqrtP = BigInt(spotPool.sqrtPrice.toString());
@@ -507,7 +520,7 @@ export class Keeper {
     const q = this.cp.getQuote({ inAmount: new BN(inLamports.toString()), inputTokenMint: NATIVE_MINT, slippage: 0, poolState: pool, currentTime: time, currentSlot: slot, tokenADecimal: this.cfg.main_decimals, tokenBDecimal: 9 } as any);
     const out = BigInt(q.swapOutAmount.toString());
     const impactBps = Math.ceil(Number(q.priceImpact.toString()) * 100);
-    return { out, impactBps, spotOut, pool };
+    return { out, impactBps, spotOut, pool, spotSqrtX64: sqrtP };
   }
 
   /** Ticket 8.5, expired swap retry. Before the single fresh-quote retry of a swap whose sig expired: one last status
@@ -539,6 +552,82 @@ export class Keeper {
       s.pending_lamports = amt.toString(); this.save(s);
     }
   }
+  /** Independent price source (ticket #5): HTTP GET used for the one Jupiter Price API call per run (tests replace it). */
+  http: HttpGet = (url, init) => fetch(url, init);
+  /** Ticket #5: every price check before a swap is built, in order: config (refuse_config), pinned route pool and the
+   *  registry pool pair (mismatch_pool / mismatch_registry, auto-pause), chain time, graduation age (hold_twap_warmup),
+   *  samples (mismatch_pool, refuse_twap_coverage, refuse_twap_stale), spot vs TWAP (refuse_spot_vs_twap), the
+   *  independent price (refuse_indep_unavailable, refuse_indep_vs_twap). Returns the TWAP-anchored min_out. The decision
+   *  is recorded in run.price either way. Freshness, gaps and coverage use chain time (block time of the current slot). */
+  async priceCheck(s: KeeperState, run: RunLog, plan: { inLamports: bigint; quoteOut: bigint }, q: { pool: any; spotSqrtX64?: bigint }): Promise<bigint> {
+    const c = this.cfg; const rec: Record<string, string | number | boolean> = {}; run.price = rec;
+    try {
+      let ps; try { ps = checkPriceConfig(c); } catch (e: any) { throw e instanceof PriceConfigRefusal ? new FailClosed('refuse_config', e.message) : e; }
+      // refusal 8: the route pool must be pinned, its mints a registry mint and wSOL (either order), and that mint ours
+      if (!c.route_pool) throw new PriceRefusal('mismatch_pool', 'no pinned route pool', true);
+      const tokA = q.pool?.tokenAMint, tokB = q.pool?.tokenBMint;
+      if (!tokA || !tokB) throw new PriceRefusal('mismatch_pool', `route pool ${c.route_pool} mints unreadable`, true);
+      let regMint: string;
+      try { regMint = assertRegistryPoolPair(loadRegistry(c.cluster, this.registryPath), tokA, tokB); }
+      catch (e: any) { if (e instanceof RegistryRefusal) throw new PriceRefusal(e instanceof RegistryPairRefusal && e.kind === 'pair' ? 'mismatch_pool' : 'mismatch_registry', e.message, true); throw e; }
+      if (regMint !== c.main_mint) throw new PriceRefusal('mismatch_pool', `route pool mint ${regMint} != main mint ${c.main_mint}`, true);
+      // price direction: the pool's sqrt_price (and so every sample, the TWAP and the spot read) is token B per token A,
+      // i.e. lamports per raw main token only when token A is the main mint and token B is wSOL, the order pinnedChecks
+      // already requires. A pool with wSOL as token A would invert every price: refused, never inverted (fail closed).
+      if (String(tokA) !== c.main_mint || String(tokB) !== NATIVE_MINT.toBase58()) throw new PriceRefusal('mismatch_pool', `route pool token order is not (main mint, wSOL): prices would be inverted`, true);
+      // chain time (never the box clock)
+      const nowSlot = await this.conn.getSlot('confirmed');
+      const nowT = await this.conn.getBlockTime(nowSlot);
+      if (nowT === null || !Number.isSafeInteger(nowT)) throw new PriceRefusal('refuse_twap_stale', `no block time for slot ${nowSlot}`);
+      rec.chain_slot = nowSlot; rec.chain_time = nowT;
+      if (!s.price_grad) { s.price_grad = { slot: nowSlot, t: nowT }; this.save(s); }
+      rec.grad_slot = s.price_grad.slot; rec.grad_time = s.price_grad.t;
+      const samples = readSamples(samplesPath(c.state_dir));
+      let tw: ReturnType<typeof computeTwap>;
+      try { tw = computeTwap({ ps, pool: c.route_pool, nowT, grad: s.price_grad, samples }); }
+      catch (e: any) {
+        if (!(e instanceof PriceRefusal) || !e.warmup) throw e;
+        // warm-up hold (graduation warm-up, or the window refilling after a sampler restart): not counted toward
+        // auto-pause until it has lasted longer than the window + 15 min, in chain time; then each hold counts and pauses
+        const seen = samples.filter(x => x.t <= nowT); const curSession = seen.length ? seen[seen.length - 1].session : null;
+        const holdNow = nowT;
+        if (!s.price_hold) { s.price_hold = { slot: nowSlot, t: holdNow, session: curSession }; this.save(s); }
+        const hold = s.price_hold;
+        const elapsed = holdNow - hold.t, ceiling = warmupCeilingS(ps);
+        const over = elapsed > ceiling;
+        Object.assign(rec, { hold_start_slot: hold.slot, hold_start_time: hold.t, hold_elapsed_s: elapsed, hold_ceiling_s: ceiling, hold_counts: over });
+        this.log(`[${run.run_id}] warm-up hold (${e.code}): ${elapsed}s since slot ${hold.slot} (ceiling ${ceiling}s${over ? ', exceeded: counts and pauses' : ', not counted toward auto-pause'})`);
+        throw over ? new PriceRefusal(e.code, `${e.message}; warm-up hold has lasted ${elapsed}s (> ceiling ${ceiling}s = window + 900s)`, true)
+          : new PriceRefusal(e.code, `${e.message}; warm-up hold ${elapsed}s of ${ceiling}s (not counted toward auto-pause)`, false, true, true);
+      }
+      if (s.price_hold) { s.price_hold = null; this.save(s); }   // warm-up satisfied: the hold ends
+      Object.assign(rec, { twap_q128: tw.twapQ128.toString(), samples_used: tw.used, samples_expected: tw.expected, coverage_pct: tw.coverage_pct, max_gap_s: tw.max_gap_s, latest_sample_age_s: nowT - tw.last_t });
+      // refusal 5: the fresh spot read vs the TWAP
+      if (q.spotSqrtX64 === undefined || q.spotSqrtX64 <= 0n) throw new PriceRefusal('refuse_spot_vs_twap', 'no spot price read');
+      const spotQ128 = q.spotSqrtX64 * q.spotSqrtX64;
+      rec.spot_q128 = spotQ128.toString(); rec.spot_twap_dev_bps = devBps(spotQ128, tw.twapQ128);
+      checkSpotVsTwap(spotQ128, tw.twapQ128, ps.max_spot_twap_dev_bps);
+      // refusals 7 and 6: the independent price (one request per run, both ids)
+      let ind: Awaited<ReturnType<typeof fetchIndependent>> | null = null;
+      try { ind = await fetchIndependent(this.http, ps, c.main_mint, c.main_decimals, nowSlot, indepApiKey()); }   // optional key: x-api-key header only
+      catch (e: any) {
+        if (!(e instanceof PriceRefusal) || ps.require_independent) throw e;
+        rec.indep = 'unavailable (require_independent = false)'; run.warnings.push(`${e.message}; continuing on the TWAP (require_independent = false)`);
+      }
+      if (ind) {
+        Object.assign(rec, { indep_usd_mint: ind.usd_mint, indep_usd_wsol: ind.usd_wsol, indep_block_id: Math.min(ind.block_id_mint, ind.block_id_wsol), indep_twap_dev_bps: devBps(ind.n * (1n << 128n), tw.twapQ128 * ind.d) });
+        checkIndepVsTwap(ind.n, ind.d, tw.twapQ128, ps.max_indep_twap_dev_bps);
+      }
+      // criterion 10: min_out anchored to the TWAP
+      const mo = anchoredMinOut(plan.inLamports, plan.quoteOut, tw.twapQ128, c.max_slippage_bps, c.max_price_impact_bps);
+      Object.assign(rec, { twap_out_raw: mo.twapOut.toString(), min_out_from_quote: mo.fromQuote.toString(), min_out_from_twap: mo.fromTwap.toString(), min_out_raw: mo.minOut.toString(), min_out_source: mo.source, decision: 'pass' });
+      return mo.minOut;
+    } catch (e: any) {
+      const fc = e instanceof PriceRefusal ? new FailClosed(e.code, redactSecrets(e.message), e.pause, e.noCount) : e;
+      if (fc instanceof FailClosed) { rec.decision = 'refuse'; rec.code = fc.code; rec.reason = fc.message; if (run.swap) run.swap.status = 'refused'; }
+      throw fc;
+    }
+  }
   private async swapAndBurn(s: KeeperState, run: RunLog) {
     const c = this.cfg;
     if (run.stages.swap?.status === 'expired') await this.beforeExpiredRetry(s, run);
@@ -558,7 +647,8 @@ export class Keeper {
       if (spotDev > limit) throw new FailClosed('failed_price', `quote ${plan.quoteOut} is ${spotDev} bps from spot ${q.spotOut} (> ${limit})`);
       const w = historyWarning((plan.quoteOut * 1_000_000_000n) / plan.inLamports, s.price_history_x1e9.map(BigInt), c.price_band_pct);
       if (w) run.warnings.push(w);
-      const mo = c.force_fail_swap ? plan.quoteOut * 2n + 1n : minOut(plan.quoteOut, c.max_slippage_bps);
+      const anchored = await this.priceCheck(s, run, plan, q);   // ticket #5: refusals 2-9 and the TWAP-anchored min_out, before any build
+      const mo = c.force_fail_swap ? plan.quoteOut * 2n + 1n : anchored;
       run.swap.min_out_raw = mo.toString();
       const built = await this.cp.swap({ payer: this.keys.treasury.publicKey, pool: new PublicKey(c.route_pool!), inputTokenMint: NATIVE_MINT, outputTokenMint: this.mint,
         amountIn: new BN(plan.inLamports.toString()), minimumAmountOut: new BN(mo.toString()), tokenAMint: q.pool.tokenAMint, tokenBMint: q.pool.tokenBMint,
@@ -626,11 +716,11 @@ export class Keeper {
     return { run_id: run.run_id, status: 'paused_midrun', reason: e.message, txs: run.txs };
   }
   private finishFail(s: KeeperState, run: RunLog, e: FailClosed, persist: boolean): RunOutcome {
-    run.status = e.code.startsWith('failed_') || ['burn_mismatch', 'reconcile_mismatch', 'claim_mismatch'].includes(e.code) ? e.code : `failed_${e.code}`;
-    run.reason = e.message; run.finished_at = new Date().toISOString();
-    s.consecutive_failures++;
-    if (e.pause || s.consecutive_failures >= this.cfg.auto_pause_after_failures) {
-      s.paused = true; s.pause_reason = e.pause ? `${run.status}: ${e.message.slice(0, 200)}` : `${s.consecutive_failures} consecutive failed runs (last: ${run.status})`;
+    run.status = e.code.startsWith('failed_') || e.code.startsWith('refuse_') || e.code.startsWith('hold_') || ['burn_mismatch', 'reconcile_mismatch', 'claim_mismatch'].includes(e.code) ? e.code : `failed_${e.code}`;
+    run.reason = redactSecrets(e.message); run.finished_at = new Date().toISOString();   // ticket #5: no secrets in the state file or the public log
+    if (!e.noCount) s.consecutive_failures++;   // ticket #5: a warm-up hold within its ceiling does not count
+    if (e.pause || (!e.noCount && s.consecutive_failures >= this.cfg.auto_pause_after_failures)) {
+      s.paused = true; s.pause_reason = e.pause ? `${run.status}: ${run.reason.slice(0, 200)}` : `${s.consecutive_failures} consecutive failed runs (last: ${run.status})`;
     }
     // a registry failure with a stage pending keeps the run open, so the pending stage is resolved (never re-sent) on resume
     if (e.code === 'registry' && Object.values(run.stages).some(x => x.status === 'pending')) s.current = run;

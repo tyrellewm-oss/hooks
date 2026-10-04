@@ -1,5 +1,6 @@
 // Mint registry (ticket 8.5): the mints this deployment launched, per cluster, in keeper/registry.json.
-// The keeper acts on these mints only. assertRegistryMint is the reusable check (also meant for #5, refusal 8).
+// The keeper acts on these mints only. assertRegistryMint is the reusable check; assertRegistryPoolPair (ticket #5,
+// refusal 8) applies it to a pool's two mints.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { PublicKey } from '@solana/web3.js';
@@ -26,4 +27,21 @@ export function loadRegistry(cluster: string, path = REGISTRY_PATH): ReadonlySet
 export function assertRegistryMint(registry: ReadonlySet<string>, mint: PublicKey | string, what = 'mint'): void {
   const m = typeof mint === 'string' ? mint : mint.toBase58();
   if (!registry.has(m)) throw new RegistryRefusal(`refusing: ${what} ${m} is not in the mint registry`);
+}
+
+/** The wrapped SOL mint (the quote side of every pool the keeper trades on). */
+export const WSOL_MINT_ADDRESS = 'So11111111111111111111111111111111111111112';
+/** Ticket #5, refusal 8: a pool pair refusal. `kind` is 'pair' when the two mints are not {one mint, wSOL} and
+ *  'registry' when the non-wSOL mint is not in the registry. */
+export class RegistryPairRefusal extends RegistryRefusal { constructor(msg: string, public kind: 'pair' | 'registry') { super(msg); this.name = 'RegistryPairRefusal'; } }
+/** Ticket #5, refusal 8: throws RegistryPairRefusal unless the pool's two mints are a registry mint and wSOL, in
+ *  either order. Returns the registry mint. Exact (base58 string) matching, as assertRegistryMint. */
+export function assertRegistryPoolPair(registry: ReadonlySet<string>, tokenA: PublicKey | string, tokenB: PublicKey | string): string {
+  const a = typeof tokenA === 'string' ? tokenA : tokenA.toBase58();
+  const b = typeof tokenB === 'string' ? tokenB : tokenB.toBase58();
+  const other = a === b ? null : a === WSOL_MINT_ADDRESS ? b : b === WSOL_MINT_ADDRESS ? a : null;
+  if (other === null) throw new RegistryPairRefusal(`refusing: pool mints ${a} / ${b} are not a registry mint and wSOL`, 'pair');
+  try { assertRegistryMint(registry, other, 'pool mint'); }
+  catch (e: any) { throw e instanceof RegistryRefusal ? new RegistryPairRefusal(e.message, 'registry') : e; }
+  return other;
 }

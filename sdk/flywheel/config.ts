@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { PublicKey } from '@solana/web3.js';
 import { KeyRuleRefusal } from '../keyrules.js';
+import type { PriceSourceConfig } from './price_source.js';
 
 export interface SourceDbc { kind: 'dbc'; pool: string; config: string; base_mint: string }
 export interface SourceDamm { kind: 'damm_v2'; pool: string; position: string; position_nft_mint: string }
@@ -28,6 +29,8 @@ export interface KeeperConfig {
   gas_min_lamports: string;
   state_dir: string; public_log: string;
   force_fail_swap?: boolean; paused?: boolean;
+  /** Ticket #5: TWAP, independent price and min_out settings. Required: a missing or invalid value refuses (checkPriceConfig). */
+  price_source: PriceSourceConfig;
   /** devnet-only: scripted trades between unattended runs (lamports bought then sold back on route_pool). */
   test_trades_between_runs?: string;
 }

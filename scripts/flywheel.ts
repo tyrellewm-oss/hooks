@@ -11,6 +11,10 @@
 //   pause | unpause               PAUSE file on/off (unpause also clears auto-pause)
 //   balances                      throwaway wallet totals (native + wSOL) and main-token holdings
 //   verify                        every sig in the public log resolves on devnet; totals == sum of runs
+//   sample [--minutes M]          read-only price sampler for the pinned route pool (ticket #5): one pool read per
+//                                 sample_interval_s into <state_dir>/price_samples.jsonl; no keys, no sends
+// env FW_JUPITER_API_KEY (optional)  independent price API key: sent only as the x-api-key header, redacted everywhere;
+//                                 unset or empty = keyless
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, ComputeBudgetProgram } from '@solana/web3.js';
 import { NATIVE_MINT, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction, unpackAccount } from '@solana/spl-token';
 import { CpAmm } from '@meteora-ag/cp-amm-sdk';
@@ -18,6 +22,7 @@ import BN from 'bn.js';
 import { existsSync, unlinkSync, writeFileSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { loadConfig, type KeeperConfig } from '../sdk/flywheel/config.js';
 import { startKeeper, Keeper, MEMO_PROGRAM_ID, initState, dbcPool } from '../sdk/flywheel/keeper.js';
+import { checkPriceConfig, PriceSampler, cpAmmSqrtDecoder, samplesPath } from '../sdk/flywheel/price_source.js';
 import { Store } from '../sdk/flywheel/store.js';
 import { fmtSol } from '../sdk/flywheel/math.js';
 import { loadOrCreate } from '../sdk/keys.js';
@@ -179,6 +184,17 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
     const c = await devnetConn(); const out: Record<string, any> = {};
     for (const n of [cfg.keys.claim_signer, cfg.keys.treasury, cfg.keys.gas]) { const pk = loadKey(n).publicKey; const s = await c.getSignaturesForAddress(pk, { limit: 1 }); out[n] = { pubkey: pk.toBase58(), newest: s[0]?.signature ?? null, slot: s[0]?.slot ?? null }; }
     say(out); ev({ kind: 'sigs', label: arg('--label', ''), ...out }); return;
+  }
+  if (cmd === 'sample') {   // ticket #5: read-only sampler (a restart is a new session: the keeper refuses until it covers a full window)
+    const ps = checkPriceConfig(cfg); if (!cfg.route_pool) throw new Error('no pinned route_pool');
+    const c = await devnetConn(); const smp = new PriceSampler(c, new PublicKey(cfg.route_pool), samplesPath(cfg.state_dir), ps, cpAmmSqrtDecoder(c));
+    const until = Date.now() + Number(arg('--minutes', '60')) * 60_000;
+    say(`sampling ${cfg.route_pool} every ${ps.sample_interval_s}s (session ${smp.session}) until ${new Date(until).toISOString()}`);
+    while (Date.now() < until) {
+      try { const x = await smp.tick(); if (x) say(x); } catch (e: any) { say(`sample failed: ${String(e?.message ?? e).slice(0, 200)}`); }   // a failed read leaves a gap (the keeper refuses)
+      await new Promise(res => setTimeout(res, 1000));
+    }
+    return;
   }
   if (cmd === 'quote') { const k = await keeper(); for (const l of (arg('--lamports', '1000000')!).split(',')) { const q = await k.quote(BigInt(l)); say({ in: l, out: q.out.toString(), impact_bps: q.impactBps, spot_out: q.spotOut.toString() }); } return; }
   if (cmd === 'trade-buy') { const c = await devnetConn(); const r = await tradeOne(c, 'buy', BigInt(arg('--lamports')!)); say(r); ev({ kind: 'scripted_trade', ...r }); return; }
