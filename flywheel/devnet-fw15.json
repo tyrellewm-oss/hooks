@@ -1,0 +1,130 @@
+{
+ "cluster": "devnet",
+ "mint": "7bRdzRKq5GUw4y5K9gmYu1ECrg5jWYapKhykrQ3mkz8W",
+ "decimals": 6,
+ "live": true,
+ "paused": false,
+ "pause_reason": "",
+ "state": "waiting_for_graduation",
+ "claimedSol": "0.000548549",
+ "devSol": "0.000082282",
+ "spentSol": "0.000000000",
+ "reserveSol": "0.000466267",
+ "burnedTokens": "0.000000",
+ "supplyTokens": "1000000000.000000",
+ "pctOfSupply": "0.0000",
+ "totals_raw": {
+  "claimed_lamports": "548549",
+  "dev_lamports": "82282",
+  "spent_lamports": "0",
+  "burned_raw": "0",
+  "gas_lamports": "20000",
+  "rent_refund_lamports": "0",
+  "pending_lamports": "466267",
+  "unsplit_lamports": "0",
+  "unburned_raw": "0"
+ },
+ "burns": [],
+ "runs": [
+  {
+   "run_id": "devnet-2026-10-04T00:45:00Z",
+   "started_at": "2026-10-04T00:45:36.497Z",
+   "status": "waiting_for_graduation",
+   "reason": "main token DBC pool isMigrated = 0: no swap, buyback held",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "3s5DbNELv1qy5argWMntmid4r2VrT1qeYjWvffkVsVLv",
+     "claimable_before": "548549",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (548549 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "0",
+   "carryover_reason": "waiting_for_graduation",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "reconcile": {
+    "treasury_wsol_raw": "0",
+    "expected_treasury_wsol_raw": "0",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "0",
+    "expected_dev_wsol_raw": "0",
+    "treasury_native_lamports": "0",
+    "supply_raw": "1000000000000000",
+    "supply_drop_since_first_run": "0",
+    "burned_raw_total": "0",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:45:59.907Z",
+   "test_knobs": [
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:46:00Z",
+   "started_at": "2026-10-04T00:46:31.559Z",
+   "status": "waiting_for_graduation",
+   "reason": "main token DBC pool isMigrated = 0: no swap, buyback held",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "3s5DbNELv1qy5argWMntmid4r2VrT1qeYjWvffkVsVLv",
+     "claimable_before": "548549",
+     "claimed_lamports": "548549",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "2fzeMMHazFeDS4wAhZfXxs67MgBoqJXugqWHmEDXakLR7ckE7w4bAyRKZbANnfYk6FzDwenBAXMzVV7HFxLqrGor",
+     "claimable_after": "0"
+    }
+   ],
+   "dev_lamports": "82282",
+   "dev_sig": "2qiRrtnFvnPnYqpnoeDfyPE41oPTzENWH5vfWYqhsZrLMiGxSroeJTvg5QGTPcYhF22WDxagY6ju99raxqu8Foko",
+   "buyback_lamports": "466267",
+   "carryover_lamports": "466267",
+   "carryover_reason": "waiting_for_graduation",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "20000",
+   "txs": [
+    "2fzeMMHazFeDS4wAhZfXxs67MgBoqJXugqWHmEDXakLR7ckE7w4bAyRKZbANnfYk6FzDwenBAXMzVV7HFxLqrGor",
+    "2qiRrtnFvnPnYqpnoeDfyPE41oPTzENWH5vfWYqhsZrLMiGxSroeJTvg5QGTPcYhF22WDxagY6ju99raxqu8Foko"
+   ],
+   "reconcile": {
+    "treasury_wsol_raw": "466267",
+    "expected_treasury_wsol_raw": "466267",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "82282",
+    "expected_dev_wsol_raw": "82282",
+    "treasury_native_lamports": "0",
+    "supply_raw": "1000000000000000",
+    "supply_drop_since_first_run": "0",
+    "burned_raw_total": "0",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:47:02.318Z",
+   "test_knobs": [
+    "FW_MIN_CLAIM_LAMPORTS=100000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  }
+ ],
+ "route_pool": null,
+ "main_dbc_pool": "3s5DbNELv1qy5argWMntmid4r2VrT1qeYjWvffkVsVLv"
+}
