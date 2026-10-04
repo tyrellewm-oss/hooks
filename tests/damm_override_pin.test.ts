@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Keypair, Connection } from '@solana/web3.js';
 import { DEVNET_GENESIS, MAINNET_GENESIS } from '../sdk/cluster.js';
+import { DBC_PROGRAM_ID, DAMM_V2_PROGRAM_ID } from '../sdk/hook.js';
 import { Launchpad, resolveDammV2MigrationConfig, ConfigPinRefusal, DAMM_V2_MIGRATION_CONFIG, DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN } from '../sdk/launch.js';
 
 const LOCAL_GENESIS = Keypair.generate().publicKey.toBase58();   // a local validator has its own random genesis
@@ -50,8 +51,11 @@ test('Launchpad.migrate on mainnet genesis with a mismatching override → refus
 test('Launchpad.migrate on devnet genesis with an override → builds the migration tx with the override (stops before sending)', async () => {
   const prev = process.env.DAMM_V2_MIGRATION_CONFIG; const x = other(); process.env.DAMM_V2_MIGRATION_CONFIG = x;
   try {
-    let usedConfig = ''; const connection: any = { getGenesisHash: async () => DEVNET_GENESIS, getLatestBlockhash: async () => { throw new Error('stop before send'); } };
-    const fake: any = { c: { name: 'devnet', connection }, dbc: { migration: { migrateToDammV2: async (a: any) => { usedConfig = a.dammConfig.toBase58(); return { transaction: {}, firstPositionNftKeypair: Keypair.generate(), secondPositionNftKeypair: Keypair.generate() }; } } } };
+    // accounts that pass the cluster check: hook executable, pool config owned by DBC, override owned by DAMM v2
+    const hook = Keypair.generate().publicKey, poolCfg = Keypair.generate().publicKey;
+    const accts = new Map<string, any>([[hook.toBase58(), { owner: hook, executable: true }], [poolCfg.toBase58(), { owner: DBC_PROGRAM_ID, executable: false }], [x, { owner: DAMM_V2_PROGRAM_ID, executable: false }]]);
+    let usedConfig = ''; const connection: any = { getGenesisHash: async () => DEVNET_GENESIS, getAccountInfo: async (k: any) => accts.get(k.toBase58()) ?? null, getLatestBlockhash: async () => { throw new Error('stop before send'); } };
+    const fake: any = { c: { name: 'devnet', connection }, hook: { programId: hook }, dbc: { state: { getPool: async () => ({ config: poolCfg }) }, migration: { migrateToDammV2: async (a: any) => { usedConfig = a.dammConfig.toBase58(); return { transaction: {}, firstPositionNftKeypair: Keypair.generate(), secondPositionNftKeypair: Keypair.generate() }; } } } };
     await assert.rejects(Launchpad.prototype.migrate.call(fake, Keypair.generate(), Keypair.generate().publicKey), /stop before send/);
     assert.equal(usedConfig, x);
   } finally { if (prev === undefined) delete process.env.DAMM_V2_MIGRATION_CONFIG; else process.env.DAMM_V2_MIGRATION_CONFIG = prev; }

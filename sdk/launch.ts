@@ -11,6 +11,7 @@ import { HookClient, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toC
 import { effectiveCap, nextChange, type Step } from './capMath.js';
 import { type Cluster, type ClusterName, explorerTx, nowIct, DEVNET_GENESIS, MAINNET_GENESIS } from './cluster.js';
 import { launchConfigChecks, type Authorities } from './keyrules.js';
+import { assertClusterAccounts, ClusterCheckRefusal } from './cluster_check.js';
 
 /** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()).
  *  Primary source for the pin: Meteora DBC repo README at commit f552f20 (2026-09-09), section "Damm v2":
@@ -164,6 +165,8 @@ export class Launchpad {
     // Throws off devnet/local before any tx is built; logs the accepted throwaway exception on devnet/local.
     const auth = o.authorities ?? (await this.hookAuthorities());
     for (const w of launchConfigChecks(this.c.name, deployer.publicKey.toBase58(), auth)) console.warn(w);
+    // cluster check: the hook program the new config points at must be an executable account on this cluster
+    await assertClusterAccounts(this.c.connection, { hookProgram: this.hook.programId });
     const configKp = Keypair.generate();
     const mintKp = Keypair.generate();
     const txs: Record<string, string> = {};
@@ -219,6 +222,14 @@ export class Launchpad {
 
   async migrate(payer: Keypair, pool: PublicKey) {
     const damm = await dammV2MigrationConfigFor(this.c);   // throws ConfigPinRefusal before any tx is built
+    // cluster check (throws ClusterCheckRefusal before any tx is built): the pool's DBC config, the DAMM v2 migration
+    // config and the hook program (Token-2022 invokes it on the migration transfers) must match this cluster.
+    let st: any;
+    try { st = await this.dbc.state.getPool(pool); }
+    catch (e: any) { throw new ClusterCheckRefusal(`refusing: cluster check could not read DBC pool ${pool.toBase58()} (RPC error: ${String(e?.message ?? e).slice(0, 200)})`); }
+    const ps = st?.poolState ?? st;
+    if (!ps?.config) throw new ClusterCheckRefusal(`refusing: DBC pool ${pool.toBase58()} does not exist on this cluster`);
+    await assertClusterAccounts(this.c.connection, { hookProgram: this.hook.programId, dbcConfigs: [new PublicKey(ps.config)], dammV2Config: damm.config });
     const { transaction, firstPositionNftKeypair, secondPositionNftKeypair } = await this.dbc.migration.migrateToDammV2({ payer: payer.publicKey, pool, dammConfig: damm.config });
     return sendTx(this.c, transaction, [payer, firstPositionNftKeypair, secondPositionNftKeypair], 'dbc: migration_damm_v2 (graduation)',
       damm.override ? `overrides: DAMM_V2_MIGRATION_CONFIG=${damm.override}` : undefined);

@@ -12,6 +12,7 @@ import { splitFees, minOut, spotOutBtoA, deviationBps, planSwap, runIdFor, histo
 import type { KeeperConfig, SourceDbc, SourceDamm } from './config.js';
 import { Store, durableWrite, ser } from './store.js';
 import { keeperStartChecks, KeyRuleRefusal } from '../keyrules.js';
+import { assertClusterAccounts, ClusterCheckRefusal } from '../cluster_check.js';
 import { HookClient, decodeGlobal } from '../hook.js';
 
 export const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
@@ -78,6 +79,10 @@ export async function startKeeper(cfg: KeeperConfig, overrides: string[], deps: 
   const genesis = await conn.getGenesisHash();
   if (genesis === MAINNET_GENESIS) throw new KeyRuleRefusal('refusing: RPC is mainnet-beta');
   if (cfg.cluster === 'devnet' && genesis !== DEVNET_GENESIS) throw new KeyRuleRefusal(`refusing: not devnet (genesis ${genesis})`);
+  // cluster check (fail closed): the hook program is executable here and every DBC source config is owned by DBC
+  try {
+    await assertClusterAccounts(conn, { hookProgram: new PublicKey(cfg.hook_program), dbcConfigs: cfg.sources.flatMap(s => (s.kind === 'dbc' ? [new PublicKey(s.config)] : [])) });
+  } catch (e: any) { throw e instanceof ClusterCheckRefusal ? new KeyRuleRefusal(e.message) : e; }
   // pinned authorities must match the chain (they feed the §12a check)
   const hc = new HookClient(new PublicKey(cfg.hook_program));
   const prog = await conn.getAccountInfo(hc.programId);

@@ -8,6 +8,7 @@ import BN from 'bn.js';
 import { resolveCluster, parseClusterArg, explorerAddr, nowIct } from '../sdk/cluster.js';
 import { loadOrCreate } from '../sdk/keys.js';
 import { Launchpad, sendTx, dammV2MigrationConfigFor } from '../sdk/launch.js';
+import { checkDammV2Config } from '../sdk/cluster_check.js';
 
 const argv = process.argv.slice(2);
 const arg = (k: string, d?: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
@@ -17,6 +18,7 @@ const arg = (k: string, d?: string) => { const i = argv.indexOf(k); return i >= 
   const dammRes = await dammV2MigrationConfigFor(c);   // same resolution Launchpad.migrate() uses (genesis-based pin)
   const DAMM_CONFIG = dammRes.config;
   if (dammRes.override) console.log(`overrides: DAMM_V2_MIGRATION_CONFIG=${dammRes.override}`);
+  await checkDammV2Config(c.connection, DAMM_CONFIG);   // cluster check: owned by DAMM v2 here, else refuse before any tx
   const mint = new PublicKey(argv[0]), dbcPool = new PublicKey(argv[1]);
   const lp = new Launchpad(c);
   const st = await lp.status(mint);
