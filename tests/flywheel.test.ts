@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Keypair, Connection, PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
-import { TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
+import { TOKEN_2022_PROGRAM_ID, NATIVE_MINT } from '@solana/spl-token';
 import { CP_AMM_PROGRAM_ID } from '@meteora-ag/cp-amm-sdk';
 import { utils as anchorUtils } from '@coral-xyz/anchor';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
@@ -251,4 +251,33 @@ test('U-4: three mid-run pauses in a row never trip the 3-failure auto-pause cou
   assert.deepEqual(outs, ['paused_midrun:dev', 'paused_midrun:swap', 'paused_midrun:burn']); assert.deepEqual(m.sent, ['claim_dbc', 'dev', 'swap']);
   on = false; const r = await m.k.runOnce(T0 + 3 * W); assert.equal(r.status, 'logged'); assert.deepEqual(m.sent, ['claim_dbc', 'dev', 'swap', 'burn']);
   assert.deepEqual(m.state().runs.at(-1)!.midrun_pauses!.map(p => p.before), ['dev', 'swap', 'burn']);
+});
+
+test('U-4: pause before the swap, pool spot moves while paused → resume re-quotes fresh and fails closed (failed_price), no swap sent', async () => {
+  const m = midrun((st, h) => { if (st === 'dev') h.pause(); });
+  // use the keeper's real quote() (spot from a fresh pool read vs the SDK quote) instead of the harness stub
+  delete (m.k as any).quote;
+  const X64 = 1n << 64n; let sqrtPrice = X64; let poolFetches = 0;   // sqrt price 1 → spot out == in
+  const cp = (m.k as any).cp;
+  cp.fetchPoolState = async () => { poolFetches++; return { sqrtPrice: { toString: () => sqrtPrice.toString() }, tokenAMint: m.k.mint, tokenBMint: NATIVE_MINT, tokenAVault: m.k.tMain, tokenBVault: m.k.tWsol }; };
+  cp.getQuote = ({ inAmount }: any) => ({ swapOutAmount: { toString: () => inAmount.toString() }, priceImpact: { toString: () => '0.1' } });
+  (m.k as any).conn.getSlot = async () => 1; (m.k as any).conn.getBlockTime = async () => 1_790_000_000;
+
+  const r1 = await m.k.runOnce(T0);
+  assert.equal(r1.status, 'paused_midrun'); assert.deepEqual(m.sent, ['claim_dbc', 'dev']);
+  let s = m.state(); assert.equal(s.current!.stopped_before, 'swap'); assert.equal(s.current!.swap!.status, 'not_sent');
+  const pendingBefore = s.pending_lamports; const savedSpot = s.current!.swap!.spot_out_raw; const fetchesBefore = poolFetches;
+  assert.equal(pendingBefore, '4250000'); assert.equal(savedSpot, '1000000');
+
+  sqrtPrice = (X64 * 90n) / 100n;   // pool spot moves ~23% while paused (same shift as the devnet spot_skew fault)
+  m.unpause();
+  const r2 = await m.k.runOnce(T0 + W);
+  assert.equal(r2.run_id, r1.run_id); assert.equal(r2.status, 'failed_price'); assert.match(r2.reason, /bps from spot/);
+  assert.deepEqual(m.sent, ['claim_dbc', 'dev']);                                     // no swap (and no burn) tx sent
+  s = m.state(); const run = s.runs.find(x => x.run_id === r1.run_id)!;
+  assert.equal(s.pending_lamports, pendingBefore); assert.equal(s.totals.spent_lamports, '0'); assert.equal(s.unburned_raw, '0');
+  assert.ok(poolFetches > fetchesBefore, 'resume must re-read the pool');            // fresh fetchPoolState on resume
+  assert.notEqual(run.swap!.spot_out_raw, savedSpot);                                // the pre-pause quote/spot was not reused
+  assert.equal(run.stages.swap, undefined);
+  assert.equal(s.consecutive_failures, 1);                                           // a real failure (unlike the pause itself)
 });
