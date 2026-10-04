@@ -5,7 +5,7 @@ import { PublicKey, Transaction, TransactionMessage, VersionedTransaction } from
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolveCluster, parseClusterArg } from '../sdk/cluster.js';
-import { HookClient, BPF_UPGRADEABLE, decodeMintConfig, decodeLift } from '../sdk/hook.js';
+import { HookClient, BPF_UPGRADEABLE, decodeMintConfig, decodeLift, parseProgramDataAuthority } from '../sdk/hook.js';
 
 const argv = process.argv.slice(2);
 const mintArg = argv.find(a => !a.startsWith('--') && argv[argv.indexOf(a) - 1] !== '--cluster');
@@ -18,7 +18,8 @@ console.log(`[${c.label}] ${c.url}  program ${hook.programId.toBase58()}`);
 const [pd] = PublicKey.findProgramAddressSync([hook.programId.toBuffer()], BPF_UPGRADEABLE);
 const pdAcc = await c.connection.getAccountInfo(pd);
 if (!pdAcc) { console.log('program not deployed on this cluster'); process.exit(2); }
-const upgradeAuth = pdAcc.data[12] === 1 ? new PublicKey(pdAcc.data.subarray(13, 45)).toBase58() : 'none (immutable)';
+const pdAuth = (() => { try { return parseProgramDataAuthority(pdAcc); } catch (e: any) { return { upgradeAuthority: `unreadable (${e.message})`, immutable: false }; } })();
+const upgradeAuth = pdAuth.immutable ? 'none (immutable)' : pdAuth.upgradeAuthority;
 console.log(`upgrade authority: ${upgradeAuth}`);
 const deployed = pdAcc.data.subarray(45);
 for (const [label, path] of [['release (test-slots OFF)', 'target/deploy/trenches_hook.so'], ['test-slots (LOCAL only)', 'target/deploy-test-slots/trenches_hook.so']] as const) {

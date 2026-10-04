@@ -1,0 +1,51 @@
+{
+ "note": "Public devnet account data recorded read-only for offline authority-reader tests. No keys.",
+ "program": {
+  "label": "hook program account (BPF upgradeable loader: Program)",
+  "cluster": "devnet",
+  "genesis": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "fetched_at": "2026-10-04T01:30:55.000Z",
+  "context_slot": 507195951,
+  "method": "getAccountInfo (read-only)",
+  "pubkey": "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz",
+  "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+  "executable": true,
+  "lamports": 833120,
+  "data_len_full": 36,
+  "data_slice": null,
+  "data_base64": "AgAAAL35Ez8xAP1n42M3K7sL0WCG80sQr22I5yMGqAF7Tp4+"
+ },
+ "program_data": {
+  "label": "hook ProgramData account header (first 45 bytes: tag, slot, upgrade authority option)",
+  "cluster": "devnet",
+  "genesis": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "fetched_at": "2026-10-04T01:30:55.000Z",
+  "context_slot": 507195959,
+  "method": "getAccountInfo (read-only)",
+  "pubkey": "DnaLcoznENi7obxvVPMv6GJjmhKC3o5485f9etNS2hoT",
+  "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+  "executable": false,
+  "lamports": 2000326200,
+  "data_len_full": 393637,
+  "data_slice": {
+   "offset": 0,
+   "length": 45
+  },
+  "data_base64": "AwAAAISWOh4AAAAAAXoRJ3Q+cPVG9yW3g4RSRdUb0H7wYElr/7mjE4y4H2yE"
+ },
+ "global": {
+  "label": "hook Global PDA (seed \"global\"): lift authority",
+  "cluster": "devnet",
+  "genesis": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "fetched_at": "2026-10-04T01:30:55.000Z",
+  "context_slot": 507195967,
+  "method": "getAccountInfo (read-only)",
+  "pubkey": "EHjQBWz7gknWrrvzdftPkKi8eiZZ12piHE8YrwSnnas9",
+  "owner": "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz",
+  "executable": false,
+  "lamports": 863600,
+  "data_len_full": 42,
+  "data_slice": null,
+  "data_base64": "p+joschscn96ESd0PnD1Rvclt4OEUkXVG9B+8GBJa/+5oxOMuB9shAD9"
+ }
+}

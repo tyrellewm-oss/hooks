@@ -14,7 +14,7 @@ import { Store, durableWrite, ser } from './store.js';
 import { keeperStartChecks, KeyRuleRefusal } from '../keyrules.js';
 import { assertClusterAccounts, ClusterCheckRefusal } from '../cluster_check.js';
 import { classifyCluster } from '../cluster.js';
-import { HookClient, decodeGlobal } from '../hook.js';
+import { readHookAuthorities } from '../hook.js';
 
 export const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 const stageFail = (stage: string) => (stage.startsWith('claim') ? 'failed_claim' : stage === 'dev' ? 'failed_split' : `failed_${stage}`);
@@ -86,12 +86,9 @@ export async function startKeeper(cfg: KeeperConfig, overrides: string[], deps: 
     await assertClusterAccounts(conn, { hookProgram: new PublicKey(cfg.hook_program), dbcConfigs: cfg.sources.flatMap(s => (s.kind === 'dbc' ? [new PublicKey(s.config)] : [])) });
   } catch (e: any) { throw e instanceof ClusterCheckRefusal ? new KeyRuleRefusal(e.message) : e; }
   // pinned authorities must match the chain (they feed the §12a check)
-  const hc = new HookClient(new PublicKey(cfg.hook_program));
-  const prog = await conn.getAccountInfo(hc.programId);
-  const pd = prog && (await conn.getAccountInfo(new PublicKey(prog.data.subarray(4, 36))));
-  const upg = pd && pd.data[12] === 1 ? new PublicKey(pd.data.subarray(13, 45)).toBase58() : null;
-  const g = await conn.getAccountInfo(hc.globalPda());
-  const lift = g ? decodeGlobal(g.data).authority.toBase58() : null;
+  let upg: string | null, lift: string | null;
+  try { ({ upgradeAuthority: upg, liftAuthority: lift } = await readHookAuthorities(conn, new PublicKey(cfg.hook_program))); }
+  catch (e: any) { throw new KeyRuleRefusal(`refusing: cannot read hook authorities (${e?.message ?? e})`); }
   if (upg !== cfg.hook_upgrade_authority || lift !== cfg.hook_lift_authority) throw new KeyRuleRefusal(`refusing: pinned hook authorities do not match chain (upgrade ${upg}, lift ${lift})`);
   for (const w of warnings) (deps.log ?? console.log)(w);
   return new Keeper(cfg, overrides, conn, keys, warnings, deps.log ?? console.log);

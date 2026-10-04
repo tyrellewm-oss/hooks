@@ -136,5 +136,5 @@ test('startKeeper(): non-executable hook or a DBC source config not owned by DBC
   const m2 = good(); m2.set(dbcSrc[0], { ...dbcConfig(), owner: SYSTEM });
   await assert.rejects(startKeeper(cfg, [], deps(m2)), (e: any) => e instanceof KeyRuleRefusal && /DBC config .* not the DBC program/.test(e.message));
   await assert.rejects(startKeeper(cfg, [], { ...deps(good()), connect: async () => fakeConn(new Map(), true) as Connection }), (e: any) => e instanceof KeyRuleRefusal && /RPC error/.test(e.message));
-  await assert.rejects(startKeeper(cfg, [], deps(good())), (e: any) => e instanceof KeyRuleRefusal && /pinned hook authorities do not match/.test(e.message));
+  await assert.rejects(startKeeper(cfg, [], deps(good())), (e: any) => e instanceof KeyRuleRefusal && /hook authorit/.test(e.message));   // past the cluster check: reaches the authority read
 });

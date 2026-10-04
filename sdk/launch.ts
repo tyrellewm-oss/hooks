@@ -8,7 +8,7 @@ import {
 } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { HookClient, DEFAULT_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
+import { HookClient, DEFAULT_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, readHookAuthorities, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
 import { type Cluster, type ClusterName, type ClusterClass, explorerTx, nowIct, classifyCluster } from './cluster.js';
 import { launchConfigChecks, type Authorities } from './keyrules.js';
@@ -190,18 +190,11 @@ export class Launchpad {
 
   configParams(o: LaunchOpts) { return curveConfigParams(o); }
 
-  /** Hook upgrade authority (from ProgramData) and lift authority (Global PDA). null when unreadable. */
+  /** Hook upgrade authority (ProgramData) and lift authority (Global PDA), via the shared reader (throws AuthorityReadError). */
   async hookAuthorities(): Promise<Authorities> {
     await gateHook(this);
-    let upgradeAuthority: string | null = null, liftAuthority: string | null = null;
-    const prog = await this.c.connection.getAccountInfo(this.hook.programId);
-    if (prog && prog.data.length >= 36) {
-      const pd = await this.c.connection.getAccountInfo(new PublicKey(prog.data.subarray(4, 36)));
-      if (pd && pd.data.length >= 45 && pd.data[12] === 1) upgradeAuthority = new PublicKey(pd.data.subarray(13, 45)).toBase58();
-    }
-    const g = await this.c.connection.getAccountInfo(this.hook.globalPda());
-    if (g) liftAuthority = decodeGlobal(g.data).authority.toBase58();
-    return { upgradeAuthority, liftAuthority };
+    const a = await readHookAuthorities(this.c.connection, this.hook.programId);
+    return { upgradeAuthority: a.upgradeAuthority, liftAuthority: a.liftAuthority };
   }
 
   /** Partner config (transfer hook -> our program) + pool + hook config, by `deployer` (partner = creator = launcher in the beta). */

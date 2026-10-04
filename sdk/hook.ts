@@ -157,6 +157,50 @@ export function decodeGlobal(data: Uint8Array): GlobalAcc {
   const b = Buffer.from(data); if (!b.subarray(0, 8).equals(ACC.Global)) throw new Error('not Global');
   return { authority: pk(b, 8), lifted: b[40] === 1 };
 }
+// ---------- hook authority reader (§12a key separation, FW-23/FW-24). One implementation for the launch builder and the keeper.
+export class AuthorityReadError extends Error { constructor(msg: string) { super(msg); this.name = 'AuthorityReadError'; } }
+export interface AccountLike { owner: PublicKey; data: Uint8Array }
+export interface HookAuthorities { upgradeAuthority: string | null; liftAuthority: string | null; upgradeImmutable: boolean }
+/** UpgradeableLoaderState::Program — owner BPF upgradeable loader, u32 tag 2, ProgramData address (must be the canonical PDA). */
+export function parseProgramAccount(ai: AccountLike | null, programId: PublicKey): PublicKey {
+  if (!ai) throw new AuthorityReadError(`hook program ${programId.toBase58()} not found`);
+  if (!ai.owner.equals(BPF_UPGRADEABLE)) throw new AuthorityReadError(`hook program owner ${ai.owner.toBase58()} is not the upgradeable loader`);
+  const b = Buffer.from(ai.data);
+  if (b.length < 36) throw new AuthorityReadError(`hook program account truncated (${b.length} < 36 bytes)`);
+  if (b.readUInt32LE(0) !== 2) throw new AuthorityReadError(`hook program account tag ${b.readUInt32LE(0)} != 2 (Program)`);
+  const pd = new PublicKey(b.subarray(4, 36));
+  const want = PublicKey.findProgramAddressSync([programId.toBuffer()], BPF_UPGRADEABLE)[0];
+  if (!pd.equals(want)) throw new AuthorityReadError(`ProgramData address ${pd.toBase58()} != canonical ${want.toBase58()}`);
+  return pd;
+}
+/** UpgradeableLoaderState::ProgramData — u32 tag 3, u64 slot, Option<Pubkey> (u8 0 = immutable | 1 + 32 bytes). */
+export function parseProgramDataAuthority(ai: AccountLike | null): { upgradeAuthority: string | null; immutable: boolean } {
+  if (!ai) throw new AuthorityReadError('hook ProgramData account not found');
+  if (!ai.owner.equals(BPF_UPGRADEABLE)) throw new AuthorityReadError(`ProgramData owner ${ai.owner.toBase58()} is not the upgradeable loader`);
+  const b = Buffer.from(ai.data);
+  if (b.length < 13) throw new AuthorityReadError(`ProgramData truncated (${b.length} < 13 bytes)`);
+  if (b.readUInt32LE(0) !== 3) throw new AuthorityReadError(`ProgramData tag ${b.readUInt32LE(0)} != 3 (ProgramData)`);
+  if (b[12] === 0) return { upgradeAuthority: null, immutable: true };
+  if (b[12] !== 1) throw new AuthorityReadError(`ProgramData authority option byte ${b[12]} is neither 0 nor 1`);
+  if (b.length < 45) throw new AuthorityReadError(`ProgramData truncated (${b.length} < 45 bytes with an authority)`);
+  return { upgradeAuthority: new PublicKey(b.subarray(13, 45)).toBase58(), immutable: false };
+}
+/** Global PDA (Anchor account `Global`): owner = hook program, discriminator, authority (32), lifted (1). */
+export function parseGlobalAuthority(ai: AccountLike | null, programId: PublicKey): string {
+  if (!ai) throw new AuthorityReadError('hook Global account not found (not initialized?)');
+  if (!ai.owner.equals(programId)) throw new AuthorityReadError(`Global owner ${ai.owner.toBase58()} is not the hook program`);
+  if (ai.data.length < 41) throw new AuthorityReadError(`Global truncated (${ai.data.length} < 41 bytes)`);
+  try { return decodeGlobal(ai.data).authority.toBase58(); } catch (e: any) { throw new AuthorityReadError(`Global undecodable: ${e?.message ?? e}`); }
+}
+/** Read both authorities from chain. Missing or malformed accounts throw AuthorityReadError (fail closed); an immutable
+ *  program returns upgradeAuthority null + upgradeImmutable true, which the §12a rules treat as unknown off devnet. */
+export async function readHookAuthorities(conn: { getAccountInfo(pk: PublicKey, c?: any): Promise<AccountLike | null> }, programId: PublicKey): Promise<HookAuthorities> {
+  const hc = new HookClient(programId);
+  const pdAddr = parseProgramAccount(await conn.getAccountInfo(programId, 'confirmed'), programId);
+  const pd = parseProgramDataAuthority(await conn.getAccountInfo(pdAddr, 'confirmed'));
+  const liftAuthority = parseGlobalAuthority(await conn.getAccountInfo(hc.globalPda(), 'confirmed'), programId);
+  return { upgradeAuthority: pd.upgradeAuthority, liftAuthority, upgradeImmutable: pd.immutable };
+}
 export interface MintConfigAcc { mint: PublicKey; launchSlot: bigint; supplyRef: bigint; steps: Step[]; uncappedAfter: bigint; exemptOwners: PublicKey[]; testSlotsBuild: boolean; launcher: PublicKey }
 export function decodeMintConfig(data: Uint8Array): MintConfigAcc {
   const b = Buffer.from(data); if (!b.subarray(0, 8).equals(ACC.MintConfig)) throw new Error('not MintConfig');
