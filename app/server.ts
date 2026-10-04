@@ -14,6 +14,7 @@ import { validate, RELEASE_LIMITS, type Step } from '../sdk/capMath.js';
 import { parseRestrictionsLifted } from '../sdk/hook.js';
 import { redactDeep } from '../sdk/redact.js';
 import { serverError } from './errors.js';
+import { siteRoute, createReply, type Reply } from './site_registry.js';
 
 const argv = process.argv.slice(2);
 const PORT = Number(process.env.PORT ?? 5175);
@@ -71,6 +72,13 @@ async function tokenView(mintStr: string) {
   return { status: st, launch: rec, fee, feeConfig, pool, balances: bal, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
 }
 
+async function trade(b: any, rec: { mint: string; pool: string }): Promise<Reply> {
+  const w = wallets[b.wallet]; if (!w) return { code: 400, body: { error: 'wallet must be A or B' } };
+  const tokens = BigInt(Math.round(Number(b.amount) * 1e6));
+  if (tokens <= 0n) return { code: 400, body: { error: 'amount must be > 0' } };
+  return { code: 200, body: await lp.swap(w, new PublicKey(rec.pool), b.side === 'sell' ? 'sell' : 'buy', tokens, `page: wallet ${b.wallet} ${b.side} ${b.amount} ${rec.mint.slice(0, 6)}`) };
+}
+
 async function body(req: http.IncomingMessage): Promise<any> { let d = ''; for await (const ch of req) d += ch; return d ? JSON.parse(d) : {}; }
 const send = (res: http.ServerResponse, code: number, obj: any, type = 'application/json') => {
   if (type === 'application/json') obj = redactDeep(obj);   // FW-17: every JSON body is public; all strings (keys too) are redacted
@@ -80,8 +88,16 @@ const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js
 http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', 'http://x');
-    if (url.pathname === '/api/meta') return send(res, 200, { defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: c.url, programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: deployer.publicKey.toBase58(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listLaunches(c.name).map(l => ({ mint: l.mint, pool: l.pool, time: l.time })) });
-    if (url.pathname.startsWith('/api/token/')) return send(res, 200, await tokenView(url.pathname.split('/')[3]));
+    // ticket 8.5b: the listing, /api/token and /api/trade serve registry mints only (app/site_registry.ts); the registry
+    // is read once per request, before any local-record lookup or chain access
+    const routed = await siteRoute(url.pathname, req.method ?? 'GET', () => body(req), {
+      cluster: c.name,
+      launches: () => listLaunches(c.name),
+      meta: listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: c.url, programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: deployer.publicKey.toBase58(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listing.map(l => ({ mint: l.mint, pool: l.pool, time: l.time })) }),
+      token: mint => tokenView(mint),
+      trade,
+    });
+    if (routed) return send(res, routed.code, routed.body);
     if (url.pathname === '/api/wallets') { const o: any = {}; for (const [k, w] of Object.entries(wallets)) o[k] = { pubkey: w.publicKey.toBase58(), sol: (await c.connection.getBalance(w.publicKey)) / LAMPORTS_PER_SOL }; return send(res, 200, o); }
     if (url.pathname === '/api/create' && req.method === 'POST') {
       const b = await body(req);
@@ -103,16 +119,7 @@ http.createServer(async (req, res) => {
       catch (e: any) { return send(res, 400, { error: e.message }); }
       await lp.ensureGlobal(deployer, deployer.publicKey);
       const rec = await lp.launch(deployer, { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration });
-      return send(res, 200, rec);
-    }
-    if (url.pathname === '/api/trade' && req.method === 'POST') {
-      const b = await body(req);
-      const w = wallets[b.wallet]; if (!w) return send(res, 400, { error: 'wallet must be A or B' });
-      const rec = listLaunches(c.name).find(l => l.mint === b.mint); if (!rec) return send(res, 404, { error: 'unknown token' });
-      const tokens = BigInt(Math.round(Number(b.amount) * 1e6));
-      if (tokens <= 0n) return send(res, 400, { error: 'amount must be > 0' });
-      const r = await lp.swap(w, new PublicKey(rec.pool), b.side === 'sell' ? 'sell' : 'buy', tokens, `page: wallet ${b.wallet} ${b.side} ${b.amount} ${rec.mint.slice(0, 6)}`);
-      return send(res, 200, r);
+      return send(res, 200, createReply(rec));   // ticket 8.5b: registered: false + note; the registry is never written
     }
     if (url.pathname === '/capMath.js') return send(res, 200, capMathJs, 'text/javascript');
     const file = url.pathname === '/' || url.pathname.startsWith('/token/') ? 'index.html' : url.pathname.slice(1);
