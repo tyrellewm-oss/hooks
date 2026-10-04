@@ -7,6 +7,7 @@ import {
   MigrationFeeOption, TokenAuthorityOption, TokenDecimal, TokenType, SwapMode,
 } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { HookClient, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
 import { type Cluster, type ClusterName, explorerTx, nowIct, DEVNET_GENESIS, MAINNET_GENESIS } from './cluster.js';
@@ -48,6 +49,10 @@ export async function dammV2MigrationConfigFor(c: Pick<Cluster, 'name' | 'connec
 
 export interface TxRecord { time: string; cluster: string; label: string; purpose: string; sig: string; ok: boolean; err?: string; hookError?: string | null; hookCode?: number | null; link: string; capHit?: any; events?: any[]; note?: string }
 
+/** Tx log file for a cluster: `<cluster>.jsonl` in the default tx log dir; `TXLOG_DIR` redirects it (tests write to a temp dir). */
+export function txlogFile(cluster: string, env: NodeJS.ProcessEnv = process.env): string {
+  return join(env.TXLOG_DIR || 'txlog', `${cluster}.jsonl`);
+}
 export async function sendTx(c: Cluster, tx: Transaction, signers: Keypair[], purpose: string, note?: string): Promise<TxRecord> {
   const { blockhash, lastValidBlockHeight } = await c.connection.getLatestBlockhash('confirmed');
   tx.recentBlockhash = blockhash; tx.feePayer = signers[0].publicKey;
@@ -68,9 +73,10 @@ export async function sendTx(c: Cluster, tx: Transaction, signers: Keypair[], pu
     const logs = e instanceof SendTransactionError ? (e.logs ?? []) : [];
     rec = { time: nowIct(), cluster: c.name, label: c.label, purpose, sig, ok: false, err: String(e?.message ?? e).slice(0, 500), hookError: hookErrorFromLogs(logs), hookCode: hookCodeFromLogs(logs), link: sig ? explorerTx(sig, c.name) : '', note };
   }
-  mkdirSync('txlog', { recursive: true });
+  const file = txlogFile(c.name);
+  mkdirSync(dirname(file), { recursive: true });
   const { logs, ...slim } = rec as any;
-  appendFileSync(`txlog/${c.name}.jsonl`, JSON.stringify(slim, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) + '\n');
+  appendFileSync(file, JSON.stringify(slim, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) + '\n');
   console.log(`[${c.label}] ${rec.ok ? 'OK  ' : 'FAIL'} ${purpose} ${rec.hookError ? '(' + rec.hookError + ')' : ''} ${rec.link || rec.err}`);
   return rec;
 }

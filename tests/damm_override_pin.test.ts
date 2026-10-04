@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { Keypair, Connection } from '@solana/web3.js';
 import { DEVNET_GENESIS, MAINNET_GENESIS } from '../sdk/cluster.js';
 import { DBC_PROGRAM_ID, DAMM_V2_PROGRAM_ID } from '../sdk/hook.js';
-import { Launchpad, resolveDammV2MigrationConfig, ConfigPinRefusal, DAMM_V2_MIGRATION_CONFIG, DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN } from '../sdk/launch.js';
+import { Launchpad, txlogFile, resolveDammV2MigrationConfig, ConfigPinRefusal, DAMM_V2_MIGRATION_CONFIG, DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN } from '../sdk/launch.js';
 
 const LOCAL_GENESIS = Keypair.generate().publicKey.toBase58();   // a local validator has its own random genesis
 const other = () => Keypair.generate().publicKey.toBase58();
@@ -59,4 +59,57 @@ test('Launchpad.migrate on devnet genesis with an override → builds the migrat
     await assert.rejects(Launchpad.prototype.migrate.call(fake, Keypair.generate(), Keypair.generate().publicKey), /stop before send/);
     assert.equal(usedConfig, x);
   } finally { if (prev === undefined) delete process.env.DAMM_V2_MIGRATION_CONFIG; else process.env.DAMM_V2_MIGRATION_CONFIG = prev; }
+});
+
+// The accepted devnet override must be recorded in the tx log note. Written to a TEMP log (TXLOG_DIR), never the tracked one.
+test('accepted override → tx log note "overrides: DAMM_V2_MIGRATION_CONFIG=<value>" (temp tx log, tracked log untouched)', async () => {
+  const { mkdtempSync, readFileSync, existsSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { Transaction, TransactionInstruction, PublicKey } = await import('@solana/web3.js');
+  const tracked = txlogFile('devnet', {});
+  const trackedBefore = existsSync(tracked) ? readFileSync(tracked) : null;
+  const dir = mkdtempSync(join(tmpdir(), 'txlog-'));
+  const savedDir = process.env.TXLOG_DIR, savedOv = process.env.DAMM_V2_MIGRATION_CONFIG;
+  const ov = other(), hook = other(), poolCfg = other();
+  const accts = new Map<string, any>([[hook, { owner: new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111'), executable: true }], [poolCfg, { owner: DBC_PROGRAM_ID, executable: false }], [ov, { owner: DAMM_V2_PROGRAM_ID, executable: false }]]);
+  const conn = {
+    getGenesisHash: async () => DEVNET_GENESIS,
+    getAccountInfo: async (k: any) => accts.get(k.toBase58()) ?? null,
+    getLatestBlockhash: async () => ({ blockhash: other(), lastValidBlockHeight: 1 }),
+    sendRawTransaction: async () => 'FakeSig1111111111111111111111111111111111111',
+    confirmTransaction: async () => ({ value: { err: null } }),
+    getTransaction: async () => ({ meta: { err: null, logMessages: [] } }),
+  };
+  const nft1 = Keypair.generate(), nft2 = Keypair.generate();
+  let usedConfig = '';
+  const fake = {
+    c: { name: 'devnet', label: 'devnet', connection: conn },
+    hook: { programId: new PublicKey(hook) },
+    dbc: {
+      state: { getPool: async () => ({ config: new PublicKey(poolCfg) }) },
+      migration: { migrateToDammV2: async (a: any) => {
+        usedConfig = a.dammConfig.toBase58();
+        const keys = [a.payer, nft1.publicKey, nft2.publicKey].map(pubkey => ({ pubkey, isSigner: true, isWritable: false }));
+        return { transaction: new Transaction().add(new TransactionInstruction({ programId: new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'), keys, data: Buffer.from('t') })), firstPositionNftKeypair: nft1, secondPositionNftKeypair: nft2 };
+      } },
+    },
+  };
+  try {
+    process.env.TXLOG_DIR = dir; process.env.DAMM_V2_MIGRATION_CONFIG = ov;
+    assert.equal(txlogFile('devnet'), join(dir, 'devnet.jsonl'));
+    const rec: any = await Launchpad.prototype.migrate.call(fake as any, Keypair.generate(), new PublicKey(other()));
+    assert.equal(usedConfig, ov);
+    assert.equal(rec.ok, true); assert.equal(rec.note, `overrides: DAMM_V2_MIGRATION_CONFIG=${ov}`);
+    const lines = readFileSync(join(dir, 'devnet.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].note, `overrides: DAMM_V2_MIGRATION_CONFIG=${ov}`);
+    assert.equal(lines[0].purpose, 'dbc: migration_damm_v2 (graduation)');
+  } finally {
+    if (savedDir === undefined) delete process.env.TXLOG_DIR; else process.env.TXLOG_DIR = savedDir;
+    if (savedOv === undefined) delete process.env.DAMM_V2_MIGRATION_CONFIG; else process.env.DAMM_V2_MIGRATION_CONFIG = savedOv;
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const trackedAfter = existsSync(tracked) ? readFileSync(tracked) : null;
+  assert.deepEqual(trackedAfter, trackedBefore, 'tracked tx log must not be touched');
 });
