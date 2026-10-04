@@ -6,11 +6,13 @@ import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolveCluster, parseClusterArg } from '../sdk/cluster.js';
 import { HookClient, BPF_UPGRADEABLE, decodeMintConfig, decodeLift, parseProgramDataAuthority } from '../sdk/hook.js';
+import { resolveQaHookProgram } from '../sdk/launch.js';
 
 const argv = process.argv.slice(2);
 const mintArg = argv.find(a => !a.startsWith('--') && argv[argv.indexOf(a) - 1] !== '--cluster');
 const c = await resolveCluster(parseClusterArg(argv));
-const hook = new HookClient();
+// hook program id through the same genesis-pinned resolver and executable check as every Launchpad tx (no default id)
+const hook = new HookClient(await resolveQaHookProgram(c));
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 console.log(`[${c.label}] ${c.url}  program ${hook.programId.toBase58()}`);
 

@@ -176,6 +176,13 @@ export async function gateHook(lp: { c: any; hook: HookClient; requestedHookProg
   await assertClusterAccounts(lp.c.connection, { hookProgram: r.programId });
 }
 
+/** Hook program id for read-only tools (scripts/qa_schedule.ts): the same resolver and executable check as gateHook(). */
+export async function resolveQaHookProgram(c: { connection: any; url?: string }, env: NodeJS.ProcessEnv = process.env): Promise<PublicKey> {
+  const r = await hookProgramFor(c, env);
+  await assertClusterAccounts(c.connection, { hookProgram: r.programId });
+  return r.programId;
+}
+
 export class Launchpad {
   dbc: DynamicBondingCurveClient;
   hook: HookClient;
