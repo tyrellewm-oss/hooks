@@ -15,6 +15,7 @@ import { keeperStartChecks, launchConfigChecks, KeyRuleRefusal } from '../sdk/ke
 import { preflightOffline, startKeeper, Keeper, initState, publicLog, newRun, MEMO_PROGRAM_ID, type KeySet } from '../sdk/flywheel/keeper.js';
 import { applyOverrides, type KeeperConfig } from '../sdk/flywheel/config.js';
 import { Launchpad } from '../sdk/launch.js';
+import { HOOK_PROGRAM_ID_DEVNET, HookProgramPinRefusal, BPF_UPGRADEABLE } from '../sdk/hook.js';
 
 const base = JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')) as KeeperConfig;
 const trapConn = () => new Proxy({}, { get: (_t, p) => { if (p === 'then') return undefined; throw new Error(`network used: ${String(p)}`); } }) as unknown as Connection;
@@ -74,15 +75,63 @@ for (const [name, role, which] of [['FW-23a: keeper key = upgrade authority', 'c
     assert.equal(connected, 0);
   });
 }
-for (const [name, which] of [['FW-24a: feeClaimer = upgrade authority', 'upgrade'], ['FW-24b: feeClaimer = lift authority', 'lift']] as const) {
-  test(`${name} on mainnet → config builder throws before any tx is built`, async () => {
-    const deployer = Keypair.generate(); const other = Keypair.generate().publicKey.toBase58(); let built = 0;
-    const fake: any = { c: { name: 'mainnet', connection: trapConn() }, configParams: () => { built++; return {}; }, dbc: { partner: { createConfigWithTransferHook: async () => { built++; throw new Error('should not build'); } }, creator: {} }, hook: {} };
-    const authorities = { upgradeAuthority: which === 'upgrade' ? deployer.publicKey.toBase58() : other, liftAuthority: which === 'lift' ? deployer.publicKey.toBase58() : other };
-    await assert.rejects(Launchpad.prototype.launch.call(fake, deployer, { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities } as any), (e: any) => e instanceof KeyRuleRefusal && new RegExp(`${which} authority`).test(e.message));
-    assert.equal(built, 0);
+// launch(): the hook gate runs first (also with o.authorities); its genesis class, not the Cluster's name, decides §12a
+// warn-vs-refuse. On mainnet/testnet/unknown genesis the gate itself refuses first (no pinned hook there yet).
+const LG = { devnet: 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG', mainnet: '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d' };
+function launchFake(name: string, genesis: string, url?: string) {
+  const n = { built: 0, reads: 0 };
+  const hook = new PublicKey(process.env.HOOK_PROGRAM_ID && url ? process.env.HOOK_PROGRAM_ID : HOOK_PROGRAM_ID_DEVNET);
+  const fake: any = {
+    c: { name, url, connection: { getGenesisHash: async () => genesis, getAccountInfo: async (k: PublicKey) => { n.reads++; return k.equals(hook) ? { owner: BPF_UPGRADEABLE, executable: true } : null; } } },
+    hook: { programId: hook }, configParams: () => ({}),
+    dbc: { partner: { createConfigWithTransferHook: async () => { n.built++; throw new Error('tx built'); } }, creator: {} },
+  };
+  return { fake, n };
+}
+const sameKeyOpts = (deployer: Keypair, which: 'upgrade' | 'lift' | 'both') => {
+  const other = Keypair.generate().publicKey.toBase58(), d = deployer.publicKey.toBase58();
+  const authorities = which === 'both' ? { upgradeAuthority: other, liftAuthority: other } : { upgradeAuthority: which === 'upgrade' ? d : other, liftAuthority: which === 'lift' ? d : Keypair.generate().publicKey.toBase58() };
+  return { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities } as any;
+};
+async function quiet<T>(f: () => Promise<T>): Promise<{ r: Promise<T>; warns: string[] }> {
+  const warns: string[] = []; const w = console.warn; console.warn = (m: any) => { warns.push(String(m)); };
+  try { const r = f(); await r.catch(() => {}); return { r, warns }; } finally { console.warn = w; }
+}
+for (const [label, which] of [['FW-24a: feeClaimer = upgrade authority', 'upgrade'], ['FW-24b: feeClaimer = lift authority', 'lift'], ['§12a: upgrade == lift', 'both']] as const) {
+  test(`${label}: a Cluster NAMED "mainnet" on devnet genesis → devnet rules (warn, reaches the build); the name never decides`, async () => {
+    const deployer = Keypair.generate(); const { fake, n } = launchFake('mainnet', LG.devnet);
+    const { r, warns } = await quiet(() => Launchpad.prototype.launch.call(fake, deployer, sameKeyOpts(deployer, which)));
+    await assert.rejects(r, /tx built/); assert.equal(n.built, 1);
+    assert.ok(warns.some(x => /accepted throwaway exception on devnet/.test(x)), warns.join('\n'));
+  });
+  test(`${label}: reverse, a Cluster NAMED "devnet" on mainnet genesis → refused before any build and before any account read (hook gate first)`, async () => {
+    const deployer = Keypair.generate(); const { fake, n } = launchFake('devnet', LG.mainnet);
+    await assert.rejects(Launchpad.prototype.launch.call(fake, deployer, sameKeyOpts(deployer, which)), HookProgramPinRefusal);
+    assert.equal(n.built, 0); assert.equal(n.reads, 0);
+  });
+  test(`${label}: NAMED "mainnet" on mainnet genesis with o.authorities → the hook gate refuses first (not the §12a check), 0 builds`, async () => {
+    const deployer = Keypair.generate(); const { fake, n } = launchFake('mainnet', LG.mainnet);
+    await assert.rejects(Launchpad.prototype.launch.call(fake, deployer, sameKeyOpts(deployer, which)), (e: any) => e instanceof HookProgramPinRefusal && !(e instanceof KeyRuleRefusal));
+    assert.equal(n.built, 0);
   });
 }
+test('§12a on a local validator (localhost + unknown genesis) named "mainnet" → local rules (warn), reaches the build', async () => {
+  const prev = process.env.HOOK_PROGRAM_ID; const h = Keypair.generate().publicKey.toBase58(); process.env.HOOK_PROGRAM_ID = h;
+  try {
+    const deployer = Keypair.generate(); const { fake, n } = launchFake('mainnet', Keypair.generate().publicKey.toBase58(), 'http://127.0.0.1:8899');
+    const { r, warns } = await quiet(() => Launchpad.prototype.launch.call(fake, deployer, sameKeyOpts(deployer, 'both')));
+    await assert.rejects(r, /tx built/); assert.equal(n.built, 1);
+    assert.ok(warns.some(x => /accepted throwaway exception on local/.test(x)), 'local rules warn (accepted throwaway exception on local)');
+  } finally { if (prev === undefined) delete process.env.HOOK_PROGRAM_ID; else process.env.HOOK_PROGRAM_ID = prev; }
+});
+test('§12a classes: testnet and unknown refuse like mainnet (only devnet/local warn)', () => {
+  const k = Keypair.generate().publicKey.toBase58();
+  for (const c of ['mainnet', 'testnet', 'unknown']) {
+    assert.throws(() => launchConfigChecks(c, Keypair.generate().publicKey.toBase58(), { upgradeAuthority: k, liftAuthority: k }), KeyRuleRefusal, c);
+    assert.throws(() => keeperStartChecks(c, {}, { upgradeAuthority: k, liftAuthority: k }), KeyRuleRefusal, c);
+  }
+  for (const c of ['devnet', 'local']) assert.equal(launchConfigChecks(c, Keypair.generate().publicKey.toBase58(), { upgradeAuthority: k, liftAuthority: k }).length, 1);
+});
 test('FW-24: distinct claimer passes the check on mainnet; unknown authorities refuse', () => {
   assert.deepEqual(launchConfigChecks('mainnet', Keypair.generate().publicKey.toBase58(), { upgradeAuthority: Keypair.generate().publicKey.toBase58(), liftAuthority: Keypair.generate().publicKey.toBase58() }), []);
   assert.throws(() => launchConfigChecks('mainnet', 'x', { upgradeAuthority: null, liftAuthority: 'y' }), KeyRuleRefusal);

@@ -4,6 +4,8 @@
 // Pure functions: no network calls, so the refusals run before any connection or tx exists (FW-22..FW-24).
 export type AnyClusterName = 'local' | 'devnet' | 'mainnet' | (string & {});
 export class KeyRuleRefusal extends Error { constructor(msg: string) { super(msg); this.name = 'KeyRuleRefusal'; } }
+// Warn-only on devnet/local. Launchpad passes the genesis class from classifyCluster (via the hook gate), so a Cluster's
+// name never decides; the keeper's name is checked against its genesis class at start. Anything else refuses.
 const isTestCluster = (c: AnyClusterName) => c === 'devnet' || c === 'local';
 const short = (k: string) => `${k.slice(0, 4)}…`;
 

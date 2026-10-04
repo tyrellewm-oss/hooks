@@ -1,0 +1,60 @@
+{
+ "note": "Public devnet account data recorded read-only for offline mint TransferHook tests (blocker #7). Devnet throwaway addresses only, no keys. TDT pool 6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK (migration_progress 3), FW15 pool 3s5DbNELv1qy5argWMntmid4r2VrT1qeYjWvffkVsVLv (migration_progress 0).",
+ "graduation_tx": {
+  "sig": "3F2PoxYigsd9G1CCLDYZ86eFLVCVW4bYrFXbxY9uBECFjsLrktb4ZsdbyVPXjTvGHZKfTp22DQmpvTW5WNzXBcrj",
+  "slot": "507162210",
+  "method": "getParsedTransaction (read-only)",
+  "update_transfer_hook": {
+   "authority": "FhVo3mqL8PW5pH5U2CN4XE33DokiyZnUwuGpH2hmHLuM",
+   "mint": "3Ut8PuPt3G21GBth84SdqjWxMAoSp5yjSfQFKM9aMmtE"
+  },
+  "set_authority": {
+   "authority": "FhVo3mqL8PW5pH5U2CN4XE33DokiyZnUwuGpH2hmHLuM",
+   "authorityType": "transferHookProgramId",
+   "newAuthority": null
+  }
+ },
+ "tdt_pre": {
+  "label": "TDT mint before graduation (reconstructed: the live post-graduation account with only the 64-byte TransferHook value restored from graduation tx 3F2PoxYigsd9G1CCLDYZ86eFLVCVW4bYrFXbxY9uBECFjsLrktb4ZsdbyVPXjTvGHZKfTp22DQmpvTW5WNzXBcrj: authority FhVo3mqL… (Update/SetAuthority signer), program_id FieaXjJU… (the hook it invoked))",
+  "cluster": "devnet",
+  "genesis": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "fetched_at": "2026-10-04T02:11:04.979Z",
+  "context_slot": "507206207",
+  "method": "derived from tdt_post (RPC serves no account history)",
+  "pubkey": "3Ut8PuPt3G21GBth84SdqjWxMAoSp5yjSfQFKM9aMmtE",
+  "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "executable": false,
+  "lamports": "2931160",
+  "data_len_full": 449,
+  "data_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAb2mBi22LAwAGAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARIAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACTb3aFm5Z+msMXaqXh7it7CnmPzc5jGfz3JMLr9LPL7DgBAANpjaB9yhrzIBnGeLCtQogFXJDv8lmixFSC8U4Q+3NsIA8U5BoWb1b+tmHcD6LocODRp6Y1qJWp6j+/oG7/VRoETAI8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAk292hZuWfprDF2ql4e4rewp5j83OYxn89yTC6/Szy+xQAAABUcmVuY2hlcyBEZXZuZXQgVGVzdAMAAABURFQoAAAAaHR0cHM6Ly9leGFtcGxlLmludmFsaWQvZGV2bmV0LXRlc3QuanNvbgAAAAA=",
+  "transfer_hook_offset": 238
+ },
+ "tdt_post": {
+  "label": "TDT mint after graduation (live: TransferHook program_id and authority unset)",
+  "cluster": "devnet",
+  "genesis": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "fetched_at": "2026-10-04T02:11:04.979Z",
+  "context_slot": "507206207",
+  "method": "getAccountInfo (read-only)",
+  "pubkey": "3Ut8PuPt3G21GBth84SdqjWxMAoSp5yjSfQFKM9aMmtE",
+  "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "executable": false,
+  "lamports": "2931160",
+  "data_len_full": 449,
+  "data_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAb2mBi22LAwAGAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARIAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACTb3aFm5Z+msMXaqXh7it7CnmPzc5jGfz3JMLr9LPL7DgBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATAI8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAk292hZuWfprDF2ql4e4rewp5j83OYxn89yTC6/Szy+xQAAABUcmVuY2hlcyBEZXZuZXQgVGVzdAMAAABURFQoAAAAaHR0cHM6Ly9leGFtcGxlLmludmFsaWQvZGV2bmV0LXRlc3QuanNvbgAAAAA="
+ },
+ "fw15_pre": {
+  "label": "FW15 mint before graduation (live: DBC pool migration_progress 0)",
+  "cluster": "devnet",
+  "genesis": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "fetched_at": "2026-10-04T02:11:05.629Z",
+  "context_slot": "507206209",
+  "method": "getAccountInfo (read-only)",
+  "pubkey": "7bRdzRKq5GUw4y5K9gmYu1ECrg5jWYapKhykrQ3mkz8W",
+  "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "executable": false,
+  "lamports": "2926080",
+  "data_len_full": 448,
+  "data_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIDGpH6NAwAGAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARIAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGH3uiEwwILe6//DcHxPQXQQiFZfjtn1zEpeUh0hoSqvDgBAANpjaB9yhrzIBnGeLCtQogFXJDv8lmixFSC8U4Q+3NsIA8U5BoWb1b+tmHcD6LocODRp6Y1qJWp6j+/oG7/VRoETAI4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABh97ohMMCC3uv/w3B8T0F0EIhWX47Z9cxKXlIdIaEqrxIAAABGbHl3aGVlbCBGVzE1IFRlc3QEAAAARlcxNSgAAABodHRwczovL2V4YW1wbGUuaW52YWxpZC9kZXZuZXQtdGVzdC5qc29uAAAAAA=="
+ }
+}

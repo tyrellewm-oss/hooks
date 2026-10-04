@@ -8,17 +8,17 @@ import { Keypair } from '@solana/web3.js';
 import { resolveCluster, DEVNET_GENESIS, MAINNET_GENESIS, TESTNET_GENESIS } from '../sdk/cluster.js';
 
 let genesis = '';
-let server: Server; let port = 0;
-before(async () => {
-  server = createServer((req, res) => {
-    let body = ''; req.on('data', d => (body += d)); req.on('end', () => {
-      const r = JSON.parse(body); res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ jsonrpc: '2.0', id: r.id, result: r.method === 'getGenesisHash' ? genesis : null }));
-    });
+// Loopback only: one server on 127.0.0.1 (localhost) and one on 127.0.0.2 (loopback, but not a localhost URL by the rule).
+let server: Server, remote: Server; let port = 0, remotePort = 0;
+const rpc = () => createServer((req, res) => {
+  let body = ''; req.on('data', d => (body += d)); req.on('end', () => {
+    const r = JSON.parse(body); res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: r.id, result: r.method === 'getGenesisHash' ? genesis : null }));
   });
-  await new Promise<void>(ok => server.listen(0, '0.0.0.0', () => ok())); port = (server.address() as AddressInfo).port;
 });
-after(() => new Promise<void>(ok => server.close(() => ok())));
+const listen = (s: Server, host: string) => new Promise<number>(ok => s.listen(0, host, () => ok((s.address() as AddressInfo).port)));
+before(async () => { server = rpc(); remote = rpc(); port = await listen(server, '127.0.0.1'); remotePort = await listen(remote, '127.0.0.2'); });
+after(async () => { await new Promise<void>(ok => server.close(() => ok())); await new Promise<void>(ok => remote.close(() => ok())); });
 async function resolveLocal(url: string, g: string) {
   genesis = g; const saved = process.env.LOCAL_RPC; process.env.LOCAL_RPC = url;
   try { return await resolveCluster('local'); } finally { if (saved === undefined) delete process.env.LOCAL_RPC; else process.env.LOCAL_RPC = saved; }
@@ -37,5 +37,5 @@ test('resolveCluster("local"): localhost URL + devnet or testnet genesis → ref
   await assert.rejects(resolveLocal(`http://127.0.0.1:${port}`, MAINNET_GENESIS), /refusing: RPC is mainnet-beta/);
 });
 test('resolveCluster("local"): unknown genesis on a non-localhost URL → refused (the URL test is exact, 127.0.0.2 is not localhost)', async () => {
-  await assert.rejects(resolveLocal(`http://127.0.0.2:${port}`, UNKNOWN), /refusing: not a local validator .*got unknown/);
+  await assert.rejects(resolveLocal(`http://127.0.0.2:${remotePort}`, UNKNOWN), /refusing: not a local validator .*got unknown/);
 });

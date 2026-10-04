@@ -10,6 +10,7 @@ import { ClusterCheckRefusal } from '../sdk/cluster_check.js';
 import { startKeeper } from '../sdk/flywheel/keeper.js';
 import { KeyRuleRefusal } from '../sdk/keyrules.js';
 import { Launchpad, txlogFile, resolveDammV2MigrationConfig, ConfigPinRefusal, DAMM_V2_MIGRATION_CONFIG, DAMM_V2_MIGRATION_CONFIG_MAINNET_PIN } from '../sdk/launch.js';
+import { fixtureMint } from './mint_hook_fixture.js';
 
 const LOCAL_GENESIS = Keypair.generate().publicKey.toBase58();   // a local validator has its own random genesis
 const other = () => Keypair.generate().publicKey.toBase58();
@@ -57,9 +58,9 @@ test('Launchpad.migrate on devnet genesis with an override → builds the migrat
   try {
     // accounts that pass the cluster check: hook executable, pool config owned by DBC, override owned by DAMM v2
     const hook = new PublicKey(HOOK_PROGRAM_ID_DEVNET), poolCfg = Keypair.generate().publicKey;
-    const accts = new Map<string, any>([[hook.toBase58(), { owner: hook, executable: true }], [poolCfg.toBase58(), { owner: DBC_PROGRAM_ID, executable: false }], [x, { owner: DAMM_V2_PROGRAM_ID, executable: false }]]);
+    const accts = new Map<string, any>([[hook.toBase58(), { owner: hook, executable: true }], [poolCfg.toBase58(), { owner: DBC_PROGRAM_ID, executable: false }], [x, { owner: DAMM_V2_PROGRAM_ID, executable: false }], [fixtureMint('tdt_post').pubkey.toBase58(), fixtureMint('tdt_post').info]]);
     let usedConfig = ''; const connection: any = { getGenesisHash: async () => DEVNET_GENESIS, getAccountInfo: async (k: any) => accts.get(k.toBase58()) ?? null, getLatestBlockhash: async () => { throw new Error('stop before send'); } };
-    const fake: any = { c: { name: 'devnet', connection }, hook: { programId: hook }, dbc: { state: { getPool: async () => ({ config: poolCfg }) }, migration: { migrateToDammV2: async (a: any) => { usedConfig = a.dammConfig.toBase58(); return { transaction: {}, firstPositionNftKeypair: Keypair.generate(), secondPositionNftKeypair: Keypair.generate() }; } } } };
+    const fake: any = { c: { name: 'devnet', connection }, hook: { programId: hook }, dbc: { state: { getPool: async () => ({ config: poolCfg, baseMint: fixtureMint('tdt_post').pubkey, migrationProgress: 3 }) }, migration: { migrateToDammV2: async (a: any) => { usedConfig = a.dammConfig.toBase58(); return { transaction: {}, firstPositionNftKeypair: Keypair.generate(), secondPositionNftKeypair: Keypair.generate() }; } } } };
     await assert.rejects(Launchpad.prototype.migrate.call(fake, Keypair.generate(), Keypair.generate().publicKey), /stop before send/);
     assert.equal(usedConfig, x);
   } finally { if (prev === undefined) delete process.env.DAMM_V2_MIGRATION_CONFIG; else process.env.DAMM_V2_MIGRATION_CONFIG = prev; }
@@ -76,7 +77,7 @@ test('accepted override → tx log note "overrides: DAMM_V2_MIGRATION_CONFIG=<va
   const dir = mkdtempSync(join(tmpdir(), 'txlog-'));
   const savedDir = process.env.TXLOG_DIR, savedOv = process.env.DAMM_V2_MIGRATION_CONFIG;
   const ov = other(), hook = HOOK_PROGRAM_ID_DEVNET, poolCfg = other();
-  const accts = new Map<string, any>([[hook, { owner: new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111'), executable: true }], [poolCfg, { owner: DBC_PROGRAM_ID, executable: false }], [ov, { owner: DAMM_V2_PROGRAM_ID, executable: false }]]);
+  const accts = new Map<string, any>([[hook, { owner: new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111'), executable: true }], [poolCfg, { owner: DBC_PROGRAM_ID, executable: false }], [ov, { owner: DAMM_V2_PROGRAM_ID, executable: false }], [fixtureMint('tdt_post').pubkey.toBase58(), fixtureMint('tdt_post').info]]);
   const conn = {
     getGenesisHash: async () => DEVNET_GENESIS,
     getAccountInfo: async (k: any) => accts.get(k.toBase58()) ?? null,
@@ -91,7 +92,7 @@ test('accepted override → tx log note "overrides: DAMM_V2_MIGRATION_CONFIG=<va
     c: { name: 'devnet', label: 'devnet', connection: conn },
     hook: { programId: new PublicKey(hook) },
     dbc: {
-      state: { getPool: async () => ({ config: new PublicKey(poolCfg) }) },
+      state: { getPool: async () => ({ config: new PublicKey(poolCfg), baseMint: fixtureMint('tdt_post').pubkey, migrationProgress: 3 }) },
       migration: { migrateToDammV2: async (a: any) => {
         usedConfig = a.dammConfig.toBase58();
         const keys = [a.payer, nft1.publicKey, nft2.publicKey].map(pubkey => ({ pubkey, isSigner: true, isWritable: false }));
