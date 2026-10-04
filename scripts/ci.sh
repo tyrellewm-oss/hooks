@@ -13,7 +13,8 @@ step "program host unit tests (exempt PDAs derive from Meteora program ids; need
 cargo test -q -p trenches-hook --lib 2>&1 | grep 'test result'; [ "${PIPESTATUS[0]}" = 0 ] || fail=1
 else echo; echo "== program host unit tests skipped (set CI_PROGRAM_HOST=1; last run 2026-10-03 22:5x ICT: 2 passed)"; fi
 step "LOCAL litesvm integration + TS parity tests (needs target/deploy/*.so from scripts/build.sh)"
-out=$(node --import tsx --test tests/*.test.ts 2>&1); rc=$?; [ $rc = 0 ] || fail=1
+# --test-timeout: a hung or spinning test file is cancelled and counts as a failure (fail fast, never a silent hang)
+out=$(node --import tsx --test --test-timeout=60000 tests/*.test.ts 2>&1); rc=$?; [ $rc = 0 ] || fail=1
 echo "$out" | grep -E '^# (tests|pass|fail|skipped)'
 # skipped tests are listed by name so a missing input (e.g. the replay full fixtures, kept outside the repo) is visible
 echo "$out" | grep -E '^ *ok [0-9]+ - .*# SKIP' | sed -E 's/^ *ok [0-9]+ - /SKIPPED: /' || true

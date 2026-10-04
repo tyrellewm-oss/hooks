@@ -5,7 +5,7 @@
   "description": "DEVNET-ONLY unaudited experiment: rising per-token-account cap transfer hook on Meteora DBC",
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test tests/*.test.ts",
+    "test": "node --import tsx --test --test-timeout=60000 tests/*.test.ts",
     "check": "bash scripts/ci.sh",
     "build": "bash scripts/build.sh",
     "validator": "bash scripts/local_validator.sh",
