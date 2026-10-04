@@ -46,3 +46,6 @@ artifacts/
 /prs
 /MORNING_REPORT.*
 /STATUS.*
+
+# flywheel keeper journals/state (local; public log lives in flywheel/)
+.flywheel/

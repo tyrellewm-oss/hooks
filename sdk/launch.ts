@@ -9,7 +9,15 @@ import {
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { HookClient, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
-import { type Cluster, explorerTx, nowIct } from './cluster.js';
+import { type Cluster, type ClusterName, explorerTx, nowIct } from './cluster.js';
+import { launchConfigChecks, type Authorities } from './keyrules.js';
+
+/** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()). Env DAMM_V2_MIGRATION_CONFIG overrides. */
+export const DAMM_V2_MIGRATION_CONFIG: Record<ClusterName, string> = {
+  devnet: '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd',
+  local: '7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd', // local validator clones the devnet account
+};
+export const dammV2MigrationConfig = (c: ClusterName) => new PublicKey(process.env.DAMM_V2_MIGRATION_CONFIG ?? DAMM_V2_MIGRATION_CONFIG[c]);
 
 export interface TxRecord { time: string; cluster: string; label: string; purpose: string; sig: string; ok: boolean; err?: string; hookError?: string | null; hookCode?: number | null; link: string; capHit?: any; events?: any[]; note?: string }
 
@@ -49,6 +57,7 @@ export interface LaunchOpts {
   creatorTradingFeePercentage?: number;            // creator share of the non-protocol trading fee (0-100)
   migrationFeeOption?: MigrationFeeOption;         // DAMM v2 pool fee after migration (FixedBps25 = 0.25%)
   percentageSupplyOnMigration?: number;            // % of supply reserved for the DAMM v2 pool at migration (integer 1..49, default 20 -> 80% sold on the curve)
+  authorities?: Authorities;                       // hook upgrade + lift authority for the §12a preflight (read from chain if omitted)
 }
 /** Default % of supply that goes to the migration pool (behaviour unchanged from the hard-coded 20). */
 export const DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION = 20;
@@ -110,8 +119,25 @@ export class Launchpad {
 
   configParams(o: LaunchOpts) { return curveConfigParams(o); }
 
+  /** Hook upgrade authority (from ProgramData) and lift authority (Global PDA). null when unreadable. */
+  async hookAuthorities(): Promise<Authorities> {
+    let upgradeAuthority: string | null = null, liftAuthority: string | null = null;
+    const prog = await this.c.connection.getAccountInfo(this.hook.programId);
+    if (prog && prog.data.length >= 36) {
+      const pd = await this.c.connection.getAccountInfo(new PublicKey(prog.data.subarray(4, 36)));
+      if (pd && pd.data.length >= 45 && pd.data[12] === 1) upgradeAuthority = new PublicKey(pd.data.subarray(13, 45)).toBase58();
+    }
+    const g = await this.c.connection.getAccountInfo(this.hook.globalPda());
+    if (g) liftAuthority = decodeGlobal(g.data).authority.toBase58();
+    return { upgradeAuthority, liftAuthority };
+  }
+
   /** Partner config (transfer hook -> our program) + pool + hook config, by `deployer` (partner = creator = launcher in the beta). */
   async launch(deployer: Keypair, o: LaunchOpts): Promise<LaunchRecord> {
+    // §12a preflight (FW-24): feeClaimer (= deployer here) must differ from the hook upgrade and lift authorities.
+    // Throws off devnet/local before any tx is built; logs the accepted throwaway exception on devnet/local.
+    const auth = o.authorities ?? (await this.hookAuthorities());
+    for (const w of launchConfigChecks(this.c.name, deployer.publicKey.toBase58(), auth)) console.warn(w);
     const configKp = Keypair.generate();
     const mintKp = Keypair.generate();
     const txs: Record<string, string> = {};
@@ -166,7 +192,7 @@ export class Launchpad {
   }
 
   async migrate(payer: Keypair, pool: PublicKey) {
-    const { transaction, firstPositionNftKeypair, secondPositionNftKeypair } = await this.dbc.migration.migrateToDammV2({ payer: payer.publicKey, pool, dammConfig: new PublicKey('7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd') });
+    const { transaction, firstPositionNftKeypair, secondPositionNftKeypair } = await this.dbc.migration.migrateToDammV2({ payer: payer.publicKey, pool, dammConfig: dammV2MigrationConfig(this.c.name) });
     return sendTx(this.c, transaction, [payer, firstPositionNftKeypair, secondPositionNftKeypair], 'dbc: migration_damm_v2 (graduation)');
   }
 

@@ -1,0 +1,44 @@
+{
+  "name": "devnet-fw15",
+  "cluster": "devnet",
+  "main_mint": "7bRdzRKq5GUw4y5K9gmYu1ECrg5jWYapKhykrQ3mkz8W",
+  "main_decimals": 6,
+  "main_token_program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "main_dbc_pool": "3s5DbNELv1qy5argWMntmid4r2VrT1qeYjWvffkVsVLv",
+  "route": "damm_v2_direct",
+  "route_pool": null,
+  "sources": [
+    {
+      "kind": "dbc",
+      "pool": "3s5DbNELv1qy5argWMntmid4r2VrT1qeYjWvffkVsVLv",
+      "config": "GEHy5VdSnGRayVKNHM3cQnEZHG8Np5ZdWTMbMa1fUDLv",
+      "base_mint": "7bRdzRKq5GUw4y5K9gmYu1ECrg5jWYapKhykrQ3mkz8W"
+    }
+  ],
+  "keys": {
+    "claim_signer": "deployer",
+    "treasury": "fw15_treasury",
+    "dev": "fw15_dev",
+    "gas": "fw_gas"
+  },
+  "pinned_pubkeys": {
+    "claim_signer": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
+    "treasury": "96YYyNUPwxqZyebc9KbsPPWqzKDosUhJceYdmp3CBjth",
+    "dev": "Fyf3yL8DTiYR1ho2bdbUTro1Uq5d5Qss5KjYkqSgfVdP",
+    "gas": "D7ZmAZ9dpVBVFkR268dMnu1uPVKFUF9ZFJDZdXzdCbGt"
+  },
+  "hook_program": "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz",
+  "hook_upgrade_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
+  "hook_lift_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
+  "max_swap_lamports_per_run": "500000000",
+  "max_slippage_bps": 100,
+  "max_price_impact_bps": 200,
+  "max_halvings": 3,
+  "price_band_pct": 10,
+  "min_claim_lamports": "1000000",
+  "cadence_seconds": 300,
+  "auto_pause_after_failures": 3,
+  "gas_min_lamports": "10000000",
+  "state_dir": ".flywheel/devnet-fw15",
+  "public_log": "flywheel/devnet-fw15.json"
+}

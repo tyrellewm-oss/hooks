@@ -1,0 +1,1691 @@
+{
+ "cluster": "devnet",
+ "mint": "3Ut8PuPt3G21GBth84SdqjWxMAoSp5yjSfQFKM9aMmtE",
+ "decimals": 6,
+ "live": true,
+ "paused": false,
+ "pause_reason": "",
+ "state": "active",
+ "claimedSol": "0.018246457",
+ "devSol": "0.002736964",
+ "spentSol": "0.012500000",
+ "reserveSol": "0.003009493",
+ "burnedTokens": "2272461.657745",
+ "supplyTokens": "997727538.342255",
+ "pctOfSupply": "0.2272",
+ "totals_raw": {
+  "claimed_lamports": "18246457",
+  "dev_lamports": "2736964",
+  "spent_lamports": "12500000",
+  "burned_raw": "2272461657745",
+  "gas_lamports": "450000",
+  "rent_refund_lamports": "0",
+  "pending_lamports": "3009493",
+  "unsplit_lamports": "0",
+  "unburned_raw": "0"
+ },
+ "burns": [
+  {
+   "at": "2026-10-04T00:16:25.000Z",
+   "tokens": "191561.928674",
+   "sol": "0.001000000",
+   "sig": "2FyEp7JQwYjRCdSU3joky8xePPWKYHWLnghfqUePAFs1VU5Vt7dTd4qVuR6XxkPSKxfSHwo4bD5aibwi6jU3wrCv",
+   "run_id": "devnet-2026-10-04T00:15:00Z"
+  },
+  {
+   "at": "2026-10-04T00:20:03.000Z",
+   "tokens": "191194.526636",
+   "sol": "0.001000000",
+   "sig": "5UonKsCjXqwujG3AXpeE6EYUaFjSXYfH7QT984GqXfthuNsVj12jdx7LqtnDFqTpv3ksQWi9A2iMaLSXLVkuefKu",
+   "run_id": "devnet-2026-10-04T00:19:00Z"
+  },
+  {
+   "at": "2026-10-04T00:21:51.000Z",
+   "tokens": "190820.726770",
+   "sol": "0.001000000",
+   "sig": "2tzdmXcWtroNRSoVUrSNEH3F5z5Uow7eYSoht5TSCyWsSTJX4zynEqzdy7MZimQBeoBpEKVqnGSVvoG7jNNErPzk",
+   "run_id": "devnet-2026-10-04T00:21:00Z"
+  },
+  {
+   "at": "2026-10-04T00:23:03.000Z",
+   "tokens": "190448.212782",
+   "sol": "0.001000000",
+   "sig": "4ibyGqb1EXMDoC5xJ3DQKbTayWyEGEH9ruaxoE6vyRnRCEXMwF2YTwGEeUm2guqyj59oiGcSJXLAH3cgECpaNxUo",
+   "run_id": "devnet-2026-10-04T00:22:00Z"
+  },
+  {
+   "at": "2026-10-04T00:24:53.000Z",
+   "tokens": "190076.788545",
+   "sol": "0.001000000",
+   "sig": "51uF4871eAiJG35Stc7mvocUwJUXorGb1orfk6juF5NGb8ZVWmgMGb7Bm1xGmiurJAMZ8yCay8VJrHZThoYPZwrJ",
+   "run_id": "devnet-2026-10-04T00:24:00Z"
+  },
+  {
+   "at": "2026-10-04T00:26:55.000Z",
+   "tokens": "189706.449813",
+   "sol": "0.001000000",
+   "sig": "Wm7QCQczLTVSk27LSxeyG8fo8kDcg7fx3RbhiVGa1tErJXiotX7WGDLk5mW7NFCnK1JvaFg4GAkunXiHJUDwGRr",
+   "run_id": "devnet-2026-10-04T00:26:00Z"
+  },
+  {
+   "at": "2026-10-04T00:28:51.000Z",
+   "tokens": "189337.192359",
+   "sol": "0.001000000",
+   "sig": "3aR4YSHqGT4tDGRE8sKyRaz2bGYojvdwEMCbL45beJ1oDsiaE5DF7Es7bhuhWToifa6eYh47pRb6562CCiRAo8M8",
+   "run_id": "devnet-2026-10-04T00:28:00Z"
+  },
+  {
+   "at": "2026-10-04T00:32:09.000Z",
+   "tokens": "94530.366662",
+   "sol": "0.000500000",
+   "sig": "5CfsGqZSvzcxLhDNY9scYefygDgN29Vrd9dBjRN1E2jEa7gAWmVYQM23fpYjqUBoeQiBpuZd4irPVwLSmQTBpcr4",
+   "run_id": "devnet-2026-10-04T00:31:00Z"
+  },
+  {
+   "at": "2026-10-04T00:33:34.000Z",
+   "tokens": "156731.633630",
+   "sol": "0.001000000",
+   "sig": "4d17AezzutY4gCZDrLhLdA1mGKVVAzXw3CnnyuX42co1Z9mRNsgVYsNCTYxaHJ4Cg1YaQxgHt5yeyq6K47qT7AUM",
+   "run_id": "devnet-2026-10-04T00:33:00Z"
+  },
+  {
+   "at": "2026-10-04T00:34:33.000Z",
+   "tokens": "156512.225775",
+   "sol": "0.001000000",
+   "sig": "3s9vj7VTXVvHMDJrNfzf8wKxY1mCqoXufRqyN5j7vMz2x3EpsJpYb68GgakKXVSopbhfDwwQwWGoy13xGkbEGwbH",
+   "run_id": "devnet-2026-10-04T00:34:00Z"
+  },
+  {
+   "at": "2026-10-04T00:35:34.000Z",
+   "tokens": "156250.362762",
+   "sol": "0.001000000",
+   "sig": "2QK2iarJ2Tu72qLD86WGUxt4fkS1b22rRtbz1tQLZUXZjZRLmcrvrHCXqVfFGMHqbmMZXwyW9GbTd4QjFxKQwR8w",
+   "run_id": "devnet-2026-10-04T00:35:00Z"
+  },
+  {
+   "at": "2026-10-04T00:48:11.000Z",
+   "tokens": "187780.452115",
+   "sol": "0.001000000",
+   "sig": "pRHt6dv84GwctZG1rDZYRZLhA3oFxMSC2puyVD8c4QqehEBQsELkZcHzqcqouEHzuTfUw8YkQ8bqDKAC9n4Dgkd",
+   "run_id": "devnet-2026-10-04T00:47:00Z"
+  },
+  {
+   "at": "2026-10-04T01:01:56.000Z",
+   "tokens": "187510.791222",
+   "sol": "0.001000000",
+   "sig": "4ZkbBY9zENEz77pw9VQZVkeoa4Ne1Kzr2Xa3hXGvovX57EqBUBWqtLuoVew2NickaLdMHs5L8UTdST6WB2FFo33y",
+   "run_id": "devnet-2026-10-04T01:01:00Z"
+  }
+ ],
+ "runs": [
+  {
+   "run_id": "devnet-2026-10-04T00:15:00Z",
+   "started_at": "2026-10-04T00:15:34.737Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "8553996",
+     "claimed_lamports": "8553996",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "3YRAaJmxgUP3U9oQtDUFGHQgwT1wRK56tS4Z5ErJL4MkHcWi5Y25rxU3YC5DpsMKHAr5aKugnSXCE5orWJMuC3CF",
+     "claimable_after": "0"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "39999",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (39999 < 1000000)"
+    }
+   ],
+   "dev_lamports": "1283099",
+   "dev_sig": "TEDsKa7ZvUrzoAcqNq2fEMovA3mk5u5i58iB1w17VajMM32qLq9qrUdSe7hQYSdVC5KMKu7EUuVa9XaYq2y8qM7",
+   "buyback_lamports": "7270897",
+   "carryover_lamports": "6270897",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "40000",
+   "txs": [
+    "3YRAaJmxgUP3U9oQtDUFGHQgwT1wRK56tS4Z5ErJL4MkHcWi5Y25rxU3YC5DpsMKHAr5aKugnSXCE5orWJMuC3CF",
+    "TEDsKa7ZvUrzoAcqNq2fEMovA3mk5u5i58iB1w17VajMM32qLq9qrUdSe7hQYSdVC5KMKu7EUuVa9XaYq2y8qM7",
+    "2bLGspWF6oEwtjVgAw6GUcGfJzp5g6XiG1pLP42QU8oPMfS43rk54GQwH2WVDmahGZQ72s5SfzMM9ZX17Q4hVuAv",
+    "2FyEp7JQwYjRCdSU3joky8xePPWKYHWLnghfqUePAFs1VU5Vt7dTd4qVuR6XxkPSKxfSHwo4bD5aibwi6jU3wrCv"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "189646309387",
+    "out_raw": "191561928674",
+    "quote_out_raw": "191561928674",
+    "spot_out_raw": "192237533930",
+    "slippage_bps": 100,
+    "price_impact_bps": 36,
+    "spot_deviation_bps": 35,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "2bLGspWF6oEwtjVgAw6GUcGfJzp5g6XiG1pLP42QU8oPMfS43rk54GQwH2WVDmahGZQ72s5SfzMM9ZX17Q4hVuAv",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "191561928674",
+    "tx_supply_change_raw": "-191561928674",
+    "token_delta_raw": "-191561928674",
+    "supply_before": "1000000000000000",
+    "supply_after": "999808438071326",
+    "verified": true,
+    "sig": "2FyEp7JQwYjRCdSU3joky8xePPWKYHWLnghfqUePAFs1VU5Vt7dTd4qVuR6XxkPSKxfSHwo4bD5aibwi6jU3wrCv"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "6270897",
+    "expected_treasury_wsol_raw": "6270897",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "1283099",
+    "expected_dev_wsol_raw": "1283099",
+    "treasury_native_lamports": "0",
+    "supply_raw": "999808438071326",
+    "supply_drop_since_first_run": "191561928674",
+    "burned_raw_total": "191561928674",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:16:35.176Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:19:00Z",
+   "started_at": "2026-10-04T00:19:12.458Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "1360186",
+     "claimed_lamports": "1360186",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "5MkUFKrDVMEv85pLouLuDmxpGv8D8fENwGQTXXJwGseE9vnBA8j9zJDH8BiUgrJYogT557UNJuaosXFUZNkyy373",
+     "claimable_after": "0"
+    }
+   ],
+   "dev_lamports": "204027",
+   "dev_sig": "5cFXMhXQbkaXTdNBm74Le84Ts24uG71643gh8SxM2fPuLsP76Fa2cvzNPbEcZ45LjkCbJL81P2N61VRNe2AgXqpe",
+   "buyback_lamports": "1156159",
+   "carryover_lamports": "6427056",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "40000",
+   "txs": [
+    "5MkUFKrDVMEv85pLouLuDmxpGv8D8fENwGQTXXJwGseE9vnBA8j9zJDH8BiUgrJYogT557UNJuaosXFUZNkyy373",
+    "5cFXMhXQbkaXTdNBm74Le84Ts24uG71643gh8SxM2fPuLsP76Fa2cvzNPbEcZ45LjkCbJL81P2N61VRNe2AgXqpe",
+    "2TiHujygn6vtK1sK42fQfxH4ibZT6y8noPFa98BRjGf1mUYFca1e1VMpPzBo8SZ7H7vUJZpAcn6qUiXPV7295hAQ",
+    "5UonKsCjXqwujG3AXpeE6EYUaFjSXYfH7QT984GqXfthuNsVj12jdx7LqtnDFqTpv3ksQWi9A2iMaLSXLVkuefKu"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "189282581369",
+    "out_raw": "191194526636",
+    "quote_out_raw": "191194526636",
+    "spot_out_raw": "191861350134",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "2TiHujygn6vtK1sK42fQfxH4ibZT6y8noPFa98BRjGf1mUYFca1e1VMpPzBo8SZ7H7vUJZpAcn6qUiXPV7295hAQ",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "191194526636",
+    "tx_supply_change_raw": "-191194526636",
+    "token_delta_raw": "-191194526636",
+    "supply_before": "999808438071326",
+    "supply_after": "999617243544690",
+    "verified": true,
+    "sig": "5UonKsCjXqwujG3AXpeE6EYUaFjSXYfH7QT984GqXfthuNsVj12jdx7LqtnDFqTpv3ksQWi9A2iMaLSXLVkuefKu"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "6427056",
+    "expected_treasury_wsol_raw": "6427056",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "1487126",
+    "expected_dev_wsol_raw": "1487126",
+    "treasury_native_lamports": "0",
+    "supply_raw": "999617243544690",
+    "supply_drop_since_first_run": "382756455310",
+    "burned_raw_total": "382756455310",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:20:12.858Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:21:00Z",
+   "started_at": "2026-10-04T00:21:01.529Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "1320155",
+     "claimed_lamports": "1320155",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "NRiB8pSGVNKzqoij1UzF6NE31FAgXEk8yLojzQDBF5JcBfByogxUgRyoCZ9tbZhQendfsVa5TqFQX8Fn8ft3k35",
+     "claimable_after": "0"
+    }
+   ],
+   "dev_lamports": "198023",
+   "dev_sig": "4pWRyMZKtWniGHAJe1qhAKVk6PrKCm3rXhSDyvmVBpd8TC8buU2Q1AWcHhaQcP2deA2V9s8kqPmCYdpBqEDQtYsw",
+   "buyback_lamports": "1122132",
+   "carryover_lamports": "6549188",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "40000",
+   "txs": [
+    "NRiB8pSGVNKzqoij1UzF6NE31FAgXEk8yLojzQDBF5JcBfByogxUgRyoCZ9tbZhQendfsVa5TqFQX8Fn8ft3k35",
+    "4pWRyMZKtWniGHAJe1qhAKVk6PrKCm3rXhSDyvmVBpd8TC8buU2Q1AWcHhaQcP2deA2V9s8kqPmCYdpBqEDQtYsw",
+    "3HzneRJTFWFD1YcL8bshxCLoqCPEQQxCz5XQG6TkECspn1HCJrsbKJSqDoPL4ysMByeWtjUp3KGrH7AtwvxSHhb4",
+    "2tzdmXcWtroNRSoVUrSNEH3F5z5Uow7eYSoht5TSCyWsSTJX4zynEqzdy7MZimQBeoBpEKVqnGSVvoG7jNNErPzk"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "188912519502",
+    "out_raw": "190820726770",
+    "quote_out_raw": "190820726770",
+    "spot_out_raw": "191486255204",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "3HzneRJTFWFD1YcL8bshxCLoqCPEQQxCz5XQG6TkECspn1HCJrsbKJSqDoPL4ysMByeWtjUp3KGrH7AtwvxSHhb4",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "190820726770",
+    "tx_supply_change_raw": "-190820726770",
+    "token_delta_raw": "-190820726770",
+    "supply_before": "999617243544690",
+    "supply_after": "999426422817920",
+    "verified": true,
+    "sig": "2tzdmXcWtroNRSoVUrSNEH3F5z5Uow7eYSoht5TSCyWsSTJX4zynEqzdy7MZimQBeoBpEKVqnGSVvoG7jNNErPzk"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "6549188",
+    "expected_treasury_wsol_raw": "6549188",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "1685149",
+    "expected_dev_wsol_raw": "1685149",
+    "treasury_native_lamports": "0",
+    "supply_raw": "999426422817920",
+    "supply_drop_since_first_run": "573577182080",
+    "burned_raw_total": "573577182080",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:21:59.902Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:22:00Z",
+   "started_at": "2026-10-04T00:22:11.615Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "1320166",
+     "claimed_lamports": "1320166",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "4yXjSKtW3ht6NoM7vAfWravK8RJgrWUoeiaEeHqAjHXXoQsWyunTsXQMP1tkj6fQ1bGf7rKBkwMkVRtJKeH2RCZr",
+     "claimable_after": "0"
+    }
+   ],
+   "dev_lamports": "198024",
+   "dev_sig": "5mdA3ek7nTnivz1qW24Tpv1DK3J3UUZrdHDEdAdvBu8BcNpqNQTaN1YjKXyS5HoLMepE7dTvS9xn3znnNbHpcB6T",
+   "buyback_lamports": "1122142",
+   "carryover_lamports": "6671330",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "40000",
+   "txs": [
+    "4yXjSKtW3ht6NoM7vAfWravK8RJgrWUoeiaEeHqAjHXXoQsWyunTsXQMP1tkj6fQ1bGf7rKBkwMkVRtJKeH2RCZr",
+    "5mdA3ek7nTnivz1qW24Tpv1DK3J3UUZrdHDEdAdvBu8BcNpqNQTaN1YjKXyS5HoLMepE7dTvS9xn3znnNbHpcB6T",
+    "5uBZtRbaNipMvM47t1VZ4kw2SaAzJWrNX9APpvwQezti8RcotX4KQhinhnU3DR6WinHtu3LU4gi1ELTNsLkZcqAb",
+    "4ibyGqb1EXMDoC5xJ3DQKbTayWyEGEH9ruaxoE6vyRnRCEXMwF2YTwGEeUm2guqyj59oiGcSJXLAH3cgECpaNxUo"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "188543730654",
+    "out_raw": "190448212782",
+    "quote_out_raw": "190448212782",
+    "spot_out_raw": "191112259557",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "5uBZtRbaNipMvM47t1VZ4kw2SaAzJWrNX9APpvwQezti8RcotX4KQhinhnU3DR6WinHtu3LU4gi1ELTNsLkZcqAb",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "190448212782",
+    "tx_supply_change_raw": "-190448212782",
+    "token_delta_raw": "-190448212782",
+    "supply_before": "999426422817920",
+    "supply_after": "999235974605138",
+    "verified": true,
+    "sig": "4ibyGqb1EXMDoC5xJ3DQKbTayWyEGEH9ruaxoE6vyRnRCEXMwF2YTwGEeUm2guqyj59oiGcSJXLAH3cgECpaNxUo"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "6671330",
+    "expected_treasury_wsol_raw": "6671330",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "1883173",
+    "expected_dev_wsol_raw": "1883173",
+    "treasury_native_lamports": "0",
+    "supply_raw": "999235974605138",
+    "supply_drop_since_first_run": "764025394862",
+    "burned_raw_total": "764025394862",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:23:13.898Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:24:00Z",
+   "started_at": "2026-10-04T00:24:01.518Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "1320169",
+     "claimed_lamports": "1320169",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "3Kyr8qQJ7iHWPHW6sDALTsPvy9k1XozLyXxee8Gb98bzqGJVkbX8NRP6RXmHErMsKMhsTLYSi9ooGcbNw1p4gDHD",
+     "claimable_after": "0"
+    }
+   ],
+   "dev_lamports": "198025",
+   "dev_sig": "4wjnqMgnEPMqo71TGKNwRnRrXpimn1MxZdLCD6yBfeaRhoxVzcyCwthf7oKF9TXWePmYfAnUvd2QBj1HemZ5y5JY",
+   "buyback_lamports": "1122144",
+   "carryover_lamports": "6793474",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "40000",
+   "txs": [
+    "3Kyr8qQJ7iHWPHW6sDALTsPvy9k1XozLyXxee8Gb98bzqGJVkbX8NRP6RXmHErMsKMhsTLYSi9ooGcbNw1p4gDHD",
+    "4wjnqMgnEPMqo71TGKNwRnRrXpimn1MxZdLCD6yBfeaRhoxVzcyCwthf7oKF9TXWePmYfAnUvd2QBj1HemZ5y5JY",
+    "2r7zQtG6k64FAhRtG6VEEXs31YJQYCp1BCMy4WgSMS3WXsmcvXDrRzBCHEZLGiQaACK1mbjDAbvPo1xYKeiUR14A",
+    "51uF4871eAiJG35Stc7mvocUwJUXorGb1orfk6juF5NGb8ZVWmgMGb7Bm1xGmiurJAMZ8yCay8VJrHZThoYPZwrJ"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "188176020659",
+    "out_raw": "190076788545",
+    "quote_out_raw": "190076788545",
+    "spot_out_raw": "190739358529",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "2r7zQtG6k64FAhRtG6VEEXs31YJQYCp1BCMy4WgSMS3WXsmcvXDrRzBCHEZLGiQaACK1mbjDAbvPo1xYKeiUR14A",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "190076788545",
+    "tx_supply_change_raw": "-190076788545",
+    "token_delta_raw": "-190076788545",
+    "supply_before": "999235974605138",
+    "supply_after": "999045897816593",
+    "verified": true,
+    "sig": "51uF4871eAiJG35Stc7mvocUwJUXorGb1orfk6juF5NGb8ZVWmgMGb7Bm1xGmiurJAMZ8yCay8VJrHZThoYPZwrJ"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "6793474",
+    "expected_treasury_wsol_raw": "6793474",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "2081198",
+    "expected_dev_wsol_raw": "2081198",
+    "treasury_native_lamports": "0",
+    "supply_raw": "999045897816593",
+    "supply_drop_since_first_run": "954102183407",
+    "burned_raw_total": "954102183407",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:25:00.563Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:26:00Z",
+   "started_at": "2026-10-04T00:26:01.531Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "1320170",
+     "claimed_lamports": "1320170",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "4xx6dKRo4eRiM5G6PoonU6q6CdWZrYFTyshB9cxtfcyJrSojTV3yZVDtc1ygJnZX4FB6SE2usS917q3VZf4gENFE",
+     "claimable_after": "0"
+    }
+   ],
+   "dev_lamports": "198025",
+   "dev_sig": "35qDdV8fogx6uZ2bPtWZ4ivTp9rr8WHL1Fr1fDRaxrRMBDLw5oq3MTy9FwYpPeBjoAPSFbSyqC1AWAxHWS4uxgJu",
+   "buyback_lamports": "1122145",
+   "carryover_lamports": "6915619",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "40000",
+   "txs": [
+    "4xx6dKRo4eRiM5G6PoonU6q6CdWZrYFTyshB9cxtfcyJrSojTV3yZVDtc1ygJnZX4FB6SE2usS917q3VZf4gENFE",
+    "35qDdV8fogx6uZ2bPtWZ4ivTp9rr8WHL1Fr1fDRaxrRMBDLw5oq3MTy9FwYpPeBjoAPSFbSyqC1AWAxHWS4uxgJu",
+    "5YShdfexreEx5gmiohZjntX9oD1QQvaTcFyhnPvAhRMAH8nkLHgF3cMD1waRcxa3x1NuKWXvQ5Ji66PAycb13LTj",
+    "Wm7QCQczLTVSk27LSxeyG8fo8kDcg7fx3RbhiVGa1tErJXiotX7WGDLk5mW7NFCnK1JvaFg4GAkunXiHJUDwGRr"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "187809385314",
+    "out_raw": "189706449813",
+    "quote_out_raw": "189706449813",
+    "spot_out_raw": "190367547852",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "5YShdfexreEx5gmiohZjntX9oD1QQvaTcFyhnPvAhRMAH8nkLHgF3cMD1waRcxa3x1NuKWXvQ5Ji66PAycb13LTj",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "189706449813",
+    "tx_supply_change_raw": "-189706449813",
+    "token_delta_raw": "-189706449813",
+    "supply_before": "999045897816593",
+    "supply_after": "998856191366780",
+    "verified": true,
+    "sig": "Wm7QCQczLTVSk27LSxeyG8fo8kDcg7fx3RbhiVGa1tErJXiotX7WGDLk5mW7NFCnK1JvaFg4GAkunXiHJUDwGRr"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "6915619",
+    "expected_treasury_wsol_raw": "6915619",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "2279223",
+    "expected_dev_wsol_raw": "2279223",
+    "treasury_native_lamports": "0",
+    "supply_raw": "998856191366780",
+    "supply_drop_since_first_run": "1143808633220",
+    "burned_raw_total": "1143808633220",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:27:04.357Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:28:00Z",
+   "started_at": "2026-10-04T00:28:01.543Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "1320170",
+     "claimed_lamports": "1320170",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "2mDeMeRDQQFAGFEkQgkiUeEXuf9JytBmipK32vwG4oyhW1r9sQTGUwsQ3rnGGnsJtsdYwyeZyUuhzjD3B9RbGaub",
+     "claimable_after": "0"
+    }
+   ],
+   "dev_lamports": "198025",
+   "dev_sig": "2nsXfZqXNbkdBRKVTsyUcZX1ax3E6kwPSNrvs5GjnMFqoSYtJeafKcrDB3PbJXN46KKU15QwtZztwUdijpF7CJ19",
+   "buyback_lamports": "1122145",
+   "carryover_lamports": "7037764",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "40000",
+   "txs": [
+    "2mDeMeRDQQFAGFEkQgkiUeEXuf9JytBmipK32vwG4oyhW1r9sQTGUwsQ3rnGGnsJtsdYwyeZyUuhzjD3B9RbGaub",
+    "2nsXfZqXNbkdBRKVTsyUcZX1ax3E6kwPSNrvs5GjnMFqoSYtJeafKcrDB3PbJXN46KKU15QwtZztwUdijpF7CJ19",
+    "5AwNzwu4oTENhiritPHpMVedBU3MdQYdUwwBPX8AwBJVzS996Qr39JxGHrBBjcA6i3VwVwgGTPSzQ6KpesscvqxY",
+    "3aR4YSHqGT4tDGRE8sKyRaz2bGYojvdwEMCbL45beJ1oDsiaE5DF7Es7bhuhWToifa6eYh47pRb6562CCiRAo8M8"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "187443820435",
+    "out_raw": "189337192359",
+    "quote_out_raw": "189337192359",
+    "spot_out_raw": "189996823279",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "5AwNzwu4oTENhiritPHpMVedBU3MdQYdUwwBPX8AwBJVzS996Qr39JxGHrBBjcA6i3VwVwgGTPSzQ6KpesscvqxY",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "189337192359",
+    "tx_supply_change_raw": "-189337192359",
+    "token_delta_raw": "-189337192359",
+    "supply_before": "998856191366780",
+    "supply_after": "998666854174421",
+    "verified": true,
+    "sig": "3aR4YSHqGT4tDGRE8sKyRaz2bGYojvdwEMCbL45beJ1oDsiaE5DF7Es7bhuhWToifa6eYh47pRb6562CCiRAo8M8"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "7037764",
+    "expected_treasury_wsol_raw": "7037764",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "2477248",
+    "expected_dev_wsol_raw": "2477248",
+    "treasury_native_lamports": "0",
+    "supply_raw": "998666854174421",
+    "supply_drop_since_first_run": "1333145825579",
+    "burned_raw_total": "1333145825579",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:29:00.727Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:31:00Z",
+   "started_at": "2026-10-04T00:31:31.015Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "2000",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (2000 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "6537764",
+   "carryover_reason": "max_cap+impact_halving",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "20000",
+   "txs": [
+    "2WLwGF6oKaebYPXTASi8Uat5J29p2UB6Pwvb7MaS5sBASyKdR7viC61gzKvpTV5vMJWvQhKU3TA47AFgkKgezZXW",
+    "5CfsGqZSvzcxLhDNY9scYefygDgN29Vrd9dBjRN1E2jEa7gAWmVYQM23fpYjqUBoeQiBpuZd4irPVwLSmQTBpcr4"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "500000",
+    "min_out_raw": "93585062995",
+    "out_raw": "94530366662",
+    "quote_out_raw": "94530366662",
+    "spot_out_raw": "94813590292",
+    "slippage_bps": 100,
+    "price_impact_bps": 30,
+    "spot_deviation_bps": 29,
+    "halvings": 1,
+    "forced_fail": false,
+    "sig": "2WLwGF6oKaebYPXTASi8Uat5J29p2UB6Pwvb7MaS5sBASyKdR7viC61gzKvpTV5vMJWvQhKU3TA47AFgkKgezZXW",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "94530366662",
+    "tx_supply_change_raw": "-94530366662",
+    "token_delta_raw": "-94530366662",
+    "supply_before": "998666854174421",
+    "supply_after": "998572323807759",
+    "verified": true,
+    "sig": "5CfsGqZSvzcxLhDNY9scYefygDgN29Vrd9dBjRN1E2jEa7gAWmVYQM23fpYjqUBoeQiBpuZd4irPVwLSmQTBpcr4"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "6537764",
+    "expected_treasury_wsol_raw": "6537764",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "2477248",
+    "expected_dev_wsol_raw": "2477248",
+    "treasury_native_lamports": "0",
+    "supply_raw": "998572323807759",
+    "supply_drop_since_first_run": "1427676192241",
+    "burned_raw_total": "1427676192241",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:32:18.276Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_MAX_IMPACT_BPS=32",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:33:00Z",
+   "started_at": "2026-10-04T00:33:01.513Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority",
+    "warn_price_vs_history: implied 156731633630000 vs median 189706449813000 (> 10%)"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "203003",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (203003 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "5537764",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "20000",
+   "txs": [
+    "3yswC7azfukAuTJ5QpBF9z3iFaWSduWZoMoyFBS23hD2bnjpt1UmbNADpTcCW7TchKAQeAdkeSEJtTmaA4LGLrPc",
+    "4d17AezzutY4gCZDrLhLdA1mGKVVAzXw3CnnyuX42co1Z9mRNsgVYsNCTYxaHJ4Cg1YaQxgHt5yeyq6K47qT7AUM"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "155164317293",
+    "out_raw": "156731633630",
+    "quote_out_raw": "156731633630",
+    "spot_out_raw": "157342537919",
+    "slippage_bps": 100,
+    "price_impact_bps": 39,
+    "spot_deviation_bps": 38,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "3yswC7azfukAuTJ5QpBF9z3iFaWSduWZoMoyFBS23hD2bnjpt1UmbNADpTcCW7TchKAQeAdkeSEJtTmaA4LGLrPc",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "156731633630",
+    "tx_supply_change_raw": "-156731633630",
+    "token_delta_raw": "-156731633630",
+    "supply_before": "998572323807759",
+    "supply_after": "998415592174129",
+    "verified": true,
+    "sig": "4d17AezzutY4gCZDrLhLdA1mGKVVAzXw3CnnyuX42co1Z9mRNsgVYsNCTYxaHJ4Cg1YaQxgHt5yeyq6K47qT7AUM"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "5537764",
+    "expected_treasury_wsol_raw": "5537764",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "2477248",
+    "expected_dev_wsol_raw": "2477248",
+    "treasury_native_lamports": "0",
+    "supply_raw": "998415592174129",
+    "supply_drop_since_first_run": "1584407825871",
+    "burned_raw_total": "1584407825871",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:33:44.052Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:34:00Z",
+   "started_at": "2026-10-04T00:34:01.514Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority",
+    "warn_price_vs_history: implied 156512225775000 vs median 189337192359000 (> 10%)"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "205403",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (205403 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "4537764",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "20000",
+   "txs": [
+    "355Lb7ZdLX9Utw2C8YUA4w5MwQqDBbUhyhL1vTpL4W1HMZmRGJQxgauF3YHP7QGqxH6vTAXqWqe6VwTidRBR578u",
+    "3s9vj7VTXVvHMDJrNfzf8wKxY1mCqoXufRqyN5j7vMz2x3EpsJpYb68GgakKXVSopbhfDwwQwWGoy13xGkbEGwbH"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "154947103517",
+    "out_raw": "156512225775",
+    "quote_out_raw": "156512225775",
+    "spot_out_raw": "157064072118",
+    "slippage_bps": 100,
+    "price_impact_bps": 36,
+    "spot_deviation_bps": 35,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "355Lb7ZdLX9Utw2C8YUA4w5MwQqDBbUhyhL1vTpL4W1HMZmRGJQxgauF3YHP7QGqxH6vTAXqWqe6VwTidRBR578u",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "156512225775",
+    "tx_supply_change_raw": "-156512225775",
+    "token_delta_raw": "-156512225775",
+    "supply_before": "998415592174129",
+    "supply_after": "998259079948354",
+    "verified": true,
+    "sig": "3s9vj7VTXVvHMDJrNfzf8wKxY1mCqoXufRqyN5j7vMz2x3EpsJpYb68GgakKXVSopbhfDwwQwWGoy13xGkbEGwbH"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "4537764",
+    "expected_treasury_wsol_raw": "4537764",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "2477248",
+    "expected_dev_wsol_raw": "2477248",
+    "treasury_native_lamports": "0",
+    "supply_raw": "998259079948354",
+    "supply_drop_since_first_run": "1740920051646",
+    "burned_raw_total": "1740920051646",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:34:40.811Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:35:00Z",
+   "started_at": "2026-10-04T00:35:01.517Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority",
+    "warn_price_vs_history: implied 156250362762000 vs median 189060733324000 (> 10%)"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "207508",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (207508 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "3537764",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "20000",
+   "txs": [
+    "226QaHGWuP6Fx4WeR49PZwwKT7oQZBqKRZw2gB6pjnfvGGXGUUr5QAbqozPzveQ8tLYGxK5NXbzspqacFN3cUVPv",
+    "2QK2iarJ2Tu72qLD86WGUxt4fkS1b22rRtbz1tQLZUXZjZRLmcrvrHCXqVfFGMHqbmMZXwyW9GbTd4QjFxKQwR8w"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "154687859134",
+    "out_raw": "156250362762",
+    "quote_out_raw": "156250362762",
+    "spot_out_raw": "156786242257",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "226QaHGWuP6Fx4WeR49PZwwKT7oQZBqKRZw2gB6pjnfvGGXGUUr5QAbqozPzveQ8tLYGxK5NXbzspqacFN3cUVPv",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "156250362762",
+    "tx_supply_change_raw": "-156250362762",
+    "token_delta_raw": "-156250362762",
+    "supply_before": "998259079948354",
+    "supply_after": "998102829585592",
+    "verified": true,
+    "sig": "2QK2iarJ2Tu72qLD86WGUxt4fkS1b22rRtbz1tQLZUXZjZRLmcrvrHCXqVfFGMHqbmMZXwyW9GbTd4QjFxKQwR8w"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "3537764",
+    "expected_treasury_wsol_raw": "3537764",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "2477248",
+    "expected_dev_wsol_raw": "2477248",
+    "treasury_native_lamports": "0",
+    "supply_raw": "998102829585592",
+    "supply_drop_since_first_run": "1897170414408",
+    "burned_raw_total": "1897170414408",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:35:43.704Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:47:00Z",
+   "started_at": "2026-10-04T00:47:16.295Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority",
+    "warn_price_vs_history: implied 187780452115000 vs median 156731633630000 (> 10%)"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "410889",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (410889 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "2537764",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "20000",
+   "txs": [
+    "7WjiKP7pMXfLZe18npWJoZBdYbvf4QBJ4aiD9sTZxyXkgke9PbUSncXFiS2xw465fw7K4BDZio6jWePCzrvEDjP",
+    "pRHt6dv84GwctZG1rDZYRZLhA3oFxMSC2puyVD8c4QqehEBQsELkZcHzqcqouEHzuTfUw8YkQ8bqDKAC9n4Dgkd"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "185902647593",
+    "out_raw": "187780452115",
+    "quote_out_raw": "187780452115",
+    "spot_out_raw": "188528169387",
+    "slippage_bps": 100,
+    "price_impact_bps": 40,
+    "spot_deviation_bps": 39,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "7WjiKP7pMXfLZe18npWJoZBdYbvf4QBJ4aiD9sTZxyXkgke9PbUSncXFiS2xw465fw7K4BDZio6jWePCzrvEDjP",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "187780452115",
+    "tx_supply_change_raw": "-187780452115",
+    "token_delta_raw": "-187780452115",
+    "supply_before": "998102829585592",
+    "supply_after": "997915049133477",
+    "verified": true,
+    "sig": "pRHt6dv84GwctZG1rDZYRZLhA3oFxMSC2puyVD8c4QqehEBQsELkZcHzqcqouEHzuTfUw8YkQ8bqDKAC9n4Dgkd"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "2537764",
+    "expected_treasury_wsol_raw": "2537764",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "2477248",
+    "expected_dev_wsol_raw": "2477248",
+    "treasury_native_lamports": "0",
+    "supply_raw": "997915049133477",
+    "supply_drop_since_first_run": "2084950866523",
+    "burned_raw_total": "2084950866523",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T00:48:18.867Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:49:00Z",
+   "started_at": "2026-10-04T00:49:01.523Z",
+   "status": "failed_swap",
+   "reason": "swap landed with error {\"InstructionError\":[2,{\"Custom\":6002}]}",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority",
+    "warn_price_vs_history: implied 187510603423000 vs median 156731633630000 (> 10%)"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "413289",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (413289 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "1537764",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "10000",
+   "txs": [
+    "5YVWW2cjapR1mNE5RHT2YbFe1kyG2geYgwnauJoz5ARAoBSbHQ5Ty72kaxZ4bGnHiNQNUCbZXr5QX2f2w8X8Fu7v"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "375021206847",
+    "out_raw": "0",
+    "quote_out_raw": "187510603423",
+    "spot_out_raw": "188162984788",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": true,
+    "sig": "",
+    "status": "failed"
+   },
+   "finished_at": "2026-10-04T00:49:30.341Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60",
+    "FW_FORCE_FAIL_SWAP=1"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:50:00Z",
+   "started_at": "2026-10-04T00:50:01.526Z",
+   "status": "failed_swap",
+   "reason": "swap landed with error {\"InstructionError\":[2,{\"Custom\":6002}]}",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority",
+    "warn_price_vs_history: implied 187510603423000 vs median 156731633630000 (> 10%)"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "413289",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (413289 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "1537764",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "10000",
+   "txs": [
+    "274yhJbLYomcamqZJbbmhV4hQ8sN3eVGTp8RmFUkaEejZVrfwRJtXJNh5ntojyqGmHhb5CP861H71xJCCyCd1tvv"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "375021206847",
+    "out_raw": "0",
+    "quote_out_raw": "187510603423",
+    "spot_out_raw": "188162984788",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": true,
+    "sig": "",
+    "status": "failed"
+   },
+   "finished_at": "2026-10-04T00:50:30.939Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60",
+    "FW_FORCE_FAIL_SWAP=1"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:51:00Z",
+   "started_at": "2026-10-04T00:51:01.517Z",
+   "status": "failed_swap",
+   "reason": "swap landed with error {\"InstructionError\":[2,{\"Custom\":6002}]}",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority",
+    "warn_price_vs_history: implied 187510603423000 vs median 156731633630000 (> 10%)"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "413289",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (413289 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "1537764",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "10000",
+   "txs": [
+    "5a1dEWMw9DyNRCvhWo87cyhJN7LT9UwaGq4THgk9vCJiTEeXsVvMmTqiimNo5URb9Z9DtXBwWrxXu8utMawCLWL5"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "375021206847",
+    "out_raw": "0",
+    "quote_out_raw": "187510603423",
+    "spot_out_raw": "188162984788",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": true,
+    "sig": "",
+    "status": "failed"
+   },
+   "finished_at": "2026-10-04T00:51:29.899Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60",
+    "FW_FORCE_FAIL_SWAP=1"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:52:00Z",
+   "started_at": "2026-10-04T00:52:01.506Z",
+   "status": "paused",
+   "reason": "auto-pause: 3 consecutive failed runs (last: failed_swap)",
+   "warnings": [],
+   "claims": [],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "0",
+   "carryover_reason": "none",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "test_knobs": [
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:53:00Z",
+   "started_at": "2026-10-04T00:53:01.514Z",
+   "status": "paused",
+   "reason": "auto-pause: 3 consecutive failed runs (last: failed_swap)",
+   "warnings": [],
+   "claims": [],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "0",
+   "carryover_reason": "none",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "test_knobs": [
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:54:00Z",
+   "started_at": "2026-10-04T00:54:01.562Z",
+   "status": "paused",
+   "reason": "auto-pause: 3 consecutive failed runs (last: failed_swap)",
+   "warnings": [],
+   "claims": [],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "0",
+   "carryover_reason": "none",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "test_knobs": [
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:55:00Z",
+   "started_at": "2026-10-04T00:55:07.104Z",
+   "status": "failed_rpc",
+   "reason": "failed to get info about account 3Ut8PuPt3G21GBth84SdqjWxMAoSp5yjSfQFKM9aMmtE: TypeError: fetch failed",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "0",
+   "carryover_reason": "none",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "finished_at": "2026-10-04T00:55:07.109Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:56:00Z",
+   "started_at": "2026-10-04T00:56:06.719Z",
+   "status": "failed_price",
+   "reason": "quote 187510603423 is 1928 bps from spot 232299981220 (> 300)",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "413289",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (413289 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "1537764",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "0",
+    "out_raw": "0",
+    "quote_out_raw": "187510603423",
+    "spot_out_raw": "232299981220",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 1928,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "",
+    "status": "planned"
+   },
+   "finished_at": "2026-10-04T00:56:32.055Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:57:00Z",
+   "started_at": "2026-10-04T00:57:09.242Z",
+   "status": "failed_log",
+   "reason": "log write failed before any tx: EEXIST: file already exists, mkdir '<path>'",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "0",
+   "carryover_reason": "none",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "finished_at": "2026-10-04T00:57:09.247Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60",
+    "FW_PUBLIC_LOG=<path>"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:58:00Z",
+   "started_at": "2026-10-04T00:58:08.324Z",
+   "status": "failed_mismatch_pool",
+   "reason": "route pool 6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK is not a DAMM v2 pool",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority"
+   ],
+   "claims": [],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "0",
+   "carryover_reason": "none",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "finished_at": "2026-10-04T00:58:12.078Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60",
+    "FW_ROUTE_POOL=6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T00:59:00Z",
+   "started_at": "2026-10-04T00:59:07.010Z",
+   "status": "paused",
+   "reason": "PAUSE file",
+   "warnings": [],
+   "claims": [],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "0",
+   "carryover_reason": "none",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T01:00:00Z",
+   "started_at": "2026-10-04T01:00:07.022Z",
+   "status": "paused",
+   "reason": "config/env flag",
+   "warnings": [],
+   "claims": [],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "0",
+   "carryover_reason": "none",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60",
+    "FW_PAUSED=1"
+   ]
+  },
+  {
+   "run_id": "devnet-2026-10-04T01:01:00Z",
+   "started_at": "2026-10-04T01:01:07.124Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 9DVu… is the hook lift authority",
+    "warn_price_vs_history: implied 187510791222000 vs median 156731633630000 (> 10%)"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+     "claimable_before": "1731445",
+     "claimed_lamports": "1731445",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "2XXQ2KLy6xKpnt2zyHwgQmo8RStnyzfN4hiJ9boE6cPgaBGwrZY5A5xzd3p3ymu97q8UV4br4QNr8jXvHSf5aw5V",
+     "claimable_after": "0"
+    }
+   ],
+   "dev_lamports": "259716",
+   "dev_sig": "2fXWu8zTzDreSiBShzSTYXLBkEpi3R4YV92DrmEnFjVnrvgAv1RT8YZz7YpxmdVjgQmJDMieT99S7yALHxJ4hs67",
+   "buyback_lamports": "1471729",
+   "carryover_lamports": "3009493",
+   "carryover_reason": "max_cap",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "40000",
+   "txs": [
+    "2XXQ2KLy6xKpnt2zyHwgQmo8RStnyzfN4hiJ9boE6cPgaBGwrZY5A5xzd3p3ymu97q8UV4br4QNr8jXvHSf5aw5V",
+    "2fXWu8zTzDreSiBShzSTYXLBkEpi3R4YV92DrmEnFjVnrvgAv1RT8YZz7YpxmdVjgQmJDMieT99S7yALHxJ4hs67",
+    "4yoXagUi7EMzdc7e7nSqrguSgNadumYkwiHdnHNV8VwMzu7xrWHVEQwuAEoVsMDqoy59TkUbyFG3FrR1c4uoUvk3",
+    "4ZkbBY9zENEz77pw9VQZVkeoa4Ne1Kzr2Xa3hXGvovX57EqBUBWqtLuoVew2NickaLdMHs5L8UTdST6WB2FFo33y"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+    "in_lamports": "1000000",
+    "min_out_raw": "185635683309",
+    "out_raw": "187510791222",
+    "quote_out_raw": "187510791222",
+    "spot_out_raw": "188162984788",
+    "slippage_bps": 100,
+    "price_impact_bps": 35,
+    "spot_deviation_bps": 34,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "4yoXagUi7EMzdc7e7nSqrguSgNadumYkwiHdnHNV8VwMzu7xrWHVEQwuAEoVsMDqoy59TkUbyFG3FrR1c4uoUvk3",
+    "status": "confirmed"
+   },
+   "burn": {
+    "burned_raw": "187510791222",
+    "tx_supply_change_raw": "-187510791222",
+    "token_delta_raw": "-187510791222",
+    "supply_before": "997915049133477",
+    "supply_after": "997727538342255",
+    "verified": true,
+    "sig": "4ZkbBY9zENEz77pw9VQZVkeoa4Ne1Kzr2Xa3hXGvovX57EqBUBWqtLuoVew2NickaLdMHs5L8UTdST6WB2FFo33y"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "3009493",
+    "expected_treasury_wsol_raw": "3009493",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "2736964",
+    "expected_dev_wsol_raw": "2736964",
+    "treasury_native_lamports": "0",
+    "supply_raw": "997727538342255",
+    "supply_drop_since_first_run": "2272461657745",
+    "burned_raw_total": "2272461657745",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T01:02:05.928Z",
+   "test_knobs": [
+    "FW_MAX_SWAP_LAMPORTS=1000000",
+    "FW_CADENCE_SECONDS=60"
+   ]
+  }
+ ],
+ "route_pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+ "main_dbc_pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK"
+}

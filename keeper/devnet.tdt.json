@@ -1,0 +1,30 @@
+{
+  "name": "devnet-tdt",
+  "cluster": "devnet",
+  "main_mint": "3Ut8PuPt3G21GBth84SdqjWxMAoSp5yjSfQFKM9aMmtE",
+  "main_decimals": 6,
+  "main_token_program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "main_dbc_pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+  "route": "damm_v2_direct",
+  "route_pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+  "sources": [
+    { "kind": "dbc", "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK", "config": "5MRwHkx7nmEFWUHjBjb8Y4XLFPvmtr9nxZ6beHt3Ja1h", "base_mint": "3Ut8PuPt3G21GBth84SdqjWxMAoSp5yjSfQFKM9aMmtE" },
+    { "kind": "damm_v2", "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr", "position": "Hres84VYhpqTnAiZToLx7g4tmTvZRZ7uY9yAW6bBQApm", "position_nft_mint": "FuCnASAbesuTS5gyKvz8yPCYQ3j6g31MUiNx1p6nfJFD" }
+  ],
+  "keys": { "claim_signer": "deployer", "treasury": "fw_treasury", "dev": "fw_dev", "gas": "fw_gas" },
+  "pinned_pubkeys": { "claim_signer": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu", "treasury": "8NF4657Gtsmxj9skWsQP15jX62hTV4HfiaW1yXuSAvbL", "dev": "74KbNAK9d3GAKSMKqA7fVzkLGcTcJStS9T3jiKmDs4nn", "gas": "D7ZmAZ9dpVBVFkR268dMnu1uPVKFUF9ZFJDZdXzdCbGt" },
+  "hook_program": "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz",
+  "hook_upgrade_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
+  "hook_lift_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
+  "max_swap_lamports_per_run": "500000000",
+  "max_slippage_bps": 100,
+  "max_price_impact_bps": 200,
+  "max_halvings": 3,
+  "price_band_pct": 10,
+  "min_claim_lamports": "1000000",
+  "cadence_seconds": 300,
+  "auto_pause_after_failures": 3,
+  "gas_min_lamports": "10000000",
+  "state_dir": ".flywheel/devnet-tdt",
+  "public_log": "flywheel/devnet-tdt.json"
+}
