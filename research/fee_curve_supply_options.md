@@ -107,3 +107,9 @@ None of these options changes the page rules:
 - Aggressive uses `percentageSupplyOnMigration` 30, available since PR 9. Its real-SDK check is in PR 9's `supply_option` tests; `validate_fee_options.ts` builds Aggressive through its own copy of the builder.
 - The real per-buyer fee impact on a DBC curve. Measure on devnet with 2 swaps (AC-19).
 - Mainnet curve size and worst-case loss: still a King sign-off under QA L8, not decided here.
+
+## Devnet finding: the pool fee after migration is not flat (2026-10-04)
+
+QA's on-chain check of the devnet launch ([DAMM v2 pool](https://explorer.solana.com/address/BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr?cluster=devnet)) found that `FixedBps25` gives a base fee of 0.25% with **dynamic fee on**, capped at about 0.30% total. Setting `migratedDynamicFee=0` did not turn it off. So "FixedBps25 → 0.25%" in the tables above is the **base** fee, not a flat fee. The page copy (v0f) says "base {POOL_FEE}, can rise when volatility is high".
+
+Flat versus dynamic is part of King's pick. Engineer checked this against DBC SDK 1.5.13 and the DBC program source. A truly flat fee needs `migrationFeeOption` `Customizable` (6) with `migratedPoolFee { poolFeeBps: 25, dynamicFee: 0, collectFeeMode: 0 }` (`poolFeeBps` must be 10–1000), and migration goes through the Customizable DAMM v2 config. With any Fixed option, every Fixed preset has dynamic fee on, and the extra fee is capped at 20% of the base fee (0.25% base, about 0.30% max). If King picks flat, the copy goes back to "flat {POOL_FEE}", and a fresh devnet launch verifies it.
