@@ -14,7 +14,7 @@ import { Store, durableWrite, ser } from './store.js';
 import { keeperStartChecks, KeyRuleRefusal } from '../keyrules.js';
 import { assertClusterAccounts, ClusterCheckRefusal } from '../cluster_check.js';
 import { classifyCluster } from '../cluster.js';
-import { readHookAuthorities } from '../hook.js';
+import { readHookAuthorities, resolveHookProgramId, type HookProgramResolution } from '../hook.js';
 import { assertMintHook, graduationPhase, mintHookAuthorityFor, MintHookRefusal } from '../mint_hook.js';
 
 export const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
@@ -228,13 +228,18 @@ export class Keeper {
     const mainPool: any = await dbcPool(this.dbc, new PublicKey(c.main_dbc_pool));
     if (!mainPool) throw new FailClosed('mismatch_pool', 'main DBC pool not found', true);
     if (!mainPool.baseMint.equals(this.mint)) throw new FailClosed('mismatch_pool', 'main DBC pool base mint != main mint', true);
-    // blocker #7 (monitoring): the mint's TransferHook must match the graduation phase. Before graduation: the configured
-    // hook program and the pinned DBC signer (never one of our keys). After graduation: both unset. Anything else, or any
+    // blocker #7 (monitoring): the mint's TransferHook must match the graduation phase. Before graduation: the
+    // pinned hook program (genesis resolver; cfg.hook_program must equal it) and the pinned DBC signer (a match on one of our keys is named in the error). After graduation: both unset. Anything else, or any
     // read failure, fails closed and auto-pauses.
     try {
       const forbidden: Record<string, string | null> = { hook_upgrade_authority: c.hook_upgrade_authority, hook_lift_authority: c.hook_lift_authority, dev_payout: c.dev_payout };
       for (const [role, kp] of Object.entries(this.keys)) forbidden[role] = (kp as Keypair).publicKey.toBase58();
-      await assertMintHook(this.conn, this.mint, graduationPhase(mainPool), { hookProgram: new PublicKey(c.hook_program), authority: mintHookAuthorityFor(c.cluster === 'devnet' || c.cluster === 'local' ? c.cluster : 'unknown'), forbidden });
+      // compare against the pinned resolver (genesis-based, like launch()), not against cfg.hook_program
+      let pinned: HookProgramResolution;
+      try { pinned = resolveHookProgramId(await this.conn.getGenesisHash(), (this.conn as any).rpcEndpoint); }
+      catch (e: any) { throw new MintHookRefusal(`refusing: cannot resolve the pinned hook program (${String(e?.message ?? e).slice(0, 200)})`); }
+      if (!pinned.programId.equals(new PublicKey(c.hook_program))) throw new MintHookRefusal(`refusing: configured hook_program ${c.hook_program} != pinned ${pinned.programId.toBase58()} (cluster class '${pinned.clusterClass}')`);
+      await assertMintHook(this.conn, this.mint, graduationPhase(mainPool), { hookProgram: pinned.programId, authority: mintHookAuthorityFor(pinned.clusterClass), forbidden });
     } catch (e: any) { throw e instanceof MintHookRefusal ? new FailClosed('mismatch_mint_hook', e.message, true) : e; }
     if (c.route_pool) {
       const p: any = await this.cp.fetchPoolState(new PublicKey(c.route_pool)).catch(() => null);

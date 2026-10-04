@@ -75,6 +75,6 @@ test('launch() creates keypairs only through launchKeypairsFor (no other Keypair
   const helper = src.slice(src.indexOf('export function launchKeypairsFor'), src.indexOf('export function launchKeypairsFor') + 300);
   assert.ok(helper.indexOf('assertLaunchKeygenAllowed(cls)') >= 0 && helper.indexOf('assertLaunchKeygenAllowed(cls)') < helper.indexOf('Keypair.generate('), 'the guard must run before generating');
   const launch = src.slice(src.indexOf('async launch('));
-  assert.ok(launch.indexOf('assertLaunchKeygenAllowed(gate.clusterClass)') >= 0 && launch.indexOf('assertLaunchKeygenAllowed(gate.clusterClass)') < launch.indexOf('this.hookAuthorities()'), 'launch() must check the genesis class right after the gate, before any read');
+  assert.ok(launch.indexOf('assertLaunchKeygenAllowed(gate.clusterClass)') >= 0 && launch.indexOf('assertLaunchKeygenAllowed(gate.clusterClass)') < launch.indexOf('readHookAuthorities('), 'launch() must check the genesis class right after the gate, before any read');
   assert.ok(launch.indexOf('launchKeypairsFor(gate.clusterClass)') > 0, 'launch() must pass the genesis class (not the Cluster name)');
 });

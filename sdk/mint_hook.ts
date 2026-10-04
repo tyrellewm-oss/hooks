@@ -37,16 +37,23 @@ export function mintHookAuthorityFor(cls: ClusterClass): PublicKey {
 }
 
 export interface MintTransferHook { programId: PublicKey | null; authority: PublicKey | null }
-const TRANSFER_HOOK_LEN = 64;   // OptionalNonZeroPubkey authority (32) + OptionalNonZeroPubkey program_id (32)
+const TRANSFER_HOOK_LEN = 64;
+const ACCOUNT_TYPE_OFFSET = 165;   // spl-token-2022: Account::LEN, where the account-type byte sits for extended accounts
+const ACCOUNT_TYPE_MINT = 1;       // AccountType::Mint   // OptionalNonZeroPubkey authority (32) + OptionalNonZeroPubkey program_id (32)
 const nz = (b: Buffer) => { const k = new PublicKey(b); return k.equals(PublicKey.default) ? null : k; };
 
 /** Pure decode of raw mint bytes (no I/O, no owner): the Token-2022 mint layout plus its TransferHook extension. The
  *  post-simulation account (base64 from simulateTransaction) and the getAccountInfo data both go through this.
  *  MintHookRefusal on unparseable mint data, a missing TransferHook extension, or extension data of the wrong length. */
 export function decodeMintTransferHookBytes(mint: PublicKey, data: Uint8Array, what = 'mint'): MintTransferHook {
-  let tlv: Buffer;
-  try { tlv = unpackMint(mint, { owner: TOKEN_2022_PROGRAM_ID, lamports: 0, executable: false, data: Buffer.from(data) } as any, TOKEN_2022_PROGRAM_ID).tlvData; }
+  const buf = Buffer.from(data);
+  // Token-2022 extension layout: base mint (82 B), padding to 165, then the account-type byte (1 = Mint), then the TLVs.
+  if (buf.length > ACCOUNT_TYPE_OFFSET && buf[ACCOUNT_TYPE_OFFSET] !== ACCOUNT_TYPE_MINT) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} account type ${buf[ACCOUNT_TYPE_OFFSET]} is not Mint (${ACCOUNT_TYPE_MINT})`);
+  let m: ReturnType<typeof unpackMint>;
+  try { m = unpackMint(mint, { owner: TOKEN_2022_PROGRAM_ID, lamports: 0, executable: false, data: buf } as any, TOKEN_2022_PROGRAM_ID); }
   catch (e: any) { throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} data unparseable (${String(e?.message ?? e?.name ?? e).slice(0, 120)})`); }
+  if (!m.isInitialized) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} is not initialized`);
+  const tlv = m.tlvData;
   let ext: Buffer | null;
   try { ext = getExtensionData(ExtensionType.TransferHook, tlv); }
   catch { throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} extension data unparseable`); }

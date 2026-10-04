@@ -205,8 +205,8 @@ export async function resolveQaHookProgram(c: { connection: any; url?: string },
 
 /** Blocker #7: what the mint's TransferHook must hold for this cluster. Runs the hook gate (pinned program id) and resolves
  *  the pinned DBC signer for the genesis class (MintHookRefusal when unset: mainnet/testnet/unknown, no devnet fallback). */
-export async function mintHookExpectationFor(lp: { c: any; hook: HookClient; requestedHookProgram?: PublicKey }, forbidden: Record<string, string | null | undefined> = {}): Promise<MintHookExpectation> {
-  const r = await gateHook(lp);
+export async function mintHookExpectationFor(lp: { c: any; hook: HookClient; requestedHookProgram?: PublicKey }, forbidden: Record<string, string | null | undefined> = {}, gate?: HookProgramResolution): Promise<MintHookExpectation> {
+  const r = gate ?? (await gateHook(lp));   // launch() passes its one gate result
   const authority = mintHookAuthorityFor(r.clusterClass);
   assertPinNotOurs(authority, forbidden);
   return { hookProgram: r.programId, authority, forbidden };
@@ -318,12 +318,13 @@ export class Launchpad {
     assertLaunchKeygenAllowed(gate.clusterClass);   // before any read or build: local keypair generation is devnet/local only
     // §12a preflight (FW-24): feeClaimer (= deployer here) must differ from the hook upgrade and lift authorities, and
     // upgrade != lift. Throws off devnet/local (by genesis class) before any tx is built; warns on devnet/local.
-    const auth = o.authorities ?? (await this.hookAuthorities());
+    // the gate runs once per launch(): its result is reused below (authorities read, mint hook expectation)
+    const auth = o.authorities ?? (({ upgradeAuthority, liftAuthority }) => ({ upgradeAuthority, liftAuthority }))(await readHookAuthorities(this.c.connection, gate.programId));
     for (const w of launchConfigChecks(gate.clusterClass, deployer.publicKey.toBase58(), auth)) console.warn(w);
     // blocker #7: the pinned DBC signer that will hold the new mint's TransferHook authority resolves for this genesis
     // class and is none of our keys. Refuses before any tx is built. (The program_id comparison runs on the mint itself.)
     const mintHookForbidden = { dev: deployer.publicKey.toBase58(), upgrade: auth.upgradeAuthority, lift: auth.liftAuthority, ...(o.keeperKeys ?? {}) };
-    const mintHook = await mintHookExpectationFor(this, mintHookForbidden);
+    const mintHook = await mintHookExpectationFor(this, mintHookForbidden, gate);
     const { config: configKp, mint: mintKp } = launchKeypairsFor(gate.clusterClass);
     const txs: Record<string, string> = {};
     const params = this.configParams(o);

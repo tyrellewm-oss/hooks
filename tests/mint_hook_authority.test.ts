@@ -404,3 +404,27 @@ test('decoder: one pure byte decode for both paths (getAccountInfo data and base
   assert.throws(() => decodeMintTransferHookBytes(MINT, V.truncated().data), refused(/data unparseable/));
   assert.throws(() => decodeMintTransferHookBytes(MINT, V.noExtension().data), refused(/no TransferHook extension/));
 });
+
+// ---------------- QA nits: account-type byte + isInitialized, one gate per launch(), keeper uses the pinned resolver
+test('decoder: account-type byte must be Mint (1) and the mint must be initialized (both paths)', async () => {
+  const wrongType = V.pre(); wrongType.data[165] = 2;   // AccountType::Account
+  const uninit = V.pre(); uninit.data[45] = 0;          // is_initialized
+  assert.throws(() => decodeMintTransferHookBytes(MINT, wrongType.data), refused(/account type 2 is not Mint/));
+  assert.throws(() => decodeMintTransferHookBytes(MINT, uninit.data), refused(/is not initialized/));
+  await assert.rejects(readMintTransferHook(conn({ info: wrongType }), MINT), refused(/account type 2 is not Mint/));
+  await refusedBeforeSigning(launchLp(V.pre(), undefined, { info: uninit }), /simulated mint .* is not initialized/);
+});
+test('launch(): the hook gate runs once per launch (one genesis read), its result is reused', async () => {
+  const L = launchLp(V.pre()); let genesisReads = 0;
+  const g = L.lp.c.connection.getGenesisHash; L.lp.c.connection.getGenesisHash = async () => { genesisReads++; return g(); };
+  const { r } = await launchRun(L); assert.equal((r as any).mintHookCheck, 'ok', String((r as any)?.message ?? ''));
+  assert.equal(genesisReads, 1);
+});
+test('keeper pinned checks compare against the pinned resolver, not cfg.hook_program (mismatch or unresolvable → fail closed + pause)', async () => {
+  const other = keeperThis(V.pre(), 0); (other as any).cfg.hook_program = pk().toBase58();
+  await assert.rejects(other.pinnedChecks(), (e: any) => e instanceof FailClosed && e.code === 'mismatch_mint_hook' && e.pause === true && /configured hook_program .* != pinned/.test(e.message));
+  const unres = keeperThis(V.pre(), 0); (unres as any).conn.getGenesisHash = async () => { throw new Error('503'); };
+  await assert.rejects(unres.pinnedChecks(), (e: any) => e instanceof FailClosed && e.code === 'mismatch_mint_hook' && /cannot resolve the pinned hook program/.test(e.message));
+  const testnet = keeperThis(V.pre(), 0); (testnet as any).conn.getGenesisHash = async () => '4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY';
+  await assert.rejects(testnet.pinnedChecks(), (e: any) => e instanceof FailClosed && e.code === 'mismatch_mint_hook' && /cannot resolve the pinned hook program/.test(e.message));
+});
