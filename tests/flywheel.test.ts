@@ -117,7 +117,8 @@ test('same window re-run → noop, zero RPC (FW-8 window idempotency)', async ()
 });
 test('FW-14: public log unwritable → failed_log before any RPC/tx', async () => {
   const d = mkdtempSync(join(tmpdir(), 'fwlog-')); writeFileSync(join(d, 'afile'), 'x');
-  const a = mkKeeper({ public_log: join(d, 'afile', 'fw.json') });   // parent is a file → ENOTDIR const r = await a.k.runOnce(); assert.equal(r.status, 'failed_log'); assert.deepEqual(r.txs, []);
+  const a = mkKeeper({ public_log: join(d, 'afile', 'fw.json') });   // parent is a file → ENOTDIR
+  const r = await a.k.runOnce(); assert.equal(r.status, 'failed_log'); assert.deepEqual(r.txs, []);
 });
 test('FW-22 (devnet side): force_fail_swap allowed on devnet only; test knobs refused elsewhere', () => {
   const k = keys(); const shared = k.claim.publicKey.toBase58();
