@@ -1,6 +1,7 @@
 // launch() generates the DBC config and mint keypairs locally only on devnet/local genesis. Elsewhere (mainnet, testnet,
 // unknown) it refuses before generating anything; the mint keypair then belongs to the signing side.
 import { test } from 'node:test';
+import { launchCall } from './launch_key.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Keypair, PublicKey } from '@solana/web3.js';
@@ -48,7 +49,7 @@ test('launch(): devnet genesis and a local validator reach keypair generation (2
       };
       const auth = { upgradeAuthority: Keypair.generate().publicKey.toBase58(), liftAuthority: Keypair.generate().publicKey.toBase58() };
       const deployer = Keypair.generate();
-      const { r, generates } = await countGenerates(() => Launchpad.prototype.launch.call(lp, deployer, { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities: auth } as any));
+      const { r, generates } = await countGenerates(() => launchCall(lp, deployer, { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities: auth } as any));
       assert.match(String((r as any)?.message), /tx built/, cls); assert.equal(generates, 2, cls); assert.equal(built, 1, cls);
     }
   } finally { if (saved === undefined) delete process.env.HOOK_PROGRAM_ID; else process.env.HOOK_PROGRAM_ID = saved; }
@@ -63,7 +64,7 @@ test('launch(): mainnet / testnet / unknown genesis refuse with 0 generates and 
     };
     const auth = { upgradeAuthority: Keypair.generate().publicKey.toBase58(), liftAuthority: Keypair.generate().publicKey.toBase58() };
     const deployer = Keypair.generate();
-    const { r, generates } = await countGenerates(() => Launchpad.prototype.launch.call(lp, deployer, { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities: auth } as any));
+    const { r, generates } = await countGenerates(() => launchCall(lp, deployer, { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n, authorities: auth } as any));
     assert.ok(r instanceof Error && /refusing/.test(r.message), `${genesis}: expected a refusal, got ${String((r as any)?.message ?? r)}`);
     assert.equal(generates, 0, `${genesis}: 0 generates`); assert.equal(built, 0, `${genesis}: 0 builds`);
   }

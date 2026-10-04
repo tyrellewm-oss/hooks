@@ -2,6 +2,7 @@
 // == the pinned DBC signer (read from devnet TDT graduation tx 3F2PoxYi…). After graduation: both unset. Every read
 // failure refuses. Offline: fakes only, with mint data recorded from devnet (tests/fixtures/devnet_tdt_mint_hook.json).
 import { test, before, after } from 'node:test';
+import { launchCall } from './launch_key.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -218,16 +219,16 @@ async function inTmp<T>(f: () => Promise<T>): Promise<T> {
 test('launch(): the pinned signer equal to one of our keys (keeper key / dev_payout / upgrade / lift) → refused before any build', async () => {
   for (const o of [opts({ keeperKeys: { dev_payout: SIGNER } }), opts({ keeperKeys: { treasury: SIGNER } }), opts({ authorities: { upgradeAuthority: SIGNER, liftAuthority: pk().toBase58() } }), opts({ authorities: { upgradeAuthority: pk().toBase58(), liftAuthority: SIGNER } })]) {
     const { lp, n } = launchLp(V.pre());
-    await assert.rejects(Launchpad.prototype.launch.call(lp, Keypair.generate(), o), refused(/pinned mint TransferHook authority .* is our/)); assert.equal(n.built, 0);
+    await assert.rejects(launchCall(lp, Keypair.generate(), o), refused(/pinned mint TransferHook authority .* is our/)); assert.equal(n.built, 0);
   }
 });
 test('launch(): the new mint is checked right after pool creation; a wrong authority throws and the record says FAILED', async () => {
   await inTmp(async () => {
     const good = launchLp(V.pre());
-    const rec: any = await Launchpad.prototype.launch.call(good.lp, Keypair.generate(), opts());
+    const rec: any = await launchCall(good.lp, Keypair.generate(), opts());
     assert.equal(rec.mintHookCheck, 'ok'); assert.equal(good.n.built, 2);
     const bad = launchLp(V.wrongAuthority(), undefined, { info: V.pre() });   // simulation fine, chain wrong
-    await assert.rejects(Launchpad.prototype.launch.call(bad.lp, Keypair.generate(), opts()), refused(/authority .* != pinned DBC signer/));
+    await assert.rejects(launchCall(bad.lp, Keypair.generate(), opts()), refused(/authority .* != pinned DBC signer/));
     const saved = JSON.parse(readFileSync(join(dir, 'launches', 'devnet', `${bad.mint().toBase58()}.json`), 'utf8'));
     assert.match(saved.mintHookCheck, /^FAILED: refusing: mint .* \(before graduation\): TransferHook authority/);
   });
@@ -277,7 +278,7 @@ test('launch(): a matching authority alone is not enough. Wrong program_id on th
     ];
     for (const [info, pool, re] of cases) {
       const L = launchLp(info, pool, { info: V.pre() });
-      await assert.rejects(Launchpad.prototype.launch.call(L.lp, Keypair.generate(), opts()), refused(re), String(re));
+      await assert.rejects(launchCall(L.lp, Keypair.generate(), opts()), refused(re), String(re));
       assert.match(JSON.parse(readFileSync(join(dir, 'launches', 'devnet', `${L.mint().toBase58()}.json`), 'utf8')).mintHookCheck, /^FAILED: /);
     }
   });
@@ -290,7 +291,7 @@ test('pin = DBC\'s shared pool-authority PDA: derived here from the DBC program 
 });
 
 // ---------------- launch(): pre-send simulation of the exact create-pool tx (before any signature on it)
-const launchRun = (L: ReturnType<typeof launchLp>, deployer = Keypair.generate()) => countPoolSigns(() => inTmp(() => Launchpad.prototype.launch.call(L.lp, deployer, opts())));
+const launchRun = (L: ReturnType<typeof launchLp>, deployer = Keypair.generate()) => countPoolSigns(() => inTmp(() => launchCall(L.lp, deployer, opts())));
 async function refusedBeforeSigning(L: ReturnType<typeof launchLp>, re: RegExp) {
   const { r, poolSigns } = await launchRun(L);
   assert.ok(r instanceof MintHookRefusal && re.test(r.message), `expected MintHookRefusal ${re}, got ${String((r as any)?.message ?? r)}`);
@@ -346,7 +347,7 @@ test('pre-send: a tx changed after the simulation (beyond the blockhash) → ref
 test('pre-send passes but the on-chain mint after the pool tx is wrong → refused before any buy, record FAILED', async () => {
   await inTmp(async () => {
     const L = launchLp(V.wrongAuthority(), undefined, { info: V.pre() });
-    await assert.rejects(Launchpad.prototype.launch.call(L.lp, Keypair.generate(), opts()), refused(/authority .* != pinned DBC signer/));
+    await assert.rejects(launchCall(L.lp, Keypair.generate(), opts()), refused(/authority .* != pinned DBC signer/));
     const rec = JSON.parse(readFileSync(join(dir, 'launches', 'devnet', `${L.mint().toBase58()}.json`), 'utf8'));
     assert.match(rec.mintHookCheck, /^FAILED: /); assert.match(rec.mintHookSimulation, /^ok before signing/);
   });

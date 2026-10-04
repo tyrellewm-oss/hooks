@@ -54,6 +54,14 @@ test('AC-2 zero key: migrate(default) and set_launch_authority(default) refuse; 
   const forged = Buffer.concat([w.bytes().subarray(0, GLOBAL_V1_LEN), Buffer.alloc(32)]);   // written directly
   w.env.setAccountData(w.G, forged);
   for (const signer of [w.launch, w.admin]) fails(w.launchWith(signer).r, 'Unauthorized');
+  // even if the zero key could sign (signature checks off, as a stand-in for any signer bypass): refused
+  w.env.svm.withSigverify(false);
+  const mint = w.newMint().mint;
+  const ix = w.env.hook.initializeExtraAccountMetaList({ payer: w.env.payer.publicKey, authority: PublicKey.default, mint, steps: STEPS, uncappedAfter: UNCAPPED, supplyRef: SUPPLY });
+  const tx = new Transaction(); tx.recentBlockhash = w.env.svm.latestBlockhash(); tx.feePayer = w.env.payer.publicKey; tx.add(ix);
+  tx.setSigners(w.env.payer.publicKey, PublicKey.default); tx.partialSign(w.env.payer); tx.addSignature(PublicKey.default, Buffer.alloc(64));
+  const r: any = w.env.svm.sendTransaction(tx); assert.ok(r.meta, 'the zero key must not launch');
+  assert.equal(hookErrorFromLogs(r.meta().logs()), 'Unauthorized');
 });
 
 test('AC-3 migrate refuses a non-admin or the launch key (account stays 42 bytes), a non-canonical address, a wrong owner and a wrong discriminator', () => {

@@ -102,7 +102,7 @@ test('launch() without o.authorities: missing Global / wrong-owner ProgramData /
       configParams: () => { built++; return {}; },
       dbc: { partner: { createConfigWithTransferHook: async () => { built++; throw new Error('tx built'); } } },
     });
-    await assert.rejects(lp.launch(Keypair.generate(), { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n } as any), (e: any) => e instanceof AuthorityReadError, name);
+    await assert.rejects(lp.launch(Keypair.generate(), { name: 'x', symbol: 'X', steps: [], uncappedAfter: 1n } as any, Keypair.generate()), (e: any) => e instanceof AuthorityReadError, name);
     assert.equal(built, 0, name);
   }
 });
