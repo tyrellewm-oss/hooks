@@ -121,7 +121,7 @@ test('§12a on a local validator (localhost + unknown genesis) named "mainnet" �
     const deployer = Keypair.generate(); const { fake, n } = launchFake('mainnet', Keypair.generate().publicKey.toBase58(), 'http://127.0.0.1:8899');
     const { r, warns } = await quiet(() => Launchpad.prototype.launch.call(fake, deployer, sameKeyOpts(deployer, 'both')));
     await assert.rejects(r, /tx built/); assert.equal(n.built, 1);
-    assert.ok(warns.some(x => /accepted throwaway exception on local/.test(x)));
+    assert.ok(warns.some(x => /accepted throwaway exception on local/.test(x)), 'local rules warn (accepted throwaway exception on local)');
   } finally { if (prev === undefined) delete process.env.HOOK_PROGRAM_ID; else process.env.HOOK_PROGRAM_ID = prev; }
 });
 test('§12a classes: testnet and unknown refuse like mainnet (only devnet/local warn)', () => {

@@ -56,7 +56,7 @@ test('fixture: TDT before graduation = gated hook + pinned signer; after = both 
   assert.equal(pre.programId?.toBase58(), HOOK_PROGRAM_ID_DEVNET); assert.equal(pre.authority?.toBase58(), SIGNER);
   assert.deepEqual(await readMintTransferHook(conn({ info: V.post() }), MINT), { programId: null, authority: null });
   const fw = fixtureMint('fw15_pre').info.data.subarray(OFF, OFF + 64);
-  assert.ok(fw.equals(V.pre().data.subarray(OFF, OFF + 64)));
+  assert.ok(fw.equals(V.pre().data.subarray(OFF, OFF + 64)), 'FW15 TransferHook bytes equal the reconstructed TDT bytes');
   assert.doesNotMatch(JSON.stringify(FX), /secret|\[(\s*\d+\s*,){31,}/i);
 });
 test('pin: devnet/local = the Update/SetAuthority signer of graduation tx 3F2PoxYi…; mainnet/testnet/unknown unset → refuse (no devnet fallback)', () => {
@@ -65,7 +65,7 @@ test('pin: devnet/local = the Update/SetAuthority signer of graduation tx 3F2Pox
   assert.equal(MINT_HOOK_AUTHORITY_PINS.devnet, FX.graduation_tx.set_authority.authority);
   assert.equal(mintHookAuthorityFor('local').toBase58(), SIGNER);
   for (const c of ['mainnet', 'testnet', 'unknown'] as const) assert.throws(() => mintHookAuthorityFor(c), refused(new RegExp(`cluster class '${c}'`)));
-  assert.ok(Object.isFrozen(MINT_HOOK_AUTHORITY_PINS));
+  assert.ok(Object.isFrozen(MINT_HOOK_AUTHORITY_PINS), 'MINT_HOOK_AUTHORITY_PINS is frozen');
 });
 test('graduationPhase: migration_progress 0 → pre, 1..3 → post, anything else refuses', () => {
   assert.equal(graduationPhase({ migrationProgress: 0 }), 'pre');
