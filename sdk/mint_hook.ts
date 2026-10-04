@@ -40,16 +40,12 @@ export interface MintTransferHook { programId: PublicKey | null; authority: Publ
 const TRANSFER_HOOK_LEN = 64;   // OptionalNonZeroPubkey authority (32) + OptionalNonZeroPubkey program_id (32)
 const nz = (b: Buffer) => { const k = new PublicKey(b); return k.equals(PublicKey.default) ? null : k; };
 
-/** Decode the TransferHook extension from a mint account (owner + data). Used for the on-chain read and for the
- *  post-simulation account alike. MintHookRefusal on a missing account, a non-Token-2022 owner, unparseable mint data, a
- *  missing TransferHook extension, or extension data of the wrong length. */
-export function decodeMintTransferHook(mint: PublicKey, ai: { owner: PublicKey | string; data: Buffer | Uint8Array } | null | undefined, what = 'mint'): MintTransferHook {
-  if (!ai) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} not found`);
-  let owner: PublicKey;
-  try { owner = new PublicKey(ai.owner); } catch { throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} owner unreadable`); }
-  if (!owner.equals(TOKEN_2022_PROGRAM_ID)) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} owner ${owner.toBase58()} is not Token-2022`);
+/** Pure decode of raw mint bytes (no I/O, no owner): the Token-2022 mint layout plus its TransferHook extension. The
+ *  post-simulation account (base64 from simulateTransaction) and the getAccountInfo data both go through this.
+ *  MintHookRefusal on unparseable mint data, a missing TransferHook extension, or extension data of the wrong length. */
+export function decodeMintTransferHookBytes(mint: PublicKey, data: Uint8Array, what = 'mint'): MintTransferHook {
   let tlv: Buffer;
-  try { tlv = unpackMint(mint, { ...(ai as any), owner, data: Buffer.from(ai.data) }, TOKEN_2022_PROGRAM_ID).tlvData; }
+  try { tlv = unpackMint(mint, { owner: TOKEN_2022_PROGRAM_ID, lamports: 0, executable: false, data: Buffer.from(data) } as any, TOKEN_2022_PROGRAM_ID).tlvData; }
   catch (e: any) { throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} data unparseable (${String(e?.message ?? e?.name ?? e).slice(0, 120)})`); }
   let ext: Buffer | null;
   try { ext = getExtensionData(ExtensionType.TransferHook, tlv); }
@@ -57,6 +53,15 @@ export function decodeMintTransferHook(mint: PublicKey, ai: { owner: PublicKey |
   if (!ext) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} has no TransferHook extension`);
   if (ext.length !== TRANSFER_HOOK_LEN) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} TransferHook extension is ${ext.length} bytes, expected ${TRANSFER_HOOK_LEN}`);
   return { authority: nz(ext.subarray(0, 32)), programId: nz(ext.subarray(32, 64)) };
+}
+/** A mint account (owner + data), from getAccountInfo or from the simulation: MintHookRefusal on a missing account or a
+ *  non-Token-2022 owner, then the pure byte decode above. */
+export function decodeMintTransferHook(mint: PublicKey, ai: { owner: PublicKey | string; data: Buffer | Uint8Array } | null | undefined, what = 'mint'): MintTransferHook {
+  if (!ai) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} not found`);
+  let owner: PublicKey;
+  try { owner = new PublicKey(ai.owner); } catch { throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} owner unreadable`); }
+  if (!owner.equals(TOKEN_2022_PROGRAM_ID)) throw new MintHookRefusal(`refusing: ${what} ${mint.toBase58()} owner ${owner.toBase58()} is not Token-2022`);
+  return decodeMintTransferHookBytes(mint, ai.data, what);
 }
 /** Read the mint's TransferHook extension. MintHookRefusal on an RPC error, else as decodeMintTransferHook. */
 export async function readMintTransferHook(conn: { getAccountInfo(pk: PublicKey, c?: any): Promise<any> }, mint: PublicKey): Promise<MintTransferHook> {
@@ -106,7 +111,7 @@ export async function simulateMintTransferHook(conn: { simulateTransaction(tx: V
     if (acc.data[1] !== 'base64' || typeof acc.data[0] !== 'string') throw new MintHookRefusal(`refusing: simulated mint ${mint.toBase58()} data is not base64`);
     data = Buffer.from(acc.data[0], 'base64');
   } else throw new MintHookRefusal(`refusing: simulated mint ${mint.toBase58()} data is not base64`);
-  const hook = decodeMintTransferHook(mint, { ...acc, owner: acc.owner, data }, 'simulated mint');
+  const hook = decodeMintTransferHook(mint, { owner: acc.owner, data }, 'simulated mint');
   return { messageBytes: bytes, mint, hook, unitsConsumed: v.unitsConsumed };
 }
 

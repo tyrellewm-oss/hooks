@@ -10,7 +10,7 @@ import { Keypair, PublicKey, Transaction, TransactionInstruction } from '@solana
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import { DEVNET_GENESIS } from '../sdk/cluster.js';
 import { HOOK_PROGRAM_ID_DEVNET, DBC_PROGRAM_ID, DBC_POOL_AUTHORITY } from '../sdk/hook.js';
-import { MINT_HOOK_AUTHORITY_PINS, MintHookRefusal, mintHookAuthorityFor, readMintTransferHook, graduationPhase, mintHookProblems, sameMessageExceptBlockhash, DBC_INIT_POOL_T22_HOOK_DISC } from '../sdk/mint_hook.js';
+import { MINT_HOOK_AUTHORITY_PINS, MintHookRefusal, mintHookAuthorityFor, readMintTransferHook, graduationPhase, mintHookProblems, sameMessageExceptBlockhash, DBC_INIT_POOL_T22_HOOK_DISC, decodeMintTransferHookBytes, decodeMintTransferHook } from '../sdk/mint_hook.js';
 import { Launchpad, mintHookFlag, DAMM_V2_MIGRATION_CONFIG } from '../sdk/launch.js';
 import { Keeper, FailClosed } from '../sdk/flywheel/keeper.js';
 import { fixtureMint, MINT_HOOK_FIXTURE as FX, TRANSFER_HOOK_OFFSET as OFF } from './mint_hook_fixture.js';
@@ -166,7 +166,7 @@ after(() => { process.chdir(cwd); rmSync(dir, { recursive: true, force: true });
 type SimMode = { info?: any; err?: any; rpcFail?: boolean; nullAccount?: boolean; noAccounts?: boolean; tamper?: (tx: Transaction) => void };
 function launchLp(mintInfo: any, pool?: 'throw' | ((mint: PublicKey, config: PublicKey) => any), sim: SimMode = {}, poolIxMint?: PublicKey) {
   const n = { built: 0, sent: 0, simulated: 0 };
-  const seen = { simMessages: [] as Buffer[], simConfigs: [] as any[], sentMessages: [] as Buffer[] };
+  const seen = { simMessages: [] as Buffer[], simConfigs: [] as any[], sentMessages: [] as Buffer[], events: [] as string[] };
   let newMint: PublicKey | null = null, newConfig: PublicKey | null = null, poolTx: Transaction | null = null;
   const memo = (signers: PublicKey[]) => new Transaction().add(new TransactionInstruction({ programId: MEMO, keys: signers.map(pubkey => ({ pubkey, isSigner: true, isWritable: false })), data: Buffer.from('t') }));
   // The DBC create-pool ix in its IDL account order (config, pool_authority, creator, base_mint, ...), args elided.
@@ -179,7 +179,7 @@ function launchLp(mintInfo: any, pool?: 'throw' | ((mint: PublicKey, config: Pub
     getAccountInfo: async (k: PublicKey) => (k.equals(HOOK) ? { owner: BPF, executable: true } : newMint && k.equals(newMint) && n.sent >= 2 ? mintInfo : null),
     getLatestBlockhash: async () => ({ blockhash: pk().toBase58(), lastValidBlockHeight: 1 }),
     simulateTransaction: async (vtx: any, cfg: any) => {
-      n.simulated++; seen.simMessages.push(Buffer.from(vtx.message.serialize())); seen.simConfigs.push(cfg);
+      n.simulated++; seen.simMessages.push(Buffer.from(vtx.message.serialize())); seen.simConfigs.push(cfg); seen.events.push('simulate');
       if (sim.tamper && poolTx) sim.tamper(poolTx);
       if (sim.rpcFail) throw new Error('fetch failed: 503');
       if (sim.err) return { context: { slot: 1 }, value: { err: sim.err, logs: ['Program log: boom'], accounts: null } };
@@ -188,7 +188,7 @@ function launchLp(mintInfo: any, pool?: 'throw' | ((mint: PublicKey, config: Pub
       const i = sim.info ?? mintInfo;
       return { context: { slot: 1 }, value: { err: null, logs: [], accounts: [{ owner: new PublicKey(i.owner).toBase58(), lamports: 1, executable: false, rentEpoch: 0, data: [Buffer.from(i.data).toString('base64'), 'base64'] }] } };
     },
-    sendRawTransaction: async (raw: Buffer) => { n.sent++; seen.sentMessages.push(Buffer.from(Transaction.from(raw).serializeMessage())); return `FakeSig${n.sent}`; },
+    sendRawTransaction: async (raw: Buffer) => { n.sent++; const t = Transaction.from(raw); seen.sentMessages.push(Buffer.from(t.serializeMessage())); seen.events.push(t.instructions.some(ix => ix.programId.equals(DBC_PROGRAM_ID)) ? 'send:pool' : 'send:other'); return `FakeSig${n.sent}`; },
     confirmTransaction: async () => ({ value: { err: null } }),
     getTransaction: async () => ({ meta: { err: null, logMessages: [] } }),
   };
@@ -358,4 +358,49 @@ test('sameMessageExceptBlockhash: only the blockhash may differ (fee payer, inst
   assert.equal(sameMessageExceptBlockhash(mk(h1), mk(h2, pk())), false);
   assert.equal(sameMessageExceptBlockhash(mk(h1), mk(h2, payer, 'b')), false);
   assert.equal(sameMessageExceptBlockhash(mk(h1), Buffer.from('junk')), false);
+});
+
+// QA (#7 sim commit): the combined config+pool tx is over 1232 bytes, so the config tx is sent first (devnet). The hard rule:
+// NO path sends the create-pool tx without a passing simulation of that same message.
+test('no path sends the create-pool tx without a passing simulation: every refusal mode → 0 pool sends; the pass case simulates first, then sends the same message', async () => {
+  const modes: [string, ReturnType<typeof launchLp>][] = [
+    ['wrong program', launchLp(V.pre(), undefined, { info: V.wrongProgram() })],
+    ['wrong authority', launchLp(V.pre(), undefined, { info: V.wrongAuthority() })],
+    ['authority unset', launchLp(V.pre(), undefined, { info: V.authorityUnset() })],
+    ['simulation err', launchLp(V.pre(), undefined, { err: 'AccountNotFound' })],
+    ['simulation RPC error', launchLp(V.pre(), undefined, { rpcFail: true })],
+    ['null account', launchLp(V.pre(), undefined, { nullAccount: true })],
+    ['no accounts', launchLp(V.pre(), undefined, { noAccounts: true })],
+    ['wrong owner', launchLp(V.pre(), undefined, { info: V.splTokenOwner() })],
+    ['no extension', launchLp(V.pre(), undefined, { info: V.noExtension() })],
+    ['undecodable', launchLp(V.pre(), undefined, { info: V.truncated() })],
+    ['tx names another mint', launchLp(V.pre(), undefined, {}, pk())],
+    ['tx changed after simulation', launchLp(V.pre(), undefined, { tamper: tx => { tx.add(new TransactionInstruction({ programId: MEMO, keys: [], data: Buffer.from('x') })); } })],
+  ];
+  for (const [name, L] of modes) {
+    const { r } = await launchRun(L);
+    assert.ok(r instanceof MintHookRefusal, `${name}: expected MintHookRefusal, got ${String((r as any)?.message ?? r)}`);
+    assert.equal(L.seen.events.filter(e => e === 'send:pool').length, 0, `${name}: the create-pool tx must not be sent`);
+  }
+  const ok = launchLp(V.pre()); const { r } = await launchRun(ok);
+  assert.equal((r as any).mintHookCheck, 'ok', String((r as any)?.message ?? ''));
+  assert.deepEqual(ok.seen.events, ['send:other', 'simulate', 'send:pool'], 'config tx, then the simulation, then the pool tx');
+  assert.equal(sameMessageExceptBlockhash(ok.seen.simMessages[0], ok.seen.sentMessages[1]), true, 'the pool tx sent is the simulated message');
+});
+test('launch(): the pool tx is sent at exactly one place, with the byte check, after preSendMintHookCheck', () => {
+  const src = readFileSync(new URL('../sdk/launch.ts', import.meta.url), 'utf8');
+  const launch = src.slice(src.indexOf('async launch('), src.indexOf('async swap('));
+  const sends = launch.split('\n').filter(l => /sendTx\(this\.c, poolTx/.test(l));
+  assert.equal(sends.length, 1, 'one send of the pool tx');
+  assert.match(sends[0], /, sameBytes\);/, 'the pool send carries the byte check');
+  assert.ok(launch.indexOf('await preSendMintHookCheck(') >= 0 && launch.indexOf('await preSendMintHookCheck(') < launch.indexOf('sendTx(this.c, poolTx'), 'simulation before the pool send');
+});
+test('decoder: one pure byte decode for both paths (getAccountInfo data and base64 simulation data give the same result)', () => {
+  for (const v of [V.pre(), V.post()]) {
+    const fromBytes = decodeMintTransferHookBytes(MINT, v.data);
+    const fromB64 = decodeMintTransferHookBytes(MINT, Buffer.from(Buffer.from(v.data).toString('base64'), 'base64'));
+    assert.deepEqual(fromB64, fromBytes); assert.deepEqual(decodeMintTransferHook(MINT, v), fromBytes);
+  }
+  assert.throws(() => decodeMintTransferHookBytes(MINT, V.truncated().data), refused(/data unparseable/));
+  assert.throws(() => decodeMintTransferHookBytes(MINT, V.noExtension().data), refused(/no TransferHook extension/));
 });

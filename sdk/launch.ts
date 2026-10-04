@@ -331,6 +331,10 @@ export class Launchpad {
       config: configKp.publicKey, feeClaimer: deployer.publicKey, leftoverReceiver: deployer.publicKey, payer: deployer.publicKey,
       quoteMint: NATIVE_MINT, transferHookProgram: this.hook.programId, ...params,
     } as any);
+    // The config goes first, in its own tx: config + pool + hook extra-metas in one legacy tx is over the 1232-byte limit
+    // (1291 B with the devnet schedule), and the pool tx can only be built and simulated once the config exists. A config
+    // left over by a refused launch is harmless and reusable (pool PDA = config + mints). The pool tx itself is never sent
+    // without a passing pre-send simulation (below). Off devnet the config is pre-created once and pinned (blocker #8).
     const r1 = await sendTx(this.c, cfgTx, [deployer, configKp], `dbc: create_config_with_transfer_hook (${o.symbol})`);
     txs.createConfig = r1.sig; if (!r1.ok) throw new Error('create config failed: ' + r1.err);
 
