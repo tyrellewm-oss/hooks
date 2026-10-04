@@ -80,6 +80,23 @@ test('AC-17 dry run by default: without send the tool simulates once and calls s
   const s = rpc(DEVNET_GENESIS); await assert.rejects(runGlobalChange(s.conn, 'https://api.devnet.example', hook, ch(), { send: true }), /no signer/); assert.equal(s.c.sends, 0);
 });
 
+test('dry run simulates through a real web3.js Connection: a VersionedTransaction with sigVerify off (a legacy Transaction plus a config throws "Invalid arguments")', async () => {
+  const { Connection, VersionedTransaction } = await import('@solana/web3.js');
+  const real = new Connection('http://127.0.0.1:1');   // never contacted: _rpcRequest is stubbed below
+  let simArgs: any[] = [];
+  (real as any)._rpcRequest = async (method: string, args: any[]) => {
+    if (method === 'simulateTransaction') { simArgs = args; return { jsonrpc: '2.0', id: '1', result: { context: { slot: 1 }, value: { err: null, logs: ['ok'], accounts: null, unitsConsumed: 1 } } }; }
+    throw new Error(`unexpected RPC ${method}`);
+  };
+  const { conn, c } = rpc(DEVNET_GENESIS);
+  conn.simulateTransaction = real.simulateTransaction.bind(real) as any;
+  const r = await runGlobalChange(conn, 'https://api.devnet.example', hook, ch());
+  assert.equal(r.sent, false); assert.equal(c.sends, 0); assert.deepEqual(r.simulation, { err: null, logs: ['ok'] });
+  assert.equal(simArgs[1].sigVerify, false); assert.equal(simArgs[1].replaceRecentBlockhash, true); assert.equal(simArgs[1].encoding, 'base64');
+  const sent = VersionedTransaction.deserialize(Buffer.from(simArgs[0], 'base64'));
+  assert.ok(sent.message.staticAccountKeys.some(k => k.equals(ADMIN)), 'the simulated message is the migrate tx');
+});
+
 test('migrate/rotate preflight mirrors the program: wrong admin, zero key, launch == admin, migrate on 74 bytes, rotate on 42 bytes and rotate to the current key refuse before signing', async () => {
   const L = Keypair.generate().publicKey;
   const g1 = await readGlobal(rpc(DEVNET_GENESIS).conn, hook);
@@ -124,17 +141,20 @@ test('AC-13 buildCreatePoolTx: the hook signer is the on-chain launch key, not t
   assert.throws(() => assertLaunchSigner(launch, { ...auth, launchAuthority: undefined }), /not set on chain/);
 });
 
-test('AC-13 keeper pin: startKeeper refuses when the pinned hook_launch_authority differs from the chain (the devnet configs pin null: Global not migrated)', async () => {
+test('AC-13 keeper pin: startKeeper refuses when the pinned hook_launch_authority differs from the chain (the devnet configs pin the migrated launch key)', async () => {
   const { startKeeper } = await import('../sdk/flywheel/keeper.js');
   const cfg = { ...JSON.parse(readFileSync('keeper/devnet.tdt.json', 'utf8')), pinned_pubkeys: undefined, sources: [] };   // no DBC source configs to look up
-  assert.equal(cfg.hook_launch_authority, null);
+  const MIG = JSON.parse(readFileSync('tests/fixtures/devnet_global_migration.json', 'utf8'));
+  assert.equal(cfg.hook_launch_authority, MIG.launch_authority);
+  const V2 = Buffer.from(MIG.global.after.data_base64, 'base64');
   const prog = { owner: new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111'), data: Buffer.from(FX.program.data_base64, 'base64'), lamports: 1, executable: true };
   const pdHeader = Buffer.from(FX.program_data.data_base64, 'base64');
   const accounts = (global: Buffer) => new Map<string, any>([[FX.program.pubkey, prog], [FX.program_data.pubkey, { owner: prog.owner, data: pdHeader, lamports: 1 }], [FX.global.pubkey, { owner: DEFAULT_PROGRAM_ID, data: global, lamports: 1 }]]);
   const conn = (global: Buffer) => { const m = accounts(global); return { getGenesisHash: async () => DEVNET_GENESIS, getAccountInfo: async (k: PublicKey) => m.get(k.toBase58()) ?? null, getMultipleAccountsInfo: async (ks: PublicKey[]) => ks.map(k => m.get(k.toBase58()) ?? null), rpcEndpoint: 'https://api.devnet.example' } as any; };
   const deps = (global: Buffer) => ({ loadKey: () => Keypair.generate(), connect: async () => conn(global), log: () => {} });
-  assert.ok(await startKeeper(cfg, [], deps(V1)));   // control: 42-byte chain Global, pin null
+  assert.ok(await startKeeper(cfg, [], deps(V2)));   // control: the migrated devnet Global matches the pin
+  await assert.rejects(startKeeper(cfg, [], deps(V1)), /do not match chain .*launch null/);   // a 42-byte chain no longer matches
   const migrated = Buffer.concat([V1, Keypair.generate().publicKey.toBuffer()]);
   await assert.rejects(startKeeper(cfg, [], deps(migrated)), (e: any) => e instanceof KeyRuleRefusal && /do not match chain .*launch /.test(e.message));
-  await assert.rejects(startKeeper({ ...cfg, hook_launch_authority: pk() }, [], deps(V1)), /do not match chain/);
+  await assert.rejects(startKeeper({ ...cfg, hook_launch_authority: pk() }, [], deps(V2)), /do not match chain/);
 });

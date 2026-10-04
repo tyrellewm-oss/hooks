@@ -137,3 +137,44 @@ pnpm tsx scripts/devnet_postmig.ts <mint> <dbcPool> --cluster devnet --sol 0.02 
 The demo process exited at slot ~507158333 while waiting for the ramp to end (`StructError … Backend error, StatusCode: 503` from the public RPC). `devnet_finish.ts` resumed the same launch after slot 507162021.
 
 Screenshots of the devnet page (home, migrated token page): `artifacts/screens/devnet/` (gitignored, local only).
+
+## 8. Full devnet loop with the separate launch key (tickets #5, 8.3, 8.3b together), 2026-10-04 ICT
+
+**DEVNET.** Program `FieaX…` upgraded to `main` `5290ec1` (release, test-slots OFF). Devnet throwaway keys live outside the repo. Re-checked on chain by Agent B (getTransaction signers, token balance deltas, mint supply).
+
+**Upgrade and migration**
+| Step | Tx | Result |
+|---|---|---|
+| Extend ProgramData by 32,864 bytes | [31vwEJ3d…](https://explorer.solana.com/tx/31vwEJ3dKXnpSpvjjZGuZn8a9Edr7nCiTxwiBCPfhc9GQ87VXuUEcbdfMZMG9ZftZFTt4MT36duF1Kk6Cwjtzwr2?cluster=devnet) | 393,592 → 426,456 bytes |
+| Deploy the `5290ec1` release build | [BjqDFdAs…](https://explorer.solana.com/tx/BjqDFdAsJQACjChAWTcrX5RbJaQSeoe7pjnj7UmMonkchH7E52ZP3bGrubck9FWCJGraiBug2CJ9176Vkeun6mm?cluster=devnet) | dumped bytes == build (sha256 `f4b17d05…ac1e`) |
+| `migrate_global_v2` (launch key `ApupQ3…`) | [NaBbrAdm…](https://explorer.solana.com/tx/NaBbrAdm6okQQQZY3nfyZfiNFqnxoCznBa63Aen6ANzwvDghGj7pKhh9rGtv7VJpRnsMuLYneaVAiar6vQEGzfS?cluster=devnet) | Global 42 → 74 bytes; bytes 0..42 identical (`tests/fixtures/devnet_global_migration.json`) |
+
+**Launch → graduation.** Mint `89BfATjv5WEP3Jrdd3ZndkvACY4zo8XAVhW6ZXM45KmD`, DBC pool `HCvz2BHFRkts7PjXRMvEsFfW41Ks3eYY1M93p6NdWVb2`, DAMM v2 pool `3A581XLrwgTfnwSUz7sjRWaMpkmLV1MXxG2bY5q5jZuf`. Demo schedule (1% → 2% at +150 slots, no cap from +300), threshold 0.2 SOL. Keys: creator `ydSuhQ…` (payer, partner, fee claimer), launch key `ApupQ3…`. **The Global admin `9DVu…` only funded wallets and signed no launch tx.**
+| Step | Tx | Result |
+|---|---|---|
+| DBC config | [Th52yCoK…](https://explorer.solana.com/tx/Th52yCoKYD5KDGx5azKPe3FZ2rNUKQtc1DwYQXg8Tkq4kFGibFfKQZF4hCSrnThBh4WsrHPJNKpRZcwAtuZSFeC?cluster=devnet) | signers: creator, config |
+| Pool + hook config | [mPvCAYFM…](https://explorer.solana.com/tx/mPvCAYFMfbwVfLiVYBt6X9fBktiiKEMdgHishRzGd2U3fFrk72m6ccY2qY2cJVVuGKJuP3HhThg6a1xKea98GVa?cluster=devnet) | signers: creator, mint, launch key; `MintConfig.launcher` = launch key |
+| A buys 0.5% | 41dx4AkF… | ok |
+| A buys +0.6% (would hold 1.1%) | dSSdxsSC… | failed `WalletCapExceeded` (expected) |
+| A sells 0.2% mid-ramp | uegpD1Vv… | ok |
+| B buys 0.9% | 5kjFuF5L… | ok |
+| Cap at 2% (+150 slots): A +0.8% | 2989QSDw… | ok |
+| After the ramp: A +3% | 3WEXtFtj… | ok |
+| Curve fill (graduation) | [gsofRSJj…](https://explorer.solana.com/tx/gsofRSJji328d2fmva4YTvPw2PetaHE8EF3NPXmHuRgQDDGzFKsHmmkNBY3S99q98rhBoEb8RZCeaK69sn7sqeU?cluster=devnet) | mint TransferHook program and authority unset |
+| DBC → DAMM v2 migration | [4WeSqCgR…](https://explorer.solana.com/tx/4WeSqCgRuk9ndD3cmoCbCbtbKAzQjQJUTpzNiobEeCwaZFurcLPEeG8W9CixDa2KqPsTxeSbjUbEaYRf4ikaVnxo?cluster=devnet) | mint-hook check `post` ok |
+
+**Keeper** (`keeper/devnet.loop.json`; claim signer = creator; separate treasury, gas and dev-payout throwaways; public log `flywheel/devnet-loop.json`)
+| Step | Tx | On-chain check |
+|---|---|---|
+| Setup: fund gas / 3 token accounts | [3eyXJ1D2…](https://explorer.solana.com/tx/3eyXJ1D2kiqfZVRP2URWmgFob8uVoMNjaTpxx6PnhddjwZZ53ByUMaf173aMepVvJRYwjnK2bBn56XYLkTzgGBF5?cluster=devnet) / [5vVQo69P…](https://explorer.solana.com/tx/5vVQo69PypTVxpqk54obBAsutddCL6LV4y42AuXFNXoLcvCujUiQXoaW42TEAxcM93HhpCR19Hq8CFmxF9ksqYAY?cluster=devnet) | ok |
+| Run 1: claim DBC partner fee | [3Ts6ExgN…](https://explorer.solana.com/tx/3Ts6ExgNW6qMFNdxxPEAgVe1hev7StnNyG4nDuWKfpPorGpDjU5WoY67LNuXf177SHLe7oy8GmTVnEydXt4S6weN?cluster=devnet) | treasury wSOL +1,828,259 (signers: gas, claim signer) |
+| Run 1: dev 15% | [3LbGYe6t…](https://explorer.solana.com/tx/3LbGYe6t9ZWiW75V8WJa2B58vLMRLrnM174MamArqZnnF7zpeuP5gcxrKwRMUXybv4Jre7J7TWEN4Fm4Ag9LRHjU?cluster=devnet) | dev wSOL +274,238 |
+| Run 1: buyback | — | **held** `hold_twap_warmup` (graduation seen 0 s ago; needs 1,800 s; not counted toward auto-pause) |
+| Run 2: price check | — | TWAP 118/120 samples (98%), max gap 18 s, latest 14 s; spot vs TWAP 0 bps; independent vs TWAP 0 bps; min_out = min(quote, TWAP-out) × 0.97 = 1,492,043,433,918 (quote leg) |
+| Run 2: buyback swap (DAMM v2) | [67inv7rU…](https://explorer.solana.com/tx/67inv7rUNWJs8DaEDS3muJwKbX7jhRyEamJjxupwL87f1jkeWDviJGdTFKDnW1bwnv4Bfo6tSh8vdeP1M9m5KiMd?cluster=devnet) | treasury wSOL −1,554,021 → HLOOP +1,538,189,107,132 (≥ min_out) |
+| Run 2: burn | [5YS4Ps7s…](https://explorer.solana.com/tx/5YS4Ps7sT2k5KrRDsEg1NqnzWSmUq6bMG59Xph6PN3YU2FaNiCBhukEJXmFYE8MtFqwMyowrGWNSokojT2HHnFHa?cluster=devnet) | supply 1,000,000,000,000,000 → 998,461,810,892,868; reconcile ok |
+
+**Limits of this run:**
+- **The "independent" price was a local stand-in** (`scripts/devnet_price_standin.ts`) because Jupiter has no devnet prices. It reads the same DAMM v2 pool, so it tested the keeper's HTTP, freshness and deviation path, not an independent market.
+- The pool had no other trades during the window, so spot = TWAP (0 bps). A pump-before-run on the live pool wasn't run.
+- The devnet upgrade / lift authority is still one throwaway key, `9DVu…` (accepted devnet exception).

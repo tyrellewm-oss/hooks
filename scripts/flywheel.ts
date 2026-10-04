@@ -25,7 +25,7 @@ import { startKeeper, Keeper, MEMO_PROGRAM_ID, initState, dbcPool } from '../sdk
 import { checkPriceConfig, PriceSampler, cpAmmSqrtDecoder, samplesPath } from '../sdk/flywheel/price_source.js';
 import { Store } from '../sdk/flywheel/store.js';
 import { fmtSol } from '../sdk/flywheel/math.js';
-import { loadOrCreate } from '../sdk/keys.js';
+import { loadOrCreate, keyDir } from '../sdk/keys.js';
 import { parseSendMode, banner, isolateState, dryRunConnection } from '../sdk/flywheel/dryrun.js';
 import { DEVNET_GENESIS, DEVNET_RPC_DEFAULT, assertNotMainnet, explorerTx } from '../sdk/cluster.js';
 import { redactPaths, redactDeep, redactedJson } from '../sdk/redact.js';
@@ -43,7 +43,7 @@ const MODE = parseSendMode(argv);
 const ev = (o: Record<string, unknown>) => { mkdirSync('flywheel', { recursive: true }); appendFileSync(evlog, redactedJson({ at: new Date().toISOString(), config: cfg.name, ...o }, R) + '\n'); }; // FW-17: string values redacted before JSON escaping
 
 const rpcUrl = () => { const u = process.env.FW_RPC_URL ?? process.env.DEVNET_RPC ?? DEVNET_RPC_DEFAULT; assertNotMainnet(u); return u; };
-const loadKey = (name: string) => { if (!existsSync(`.devnet-keys/${name}.json`) && !name.startsWith('fw_')) throw new Error(`missing key ${name}`); return loadOrCreate('devnet', name); };
+const loadKey = (name: string) => { if (!existsSync(`${keyDir('devnet')}/${name}.json`) && !name.startsWith('fw_')) throw new Error(`missing key ${name}`); return loadOrCreate('devnet', name); };
 async function devnetConn(): Promise<Connection> {
   if (cfg.cluster !== 'devnet') throw new Error('devnet only');
   const c = new Connection(rpcUrl(), 'confirmed');
@@ -88,7 +88,7 @@ async function send(c: Connection, ixs: TransactionInstruction[], signers: Keypa
 async function balances(c: Connection) {
   // signing wallets by key name (pubkey read from the key file); the dev payout by its configured pubkey (no key file)
   const names = ['deployer', 'buyerA', 'buyerB', 'fw_treasury', 'fw_gas', 'fw15_treasury'];
-  const wallets: [string, PublicKey][] = names.filter(n => existsSync(`.devnet-keys/${n}.json`)).map(n => [n, loadOrCreate('devnet', n).publicKey]);
+  const wallets: [string, PublicKey][] = names.filter(n => existsSync(`${keyDir('devnet')}/${n}.json`)).map(n => [n, loadOrCreate('devnet', n).publicKey]);
   wallets.push(['dev_payout', new PublicKey(cfg.dev_payout)]);
   let native = 0n, wsol = 0n; const rows: any[] = [];
   const mints = [...new Set([cfg.main_mint, ...cfg.sources.filter(s => s.kind === 'dbc').map((s: any) => s.base_mint)])];
