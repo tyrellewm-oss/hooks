@@ -7,11 +7,11 @@ import { deriveDammV2PoolAddress } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import BN from 'bn.js';
 import { resolveCluster, parseClusterArg, explorerAddr, nowIct } from '../sdk/cluster.js';
 import { loadOrCreate } from '../sdk/keys.js';
-import { Launchpad, sendTx } from '../sdk/launch.js';
+import { Launchpad, sendTx, dammV2MigrationConfig } from '../sdk/launch.js';
 
 const argv = process.argv.slice(2);
 const arg = (k: string, d?: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
-const DAMM_CONFIG = new PublicKey('7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd'); // same config Launchpad.migrate() passes
+const DAMM_CONFIG = dammV2MigrationConfig(parseClusterArg(argv)); // same config Launchpad.migrate() passes
 
 (async () => {
   const c = await resolveCluster(parseClusterArg(argv));
