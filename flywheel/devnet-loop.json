@@ -1,0 +1,221 @@
+{
+ "cluster": "devnet",
+ "mint": "89BfATjv5WEP3Jrdd3ZndkvACY4zo8XAVhW6ZXM45KmD",
+ "decimals": 6,
+ "live": true,
+ "paused": false,
+ "pause_reason": "",
+ "state": "active",
+ "claimedSol": "0.001828259",
+ "devSol": "0.000274238",
+ "spentSol": "0.001554021",
+ "reserveSol": "0.000000000",
+ "burnedTokens": "1538189.107132",
+ "supplyTokens": "998461810.892868",
+ "pctOfSupply": "0.1538",
+ "totals_raw": {
+  "claimed_lamports": "1828259",
+  "dev_lamports": "274238",
+  "spent_lamports": "1554021",
+  "burned_raw": "1538189107132",
+  "gas_lamports": "40000",
+  "rent_refund_lamports": "0",
+  "pending_lamports": "0",
+  "unsplit_lamports": "0",
+  "unburned_raw": "0"
+ },
+ "burns": [
+  {
+   "at": "2026-10-04T14:08:21.000Z",
+   "tokens": "1538189.107132",
+   "sol": "0.001554021",
+   "sig": "5YS4Ps7sT2k5KrRDsEg1NqnzWSmUq6bMG59Xph6PN3YU2FaNiCBhukEJXmFYE8MtFqwMyowrGWNSokojT2HHnFHa",
+   "run_id": "devnet-2026-10-04T14:05:00Z"
+  }
+ ],
+ "runs": [
+  {
+   "run_id": "devnet-2026-10-04T13:30:00Z",
+   "started_at": "2026-10-04T13:33:34.820Z",
+   "status": "hold_twap_warmup",
+   "reason": "graduation seen 0s ago (< min_post_grad_age_s 1800); warm-up hold 0s of 2700s (not counted toward auto-pause)",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): hook upgrade authority and lift authority are the same key 9DVu…"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "HCvz2BHFRkts7PjXRMvEsFfW41Ks3eYY1M93p6NdWVb2",
+     "claimable_before": "1828259",
+     "claimed_lamports": "1828259",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "3Ts6ExgNW6qMFNdxxPEAgVe1hev7StnNyG4nDuWKfpPorGpDjU5WoY67LNuXf177SHLe7oy8GmTVnEydXt4S6weN",
+     "claimable_after": "0"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "3A581XLrwgTfnwSUz7sjRWaMpkmLV1MXxG2bY5q5jZuf",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    }
+   ],
+   "dev_lamports": "274238",
+   "dev_sig": "3LbGYe6t9ZWiW75V8WJa2B58vLMRLrnM174MamArqZnnF7zpeuP5gcxrKwRMUXybv4Jre7J7TWEN4Fm4Ag9LRHjU",
+   "buyback_lamports": "1554021",
+   "carryover_lamports": "0",
+   "carryover_reason": "none",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "20000",
+   "txs": [
+    "3Ts6ExgNW6qMFNdxxPEAgVe1hev7StnNyG4nDuWKfpPorGpDjU5WoY67LNuXf177SHLe7oy8GmTVnEydXt4S6weN",
+    "3LbGYe6t9ZWiW75V8WJa2B58vLMRLrnM174MamArqZnnF7zpeuP5gcxrKwRMUXybv4Jre7J7TWEN4Fm4Ag9LRHjU"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "3A581XLrwgTfnwSUz7sjRWaMpkmLV1MXxG2bY5q5jZuf",
+    "in_lamports": "1554021",
+    "min_out_raw": "0",
+    "out_raw": "0",
+    "quote_out_raw": "1538189107132",
+    "spot_out_raw": "1554021000000",
+    "slippage_bps": 100,
+    "price_impact_bps": 103,
+    "spot_deviation_bps": 101,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "",
+    "status": "refused"
+   },
+   "price": {
+    "chain_slot": 507380932,
+    "chain_time": 1791120829,
+    "grad_slot": 507380932,
+    "grad_time": 1791120829,
+    "hold_start_slot": 507380932,
+    "hold_start_time": 1791120829,
+    "hold_elapsed_s": 0,
+    "hold_ceiling_s": 2700,
+    "hold_counts": false,
+    "decision": "refuse",
+    "code": "hold_twap_warmup",
+    "reason": "graduation seen 0s ago (< min_post_grad_age_s 1800); warm-up hold 0s of 2700s (not counted toward auto-pause)"
+   },
+   "finished_at": "2026-10-04T13:33:49.623Z",
+   "test_knobs": []
+  },
+  {
+   "run_id": "devnet-2026-10-04T14:05:00Z",
+   "started_at": "2026-10-04T14:08:08.625Z",
+   "status": "logged",
+   "reason": "",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): hook upgrade authority and lift authority are the same key 9DVu…"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "HCvz2BHFRkts7PjXRMvEsFfW41Ks3eYY1M93p6NdWVb2",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    },
+    {
+     "source": "damm_v2",
+     "pool": "3A581XLrwgTfnwSUz7sjRWaMpkmLV1MXxG2bY5q5jZuf",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "0",
+   "carryover_reason": "none",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "20000",
+   "txs": [
+    "67inv7rUNWJs8DaEDS3muJwKbX7jhRyEamJjxupwL87f1jkeWDviJGdTFKDnW1bwnv4Bfo6tSh8vdeP1M9m5KiMd",
+    "5YS4Ps7sT2k5KrRDsEg1NqnzWSmUq6bMG59Xph6PN3YU2FaNiCBhukEJXmFYE8MtFqwMyowrGWNSokojT2HHnFHa"
+   ],
+   "swap": {
+    "route": "damm_v2_direct",
+    "pool": "3A581XLrwgTfnwSUz7sjRWaMpkmLV1MXxG2bY5q5jZuf",
+    "in_lamports": "1554021",
+    "min_out_raw": "1492043433918",
+    "out_raw": "1538189107132",
+    "quote_out_raw": "1538189107132",
+    "spot_out_raw": "1554021000000",
+    "slippage_bps": 100,
+    "price_impact_bps": 103,
+    "spot_deviation_bps": 101,
+    "halvings": 0,
+    "forced_fail": false,
+    "sig": "67inv7rUNWJs8DaEDS3muJwKbX7jhRyEamJjxupwL87f1jkeWDviJGdTFKDnW1bwnv4Bfo6tSh8vdeP1M9m5KiMd",
+    "status": "confirmed"
+   },
+   "price": {
+    "chain_slot": 507389700,
+    "chain_time": 1791122889,
+    "grad_slot": 507380932,
+    "grad_time": 1791120829,
+    "twap_q128": "340282366920938440736985908621601",
+    "samples_used": 118,
+    "samples_expected": 120,
+    "coverage_pct": 98,
+    "max_gap_s": 18,
+    "latest_sample_age_s": 14,
+    "spot_q128": "340282366920938440736985908621601",
+    "spot_twap_dev_bps": 0,
+    "indep_usd_mint": 1.9999979999999998e-7,
+    "indep_usd_wsol": 200,
+    "indep_block_id": 507389701,
+    "indep_twap_dev_bps": 0,
+    "twap_out_raw": "1554021000000",
+    "min_out_from_quote": "1492043433918",
+    "min_out_from_twap": "1507400370000",
+    "min_out_raw": "1492043433918",
+    "min_out_source": "quote",
+    "decision": "pass"
+   },
+   "burn": {
+    "burned_raw": "1538189107132",
+    "tx_supply_change_raw": "-1538189107132",
+    "token_delta_raw": "-1538189107132",
+    "supply_before": "1000000000000000",
+    "supply_after": "998461810892868",
+    "verified": true,
+    "sig": "5YS4Ps7sT2k5KrRDsEg1NqnzWSmUq6bMG59Xph6PN3YU2FaNiCBhukEJXmFYE8MtFqwMyowrGWNSokojT2HHnFHa"
+   },
+   "reconcile": {
+    "treasury_wsol_raw": "0",
+    "expected_treasury_wsol_raw": "0",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "274238",
+    "expected_dev_wsol_raw": "274238",
+    "treasury_native_lamports": "0",
+    "supply_raw": "998461810892868",
+    "supply_drop_since_first_run": "1538189107132",
+    "burned_raw_total": "1538189107132",
+    "ok": true
+   },
+   "finished_at": "2026-10-04T14:08:24.041Z",
+   "test_knobs": []
+  }
+ ],
+ "current_run": null,
+ "route_pool": "3A581XLrwgTfnwSUz7sjRWaMpkmLV1MXxG2bY5q5jZuf",
+ "main_dbc_pool": "HCvz2BHFRkts7PjXRMvEsFfW41Ks3eYY1M93p6NdWVb2"
+}

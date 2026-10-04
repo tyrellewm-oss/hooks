@@ -39,7 +39,7 @@ const CHAIN = new Map<string, any>([
   ...TDT.sources.flatMap(x => (x.kind === 'dbc' ? [[x.config, { owner: DBC_PROGRAM_ID, executable: false, data: Buffer.alloc(0) }] as [string, any]] : [])),
 ]);
 const fakeConn = (n: { connects: number }) => async () => { n.connects++; return { getGenesisHash: async () => DEVNET_GENESIS, getAccountInfo: async (k: PublicKey) => CHAIN.get(k.toBase58()) ?? null } as unknown as Connection; };
-const startable = (o: Partial<KeeperConfig> = {}): KeeperConfig => ({ ...clone(TDT), pinned_pubkeys: undefined, hook_upgrade_authority: UPG, hook_lift_authority: LIFT, ...o });
+const startable = (o: Partial<KeeperConfig> = {}): KeeperConfig => ({ ...clone(TDT), pinned_pubkeys: undefined, hook_upgrade_authority: UPG, hook_lift_authority: LIFT, hook_launch_authority: null, ...o });
 
 test('devnet keeper configs: signing keys only (no dev keypair path, no pinned dev), dev payout as a pubkey', () => {
   for (const [c, dev] of [[TDT, '74KbNAK9d3GAKSMKqA7fVzkLGcTcJStS9T3jiKmDs4nn'], [FW15, 'Fyf3yL8DTiYR1ho2bdbUTro1Uq5d5Qss5KjYkqSgfVdP']] as const) {

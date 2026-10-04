@@ -1,0 +1,31 @@
+{
+  "note": "Public devnet account data for the 8.3 Global migration (AC-15 devnet half), recorded read-only via getAccountInfo before and after. No keys.",
+  "cluster": "devnet",
+  "genesis": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "program": "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz",
+  "upgrade": {
+    "extend_sig": "31vwEJ3dKXnpSpvjjZGuZn8a9Edr7nCiTxwiBCPfhc9GQ87VXuUEcbdfMZMG9ZftZFTt4MT36duF1Kk6Cwjtzwr2",
+    "deploy_sig": "BjqDFdAsJQACjChAWTcrX5RbJaQSeoe7pjnj7UmMonkchH7E52ZP3bGrubck9FWCJGraiBug2CJ9176Vkeun6mm",
+    "deployed_slot": 507371382,
+    "so_sha256": "f4b17d0525f5840bb7b750106d771f7c620a125b1704872261626dc9a018ac1e",
+    "so_len": 426456,
+    "source_commit": "5290ec1"
+  },
+  "migrate_sig": "NaBbrAdm6okQQQZY3nfyZfiNFqnxoCznBa63Aen6ANzwvDghGj7pKhh9rGtv7VJpRnsMuLYneaVAiar6vQEGzfS",
+  "migrate_slot": 507377904,
+  "launch_authority": "ApupQ3hCMTqDoZTEmKz1N2AP6yw6zo6kq11V4QWmRPme",
+  "global": {
+    "pubkey": "EHjQBWz7gknWrrvzdftPkKi8eiZZ12piHE8YrwSnnas9",
+    "owner": "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz",
+    "before": {
+      "len": 42,
+      "lamports": 863600,
+      "data_base64": "p+joschscn96ESd0PnD1Rvclt4OEUkXVG9B+8GBJa/+5oxOMuB9shAD9"
+    },
+    "after": {
+      "len": 74,
+      "lamports": 1026160,
+      "data_base64": "p+joschscn96ESd0PnD1Rvclt4OEUkXVG9B+8GBJa/+5oxOMuB9shAD9kf8zcfAMfWFkf8eEHbyfpx+L8wSAv1db0buXbiWGzBU="
+    }
+  }
+}
