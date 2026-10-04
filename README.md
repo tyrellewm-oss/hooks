@@ -77,6 +77,8 @@ Environment variables (names only; all optional):
 | `DEVNET_RPC` | `sdk/cluster.ts`, `tests/env.ts` | devnet RPC override (anything containing "mainnet" is refused; the genesis hash must be devnet's) |
 | `LOCAL_RPC` | `sdk/cluster.ts`, `tests/env.ts` | local validator RPC override |
 | `HOOK_PROGRAM_ID` | `sdk/hook.ts` | hook program id override: allowed on devnet and on a local validator (localhost RPC URL + a genesis that is not devnet/mainnet/testnet), where it is required; refused on any other cluster (genesis-pinned, no fallback to the devnet id) |
+| `DAMM_V2_MIGRATION_CONFIG` | `sdk/launch.ts` | DAMM v2 migration config override: allowed on devnet and on a local validator; elsewhere it must equal the pinned value (genesis-pinned) |
+| `TXLOG_DIR` | `sdk/launch.ts` | tx log directory override (default: the repo's tx log dir; tests point it at a temp dir) |
 | `HOOK_SO`, `HOOK_TEST_SLOTS_SO` | `tests/env.ts`, `scripts/local_validator.sh` | paths to the release / test-slots `.so` |
 | `PORT` | `app/server.ts` | launch page port (default 5175) |
 | `PAGE_URL`, `CHROME`, `MINT` | `tests/e2e/page.e2e.ts` | e2e page URL, headless Chrome path, existing mint to test |

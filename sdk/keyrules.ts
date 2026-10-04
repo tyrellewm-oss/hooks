@@ -8,12 +8,18 @@ const isTestCluster = (c: AnyClusterName) => c === 'devnet' || c === 'local';
 const short = (k: string) => `${k.slice(0, 4)}…`;
 
 export interface Authorities { upgradeAuthority: string | null; liftAuthority: string | null }
+/** §12a: the hook upgrade authority and the lift authority must be different keys (devnet: one throwaway holds both). */
+function sameAuthorityProblem(auth: Authorities): string[] {
+  return auth.upgradeAuthority && auth.liftAuthority && auth.upgradeAuthority === auth.liftAuthority
+    ? [`hook upgrade authority and lift authority are the same key ${short(auth.upgradeAuthority)}`] : [];
+}
 
 /** FW-22 / FW-23: keeper start. Throws KeyRuleRefusal off devnet/local; returns warnings on devnet/local. */
 export function keeperStartChecks(cluster: AnyClusterName, keeperKeys: Record<string, string>, auth: Authorities, opts: { forceFailSwap?: boolean } = {}): string[] {
   const problems: string[] = [];
   if (opts.forceFailSwap && !isTestCluster(cluster)) throw new KeyRuleRefusal(`refusing to start: force_fail_swap is devnet-only (cluster=${cluster})`);
   if (!isTestCluster(cluster) && (!auth.upgradeAuthority || !auth.liftAuthority)) throw new KeyRuleRefusal(`refusing to start: upgrade/lift authority unknown on ${cluster}`);
+  problems.push(...sameAuthorityProblem(auth));
   for (const [role, k] of Object.entries(keeperKeys)) {
     if (auth.upgradeAuthority && k === auth.upgradeAuthority) problems.push(`keeper key '${role}' ${short(k)} is the hook upgrade authority`);
     if (auth.liftAuthority && k === auth.liftAuthority) problems.push(`keeper key '${role}' ${short(k)} is the hook lift authority`);
@@ -26,6 +32,7 @@ export function keeperStartChecks(cluster: AnyClusterName, keeperKeys: Record<st
 export function launchConfigChecks(cluster: AnyClusterName, feeClaimer: string, auth: Authorities): string[] {
   const problems: string[] = [];
   if (!isTestCluster(cluster) && (!auth.upgradeAuthority || !auth.liftAuthority)) throw new KeyRuleRefusal(`refusing to build config: upgrade/lift authority unknown on ${cluster}`);
+  problems.push(...sameAuthorityProblem(auth));
   if (auth.upgradeAuthority && feeClaimer === auth.upgradeAuthority) problems.push(`feeClaimer ${short(feeClaimer)} is the hook upgrade authority`);
   if (auth.liftAuthority && feeClaimer === auth.liftAuthority) problems.push(`feeClaimer ${short(feeClaimer)} is the hook lift authority`);
   if (problems.length && !isTestCluster(cluster)) throw new KeyRuleRefusal(`refusing to build config (three-key rule §12a): ${problems.join('; ')}`);

@@ -8,11 +8,11 @@ import {
 } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { HookClient, DEFAULT_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
+import { HookClient, DEFAULT_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, readHookAuthorities, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
 import { type Cluster, type ClusterName, type ClusterClass, explorerTx, nowIct, classifyCluster } from './cluster.js';
 import { launchConfigChecks, type Authorities } from './keyrules.js';
-import { assertClusterAccounts, ClusterCheckRefusal } from './cluster_check.js';
+import { assertClusterAccounts, checkDammV2Config, ClusterCheckRefusal } from './cluster_check.js';
 
 /** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()).
  *  Primary source for the pin: Meteora DBC repo README at commit f552f20 (2026-09-09), section "Damm v2":
@@ -59,6 +59,14 @@ export async function dammV2MigrationConfigFor(c: Pick<Cluster, 'name' | 'connec
   try { genesis = await c.connection.getGenesisHash(); }   // fail closed: an RPC error never falls back to a default cluster
   catch (e: any) { throw new ConfigPinRefusal(`refusing: cannot read the genesis hash to pin DAMM_V2_MIGRATION_CONFIG (${String(e?.message ?? e).slice(0, 200)})`); }
   return resolveDammV2MigrationConfig(genesis, c.name, env, c.url);
+}
+
+/** The DAMM v2 migration config a post-migration check works against: the same genesis-pinned resolution as migrate(),
+ *  then the cluster check that the account exists and is owned by DAMM v2 (ConfigPinRefusal / ClusterCheckRefusal). */
+export async function postMigrationDammConfig(c: Pick<Cluster, 'name' | 'connection'> & { url?: string }, env: NodeJS.ProcessEnv = process.env): Promise<DammConfigResolution> {
+  const r = await dammV2MigrationConfigFor(c, env);
+  await checkDammV2Config(c.connection, r.config);
+  return r;
 }
 
 export interface TxRecord { time: string; cluster: string; label: string; purpose: string; sig: string; ok: boolean; err?: string; hookError?: string | null; hookCode?: number | null; link: string; capHit?: any; events?: any[]; note?: string }
@@ -168,6 +176,13 @@ export async function gateHook(lp: { c: any; hook: HookClient; requestedHookProg
   await assertClusterAccounts(lp.c.connection, { hookProgram: r.programId });
 }
 
+/** Hook program id for read-only tools (scripts/qa_schedule.ts): the same resolver and executable check as gateHook(). */
+export async function resolveQaHookProgram(c: { connection: any; url?: string }, env: NodeJS.ProcessEnv = process.env): Promise<PublicKey> {
+  const r = await hookProgramFor(c, env);
+  await assertClusterAccounts(c.connection, { hookProgram: r.programId });
+  return r.programId;
+}
+
 export class Launchpad {
   dbc: DynamicBondingCurveClient;
   hook: HookClient;
@@ -190,18 +205,11 @@ export class Launchpad {
 
   configParams(o: LaunchOpts) { return curveConfigParams(o); }
 
-  /** Hook upgrade authority (from ProgramData) and lift authority (Global PDA). null when unreadable. */
+  /** Hook upgrade authority (ProgramData) and lift authority (Global PDA), via the shared reader (throws AuthorityReadError). */
   async hookAuthorities(): Promise<Authorities> {
     await gateHook(this);
-    let upgradeAuthority: string | null = null, liftAuthority: string | null = null;
-    const prog = await this.c.connection.getAccountInfo(this.hook.programId);
-    if (prog && prog.data.length >= 36) {
-      const pd = await this.c.connection.getAccountInfo(new PublicKey(prog.data.subarray(4, 36)));
-      if (pd && pd.data.length >= 45 && pd.data[12] === 1) upgradeAuthority = new PublicKey(pd.data.subarray(13, 45)).toBase58();
-    }
-    const g = await this.c.connection.getAccountInfo(this.hook.globalPda());
-    if (g) liftAuthority = decodeGlobal(g.data).authority.toBase58();
-    return { upgradeAuthority, liftAuthority };
+    const a = await readHookAuthorities(this.c.connection, this.hook.programId);
+    return { upgradeAuthority: a.upgradeAuthority, liftAuthority: a.liftAuthority };
   }
 
   /** Partner config (transfer hook -> our program) + pool + hook config, by `deployer` (partner = creator = launcher in the beta). */
