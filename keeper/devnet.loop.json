@@ -1,0 +1,64 @@
+{
+  "name": "devnet-loop",
+  "cluster": "devnet",
+  "main_mint": "89BfATjv5WEP3Jrdd3ZndkvACY4zo8XAVhW6ZXM45KmD",
+  "main_decimals": 6,
+  "main_token_program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "main_dbc_pool": "HCvz2BHFRkts7PjXRMvEsFfW41Ks3eYY1M93p6NdWVb2",
+  "route": "damm_v2_direct",
+  "route_pool": "3A581XLrwgTfnwSUz7sjRWaMpkmLV1MXxG2bY5q5jZuf",
+  "sources": [
+    {
+      "kind": "dbc",
+      "pool": "HCvz2BHFRkts7PjXRMvEsFfW41Ks3eYY1M93p6NdWVb2",
+      "config": "FTCKjbUHV5oGWyb3jaTTiWPHXytuBJaMM8QFpkvJs93c",
+      "base_mint": "89BfATjv5WEP3Jrdd3ZndkvACY4zo8XAVhW6ZXM45KmD"
+    },
+    {
+      "kind": "damm_v2",
+      "pool": "3A581XLrwgTfnwSUz7sjRWaMpkmLV1MXxG2bY5q5jZuf",
+      "position": "BMg5MJKW5zG8DaC4bAABY7qWNWUdH9TRPVaiZnk4MSF1",
+      "position_nft_mint": "VUdWqCktV8dpAeG6WP6n7FT1GvEQLorG4m6GyqZZ4iX"
+    }
+  ],
+  "keys": {
+    "claim_signer": "loop_creator",
+    "treasury": "loop_treasury",
+    "gas": "loop_gas"
+  },
+  "pinned_pubkeys": {
+    "claim_signer": "ydSuhQHgv9rRiJBjs4MXY9xo89HP95eZvs9RcqQrbbz",
+    "treasury": "J81G9iwuHnnEugZFgfjjq4hu8GstdaXMVa9zn9ZDr6i7",
+    "gas": "5LYnaSxhg2QX5sV6s8qDJxtJaQcsW3cgBsqNV1SuunJs"
+  },
+  "dev_payout": "HXMERniMECqSNHqkZ2D9VH95mE1J9XTFCDsE1PYbhFaQ",
+  "hook_program": "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz",
+  "hook_upgrade_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
+  "hook_lift_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
+  "hook_launch_authority": "ApupQ3hCMTqDoZTEmKz1N2AP6yw6zo6kq11V4QWmRPme",
+  "max_swap_lamports_per_run": "20000000",
+  "max_slippage_bps": 100,
+  "max_price_impact_bps": 200,
+  "max_halvings": 3,
+  "price_band_pct": 10,
+  "price_source": {
+    "sample_interval_s": 15,
+    "twap_window_s": 1800,
+    "min_coverage_pct": 80,
+    "max_sample_gap_s": 60,
+    "max_latest_sample_age_s": 30,
+    "max_spot_twap_dev_bps": 300,
+    "max_indep_twap_dev_bps": 500,
+    "indep_max_age_slots": 150,
+    "require_independent": true,
+    "min_post_grad_age_s": 1800,
+    "indep_price_url": "http://127.0.0.1:8787/price/v3",
+    "indep_timeout_ms": 5000
+  },
+  "min_claim_lamports": "1000000",
+  "cadence_seconds": 300,
+  "auto_pause_after_failures": 3,
+  "gas_min_lamports": "10000000",
+  "state_dir": ".flywheel/devnet-loop",
+  "public_log": "flywheel/devnet-loop.json"
+}
