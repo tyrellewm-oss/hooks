@@ -13,8 +13,12 @@ import { type Cluster, type ClusterName, explorerTx, nowIct, DEVNET_GENESIS, MAI
 import { launchConfigChecks, type Authorities } from './keyrules.js';
 
 /** DAMM v2 config used at migration, per cluster (was hard-coded in migrate()).
- *  Pinned values are DBC SDK 1.5.13 `DAMM_V2_MIGRATION_FEE_ADDRESS[FixedBps25]` (the same address on every cluster; the
- *  local validator clones the devnet account). The env override `DAMM_V2_MIGRATION_CONFIG` is a devnet test knob:
+ *  Primary source for the pin: Meteora DBC repo README at commit f552f20 (2026-09-09), section "Damm v2":
+ *  `migration_fee_option == 0: 7F6dnUcRuyM2TwR8myT1dYypFXpPSxqwKNSFNkxyNESd` (option 0 = FixedBps25, base_fee_bps == 25,
+ *  the default migrationFeeOption in DEFAULT_LAUNCH_FEES). The flat/Customizable option 6 would instead be
+ *  A8gMrEPJkacWkcb3DGwtJwTe16HktSEfvwtuDh2MCtck, so it is not used here. The pinned account was checked on mainnet:
+ *  owned by the DAMM v2 program, non-executable, 328 bytes. Same address on every cluster (the local validator clones
+ *  the devnet account). The env override `DAMM_V2_MIGRATION_CONFIG` is a devnet test knob:
  *  on any cluster whose genesis hash is not devnet's (mainnet, a local validator, anything else) it is refused
  *  unless it exactly equals the pinned mainnet value. Resolution happens before any migration tx is built. */
 export const DAMM_V2_MIGRATION_CONFIG: Record<ClusterName, string> = {
