@@ -3,7 +3,7 @@
 import BN from 'bn.js';
 import { Keypair, PublicKey, Transaction } from '@solana/web3.js';
 import { NATIVE_MINT } from '@solana/spl-token';
-import { deriveDbcPoolAddress } from '@meteora-ag/dynamic-bonding-curve-sdk';
+import { deriveDbcPoolAddress, PROTOCOL_FEE_PERCENT } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { curveConfigParams, buildCreatePoolTx, type LaunchOpts } from '../../sdk/launch.js';
 import { HOOK_PROGRAM } from './programs.js';
 import type { Sim } from './env.js';
@@ -56,7 +56,8 @@ export async function buy(sim: Sim, l: Launched, who: Keypair, lamports: bigint)
   const tokensBefore = tokenBalance(sim, l.mint, who.publicKey);
   const r = sim.send(tx, [who]);
   const tokens = tokenBalance(sim, l.mint, who.publicKey) - tokensBefore;
-  const fee = r.ok ? (await totalQuoteFees(sim, l.pool)) - feesBefore : 0n;
+  // the pool's fee metrics count the partner + creator shares; Meteora's protocol share comes on top of that
+  const fee = r.ok ? (((await totalQuoteFees(sim, l.pool)) - feesBefore) * 100n) / BigInt(100 - PROTOCOL_FEE_PERCENT) : 0n;
   return { ...r, tokens, fee, feePct: r.ok ? Number((fee * 1_000_000n) / lamports) / 10_000 : 0, virtualPool };
 }
 
@@ -64,7 +65,7 @@ export function tokenBalance(sim: Sim, mint: PublicKey, owner: PublicKey) {
   return sim.env.tokenBalance(mint, owner);
 }
 
-/** Lifetime trading fees the curve has charged in SOL (lamports), all shares included. */
+/** Lifetime trading fees in SOL (lamports): partner + creator shares (Meteora's protocol share is separate). */
 export async function totalQuoteFees(sim: Sim, pool: PublicKey): Promise<bigint> {
   const m: any = await sim.dbc.state.getPoolFeeMetrics(pool);
   return BigInt(m.total.totalTradingQuoteFee.toString());

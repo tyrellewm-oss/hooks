@@ -20,7 +20,7 @@ const a = trader(sim);
 const first = await buy(sim, l, a, 10_000_000n);   // 0.01 SOL
 assert.ok(first.ok, 'a small first buy lands: ' + first.logs.slice(-6).join(' | '));
 log(`first buy 0.01 SOL -> ${first.tokens} raw tokens, fee ${first.feePct}%`);
-assert.ok(first.feePct > 40, `the opening fee is near ${DEFAULT_LAUNCH_FEES.feeStartBps / 100}% (got ${first.feePct}%)`);
+assert.ok(first.feePct > 45 && first.feePct <= 50.5, `the opening fee is near ${DEFAULT_LAUNCH_FEES.feeStartBps / 100}% (got ${first.feePct}%)`);
 
 // 2. a buy that would put one token account over the 1% launch cap fails with the hook's cap error
 const whale = trader(sim, 100n);
