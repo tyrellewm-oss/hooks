@@ -82,10 +82,8 @@ export function App() {
             <WalletButton />
           </div>
         </header>
-        {/* AC-23: the banner string from page copy shows on every page (slim, under the top bar) */}
-        <div className="banner">{CONTENT.banner}</div>
         <main><Guard what="this page">{page}</Guard></main>
-        <footer>{m ? <Guard what="the footer">{fill(CONTENT.footer, pageVars(m, null))}</Guard> : CONTENT.banner}</footer>
+        <footer>{m ? <Guard what="the footer">{fill(CONTENT.footer, pageVars(m, null))}</Guard> : null}</footer>
       </div>
     </div>
   );
