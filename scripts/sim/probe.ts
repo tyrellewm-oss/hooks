@@ -22,3 +22,19 @@ const r: any = svm.sendTransaction(tx); step('sendTransaction(transfer)');
 step(`logs: ${r.logs().length}`);
 if (process.env.PROBE_RETURN_DATA) { r.returnData(); step('returnData() read'); }
 console.log('[probe] OK');
+
+// replicate tests/env.ts Env setup line by line
+import { Env } from '../../tests/env.js';
+import { BPF_UPGRADEABLE } from '../../sdk/hook.js';
+const svm2 = new LiteSVM(); step('2: new LiteSVM');
+const file = `.sim-programs/${HOOK_PROGRAM.toBase58()}.so`;
+svm2.addProgramFromFile(HOOK_PROGRAM, file); step('2: addProgramFromFile');
+const pd2 = PublicKey.findProgramAddressSync([HOOK_PROGRAM.toBuffer()], BPF_UPGRADEABLE)[0];
+const acc2: any = svm2.getAccount(pd2); step(`2: getAccount pd: keys ${Object.keys(acc2 ?? {}).join(',')} lamports=${acc2?.lamports}`);
+const data = Buffer.from(acc2.data); data[12] = 1; Keypair.generate().publicKey.toBuffer().copy(data, 13);
+svm2.setAccount(pd2, { ...acc2, data, owner: BPF_UPGRADEABLE }); step('2: setAccount spread');
+const env = new Env(file, HOOK_PROGRAM); step('3: new Env');
+const admin = Keypair.generate(), launch = Keypair.generate(); env.fund(admin.publicKey); env.fund(launch.publicKey);
+const g = env.initGlobal(admin.publicKey); step(`3: initGlobal ok=${g.ok}`);
+const m = env.migrateGlobal(admin, launch.publicKey); step(`3: migrateGlobal ok=${m.ok}`);
+console.log('[probe] ENV OK');
