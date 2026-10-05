@@ -7,7 +7,7 @@ import { pageVars, pctOf, tok, BPS_DENOM, approxDuration } from '../lib/shared';
 import { curveFeePctAt, elapsedSlots, estimateSlot, isGraduated, liveCap, liveNextChange, phaseOf } from '../lib/token';
 import { CapRamp } from '../components/CapRamp';
 import { TradePanel } from '../components/TradePanel';
-import { RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
+import { Dropdown, RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
 import { Addr, CurveProgress, Guard, Link, PhasePill, PhaseStepper, Skeleton, Stat } from '../components/bits';
 import { TokenImage, TokenLinks, DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
 import { PriceCard, TradesFeed } from '../components/Market';
@@ -60,38 +60,38 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
         </span>
       </div>
 
-      {/* GMGN-style header strip: identity on the left, the page's key numbers inline on the right */}
+      {/* GMGN-style header strip: identity left, the page's key numbers in even columns right, description on its own line */}
       <div className="card gm-head">
-        <div className="row" style={{ gap: 14, minWidth: 0, flex: '1 1 300px' }}>
+        <div className="gm-id">
           <div className="thumb"><TokenImage mint={st.mint} ticker={view.launch?.symbol} metadata={view.metadata} showTicker={false} /></div>
           <div style={{ minWidth: 0 }}>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: 20 }}>{view.launch?.symbol ?? 'TOKEN'}</h1>
+              <h1 style={{ fontSize: 19 }}>{view.launch?.symbol ?? 'TOKEN'}</h1>
               <span className="faint small">{view.launch?.name}</span>
               <PhasePill phase={phase} />
             </div>
-            <div className="row small" style={{ marginTop: 4, gap: 10, flexWrap: 'wrap' }}>
+            <div className="row small" style={{ marginTop: 5, gap: 10, flexWrap: 'wrap' }}>
               <span className="faint"><Addr value={st.mint} href={view.explorer.mint || null} n={5} /></span>
               {view.metadata && <TokenLinks m={view.metadata} />}
               <button className="ghost small" onClick={() => setEditing(true)}>{view.metadata ? 'Edit details' : 'Add details (studio)'}</button>
             </div>
-            {view.metadata?.description && <p className="small muted clamp-1" style={{ margin: '4px 0 0' }}>{view.metadata.description}</p>}
           </div>
         </div>
         <div className="gm-stats">
           <div className="gm-stat">
+            <div className="small faint">Cap / token account</div>
             <div className="big-num">{graduated ? 'none' : capPct ?? 'no cap'}</div>
-            <div className="small faint">cap per token account</div>
           </div>
           <div className="gm-stat">
+            <div className="small faint">Curve fee now</div>
             <div className="big-num">{graduated ? '–' : feeNow === null ? 'n/a' : `~${feeNow}%`}</div>
-            <div className="small faint">curve fee now</div>
           </div>
-          <div className="gm-stat" style={{ minWidth: 190 }}>
+          <div className="gm-stat" style={{ minWidth: 180 }}>
+            <div className="small faint" style={{ marginBottom: 7 }}>Curve progress</div>
             <CurveProgress reserve={view.pool?.quoteReserveSol ?? null} threshold={view.fee?.migrationQuoteThresholdSol ?? view.launch?.migrationQuoteThresholdSol ?? null} graduated={graduated} />
-            <div className="small faint" style={{ marginTop: 4 }}>curve progress</div>
           </div>
         </div>
+        {view.metadata?.description && <p className="gm-desc small muted clamp-1">{view.metadata.description}</p>}
       </div>
       {editing && <EditDetails meta={meta} mint={st.mint} ticker={view.launch?.symbol} metadata={view.metadata ?? null} onClose={() => setEditing(false)} onSaved={live.refresh} />}
 
@@ -132,7 +132,9 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
           <Guard what="the trade panel">
             <TradePanel view={view} meta={meta} slot={slot} vars={vars!} onTraded={live.refresh} />
           </Guard>
-          <PhaseStepper phase={phase} />
+          <Dropdown title="Phase" aside={<PhasePill phase={phase} />} defaultOpen>
+            <PhaseStepper phase={phase} />
+          </Dropdown>
           <SwitchHistory view={view} />
           <TokenDetails view={view} />
           {/* AC-25 anchor while the full block lives in its tab: one line, always visible on the page */}

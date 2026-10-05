@@ -177,7 +177,7 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
           </>
         ) : (
           <>
-            <button className="primary block" disabled={busy || !('v' in parsed) || sellTooMuch || poolNeedsWallet} onClick={() => send()}>
+            <button className={`primary block trade-${side}`} disabled={busy || !('v' in parsed) || sellTooMuch || poolNeedsWallet} onClick={() => send()}>
               {busy ? step || 'Sending…' : `${side === 'buy' ? (!onPool && pv.overBy > 0n ? 'Buy anyway (will fail)' : 'Buy') : 'Sell'} ${'v' in parsed ? tok(amt) : ''} ${sym}`}
             </button>
             <p className="small faint" style={{ marginTop: 6, textAlign: 'center' }}>Checklist confirmed · valid 30 days</p>
