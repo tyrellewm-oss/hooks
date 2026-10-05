@@ -294,7 +294,7 @@ ul.rules li::before { content: ''; position: absolute; left: 3px; top: 19px; wid
 ul.rules li b { color: var(--text); font-weight: 600; }
 
 /* modal */
-.scrim { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px; z-index: 80; overflow-y: auto; }
+.scrim { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px; z-index: 1000; overflow-y: auto; }
 .modal { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; width: 100%; max-width: 640px; padding: 22px 24px; }
 .ck-item { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 10px; border-radius: var(--r-inner); cursor: pointer; align-items: start; }
 .ck-item:hover { background: var(--hover); }

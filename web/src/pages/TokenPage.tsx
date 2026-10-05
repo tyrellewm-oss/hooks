@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Meta } from '../lib/types';
 import { api, ApiError } from '../lib/api';
 import { usePoll, useNow } from '../lib/hooks';
@@ -161,7 +162,7 @@ function EditDetails({ meta, mint, ticker, metadata, onClose, onSaved }: { meta:
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   }
-  return (
+  return createPortal(
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="ed-title">
         <div className="spread" style={{ marginBottom: 12 }}><h1 id="ed-title" style={{ fontSize: 18 }}>Token details</h1><button className="ghost" onClick={onClose} aria-label="Close">✕</button></div>
@@ -175,6 +176,7 @@ function EditDetails({ meta, mint, ticker, metadata, onClose, onSaved }: { meta:
         </div>
         </StudioGate>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -116,7 +116,8 @@ function Candles({ candles, interval }: { candles: Candle[]; interval: number })
   }, [filled, interval, theme]);
 
   return (
-    <div style={{ position: 'relative' }}>
+    // isolation: the chart library layers its canvases with z-indexes; keep them inside this box's own stacking context
+    <div style={{ position: 'relative', isolation: 'isolate' }}>
       {shown && (
         <div className="chart-legend num" aria-live="off">
           <span className="faint">O</span> {fmtPrice(shown.o)} <span className="faint">H</span> {fmtPrice(shown.h)} <span className="faint">L</span> {fmtPrice(shown.l)} <span className="faint">C</span> {fmtPrice(shown.c)}
