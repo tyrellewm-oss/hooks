@@ -7,7 +7,7 @@ import { pageVars, pctOf, tok, BPS_DENOM, approxDuration } from '../lib/shared';
 import { curveFeePctAt, elapsedSlots, estimateSlot, isGraduated, liveCap, liveNextChange, phaseOf } from '../lib/token';
 import { CapRamp } from '../components/CapRamp';
 import { TradePanel } from '../components/TradePanel';
-import { Dropdown, RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
+import { RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
 import { Addr, CurveProgress, Guard, Link, PhasePill, PhaseStepper, Skeleton, Stat } from '../components/bits';
 import { TokenImage, TokenLinks, DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
 import { PriceCard, TradesFeed } from '../components/Market';
@@ -22,7 +22,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
   const now = useNow(1000);
   const view = live.data;
   const [editing, setEditing] = useState(false);
-  const [tab, setTab] = useState<'trades' | 'rules'>('trades');
+  const [tab, setTab] = useState<'trades' | 'cap' | 'rules'>('trades');
   const vars = useMemo(() => (view ? (pageVars(meta, view) as Record<string, string>) : null), [meta, view]);
 
   if (!view) {
@@ -102,29 +102,37 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
           <div>
             <div className="tabs page-tabs" role="tablist" aria-label="Token page sections" style={{ marginBottom: 12 }}>
               <button role="tab" aria-selected={tab === 'trades'} className={tab === 'trades' ? 'on' : ''} onClick={() => setTab('trades')}>Trades</button>
+              <button role="tab" aria-selected={tab === 'cap'} className={tab === 'cap' ? 'on' : ''} onClick={() => setTab('cap')}>Cap per token account</button>
               <button role="tab" aria-selected={tab === 'rules'} className={tab === 'rules' ? 'on' : ''} onClick={() => setTab('rules')}>Rules &amp; risks</button>
             </div>
             {tab === 'trades'
               ? <Guard what="the trades feed"><TradesFeed mint={mint} meta={meta} decimals={st.decimals ?? 6} /></Guard>
+              : tab === 'cap' ? (
+              <div className="card">
+                <div className="card-head">
+                  <h2>Cap per token account</h2>
+                  <span className="right small faint">% of supply · per token account, not per wallet</span>
+                </div>
+                <div className="stats" style={{ marginBottom: 12 }}>
+                  <Stat label="Cap now" value={graduated ? 'none' : capPct ?? 'no cap'} sub={cap === null ? (graduated ? 'hook removed' : 'ramp over or lifted') : `${tok(cap)} tokens`} />
+                  <Stat label="Next change" value={next ? (next.bps === null ? 'no cap' : pctOf(next.bps)) : '–'} sub={next ? `in ${approxDuration(next.slot - slot)}` : 'no further steps'} />
+                  <Stat label="Curve fee now" value={graduated ? '–' : feeNow === null ? 'n/a' : `~${feeNow}%`} sub={graduated ? 'pool fee only' : 'approx., anti-sniper schedule'} />
+                </div>
+                {st.steps && st.uncappedAfter
+                  ? <CapRamp steps={st.steps} uncappedAfter={st.uncappedAfter} nowElapsed={elapsed} fee={view.fee} raisedFloorBps={st.raisedFloorBps ?? 0} lifted={!!(st.mintLifted || st.globalLifted)} graduated={graduated} />
+                  : <p className="faint">No cap config found for this mint.</p>}
+              </div>
+              )
               : <Guard what="the rules and risks"><RulesAndRisks vars={vars!} /></Guard>}
           </div>
         </div>
 
-        {/* right: phases, trade box, then the stacked info sections */}
+        {/* right: trade box first, phases under it, then the stacked info sections */}
         <div className="sticky stack" style={{ marginTop: 0 }}>
-          <PhaseStepper phase={phase} />
           <Guard what="the trade panel">
             <TradePanel view={view} meta={meta} slot={slot} vars={vars!} onTraded={live.refresh} />
           </Guard>
-          <Dropdown title="Cap per token account" aside={<span className="small faint hide-sm">not per wallet</span>} defaultOpen>
-            <div className="stats" style={{ marginBottom: 12 }}>
-              <Stat label="Cap now" value={graduated ? 'none' : capPct ?? 'no cap'} sub={cap === null ? (graduated ? 'hook removed' : 'ramp over or lifted') : `${tok(cap)} tokens`} />
-              <Stat label="Next change" value={next ? (next.bps === null ? 'no cap' : pctOf(next.bps)) : '–'} sub={next ? `in ${approxDuration(next.slot - slot)}` : 'no further steps'} />
-            </div>
-            {st.steps && st.uncappedAfter
-              ? <CapRamp steps={st.steps} uncappedAfter={st.uncappedAfter} nowElapsed={elapsed} fee={view.fee} raisedFloorBps={st.raisedFloorBps ?? 0} lifted={!!(st.mintLifted || st.globalLifted)} graduated={graduated} height={180} />
-              : <p className="faint">No cap config found for this mint.</p>}
-          </Dropdown>
+          <PhaseStepper phase={phase} />
           <SwitchHistory view={view} />
           <TokenDetails view={view} />
           {/* AC-25 anchor while the full block lives in its tab: one line, always visible on the page */}
