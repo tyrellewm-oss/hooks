@@ -1,11 +1,10 @@
 // Launch + trade helpers for the local simulation, using the same builders the server uses
 // (curveConfigParams, buildCreatePoolTx) so what passes here is what the site sends.
 import BN from 'bn.js';
-import { Keypair, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
-import { NATIVE_MINT, getAssociatedTokenAddressSync } from '@solana/spl-token';
+import { Keypair, PublicKey, Transaction } from '@solana/web3.js';
+import { NATIVE_MINT } from '@solana/spl-token';
 import { deriveDbcPoolAddress } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { curveConfigParams, buildCreatePoolTx, type LaunchOpts } from '../../sdk/launch.js';
-import { TOKEN_2022 } from '../../sdk/hook.js';
 import { HOOK_PROGRAM } from './programs.js';
 import type { Sim } from './env.js';
 
@@ -15,13 +14,9 @@ export function hookAdmin(sim: Sim) {
   const admin = Keypair.generate(), launch = Keypair.generate();
   sim.env.fund(admin.publicKey); sim.env.fund(launch.publicKey);
   const r = sim.env.initGlobal(admin.publicKey);
-  if (!r.ok) throw new Error('hook global init failed:\n' + r.logs.join('\n'));
-  // migrate_global_v2 resizes Global (42 -> 74 bytes); litesvm's Linux build aborts (std::bad_alloc) on account
-  // resizes, so write the migrated state directly: the v1 bytes unchanged + the launch key at 42..74.
-  const g = sim.env.hook.globalPda();
-  const v1 = sim.env.accountData(g)!;
-  if (v1.length !== 42) throw new Error(`unexpected Global length ${v1.length}`);
-  console.log('[sim] writing Global v2'); sim.env.setAccountData(g, Buffer.concat([v1, launch.publicKey.toBuffer()])); console.log('[sim] Global v2 written');
+  if (!r.ok) throw new Error('hook global init failed: ' + r.logs.join(' | '));
+  const m = sim.env.migrateGlobal(admin, launch.publicKey);   // 8.3: launch key set the real way (account resize)
+  if (!m.ok) throw new Error('hook global migration failed: ' + m.logs.join(' | '));
   return { admin, launch };
 }
 
@@ -34,12 +29,12 @@ export async function launchToken(sim: Sim, keys: { admin: Keypair; launch: Keyp
     config: configKp.publicKey, feeClaimer: payer.publicKey, leftoverReceiver: payer.publicKey, payer: payer.publicKey,
     quoteMint: NATIVE_MINT, transferHookProgram: HOOK_PROGRAM, ...configOverride(curveConfigParams(o)),
   } as any);
-  console.log('[sim] sending config tx'); const r1 = sim.send(cfgTx, [payer, configKp]); console.log('[sim] config tx ok=' + r1.ok);
+  const r1 = sim.send(cfgTx, [payer, configKp]);
   if (!r1.ok) throw new Error('create config failed:\n' + r1.logs.slice(-12).join('\n'));
   const auth = { upgradeAuthority: sim.env.upgradeAuth.publicKey.toBase58(), liftAuthority: keys.admin.publicKey.toBase58(), launchAuthority: keys.launch.publicKey.toBase58() };
   const poolTx = await buildCreatePoolTx({ dbc: sim.dbc, hook: sim.env.hook }, o, { payer: payer.publicKey, config: configKp.publicKey, mint: mintKp.publicKey, launchAuthority: keys.launch.publicKey }, auth);
   const launchSlot = sim.slot;
-  console.log('[sim] sending pool tx'); const r2 = sim.send(poolTx, [payer, mintKp, keys.launch]); console.log('[sim] pool tx ok=' + r2.ok);
+  const r2 = sim.send(poolTx, [payer, mintKp, keys.launch]);
   if (!r2.ok) throw new Error('create pool failed:\n' + r2.logs.slice(-15).join('\n'));
   return { mint: mintKp.publicKey, config: configKp.publicKey, pool: deriveDbcPoolAddress(NATIVE_MINT, mintKp.publicKey, configKp.publicKey), launchSlot };
 }
@@ -57,23 +52,21 @@ export async function buy(sim: Sim, l: Launched, who: Keypair, lamports: bigint)
     owner: who.publicKey, pool: l.pool, swapBaseForQuote: false, referralTokenAccount: null,
     amountIn: new BN(lamports.toString()), minimumAmountOut: new BN(0), swapMode: 0,
   });
-  const quoteFeesBefore = await quoteFees(sim, l.pool);
+  const reserveBefore = await quoteReserve(sim, l.pool);
   const tokensBefore = tokenBalance(sim, l.mint, who.publicKey);
   const r = sim.send(tx, [who]);
   const tokens = tokenBalance(sim, l.mint, who.publicKey) - tokensBefore;
-  const fee = (await quoteFees(sim, l.pool)) - quoteFeesBefore;
-  return { ...r, tokens, fee, feePct: Number(fee * 1_000_000n / lamports) / 10_000, virtualPool };
+  const intoReserve = (await quoteReserve(sim, l.pool)) - reserveBefore;
+  const fee = r.ok ? lamports - intoReserve : 0n;   // the fee is the part of the SOL in that does not enter the curve
+  return { ...r, tokens, fee, feePct: r.ok ? Number((fee * 1_000_000n) / lamports) / 10_000 : 0, virtualPool };
 }
 
 export function tokenBalance(sim: Sim, mint: PublicKey, owner: PublicKey) {
-  return sim.env.balance(getAssociatedTokenAddressSync(mint, owner, true, TOKEN_2022));
+  return sim.env.tokenBalance(mint, owner);
 }
 
-/** Total trading fees the pool has collected in SOL (partner + creator + protocol + referral shares). */
-export async function quoteFees(sim: Sim, pool: PublicKey): Promise<bigint> {
+/** SOL (lamports) held by the curve for trading: fees are tracked separately from this reserve. */
+export async function quoteReserve(sim: Sim, pool: PublicKey): Promise<bigint> {
   const p: any = await sim.dbc.state.getPool(pool);
-  const f = (x: any) => BigInt((x ?? 0).toString());
-  return f(p.partnerQuoteFee) + f(p.creatorQuoteFee) + f(p.protocolQuoteFee);
+  return BigInt(p.quoteReserve.toString());
 }
-
-export const sys = SystemProgram;
