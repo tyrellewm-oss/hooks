@@ -45,7 +45,7 @@ export function HowItWorksPage({ meta }: { meta: Meta }) {
           ))}
         </div>
       </Guard>
-      <p className="small"><Link to="/" className="link">See the test tokens</Link></p>
+      <p className="small"><Link to="/tokens" className="link">See the test tokens</Link></p>
     </div>
   );
 }

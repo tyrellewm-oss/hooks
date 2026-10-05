@@ -33,7 +33,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
         <div className="card" style={{ maxWidth: 560 }}>
           <h1 style={{ fontSize: 18, marginBottom: 8 }}>{nf ? "This token isn't listed" : "Couldn't load this token"}</h1>
           <p className="muted">{nf ? 'The page only shows tokens in the mint registry (keeper/registry.json) that have a local launch record.' : live.error.message}</p>
-          <Link to="/">Back to tokens</Link>
+          <Link to="/tokens">Back to tokens</Link>
         </div>
       );
     }
@@ -54,7 +54,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
   return (
     <div className="stack">
       <div className="spread" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
-        <Link to="/" className="back"><IconBack size={15} />Back to tokens</Link>
+        <Link to="/tokens" className="back"><IconBack size={15} />Back to tokens</Link>
         <span className="small faint row" title={`chain slot ${st.slot}`}>
           <span className={`dot ${live.error ? 'down' : stale ? 'stale' : ''}`} />
           {live.error ? `last update failed: ${live.error.message}` : `live · slot ~${slot} · +${elapsed} since launch`}
