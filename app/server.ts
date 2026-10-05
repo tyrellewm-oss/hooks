@@ -12,7 +12,8 @@ import { defaultSchedule, scheduleJson, resolveSchedule } from '../sdk/schedules
 import { loadOrCreate, deployerName } from '../sdk/keys.js';
 import { Launchpad, listLaunches, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration, dammV2MigrationConfigFor } from '../sdk/launch.js';
 import { validate, RELEASE_LIMITS, type Step } from '../sdk/capMath.js';
-import { parseRestrictionsLifted } from '../sdk/hook.js';
+import { parseRestrictionsLifted, decodeRules, type BuyRules } from '../sdk/hook.js';
+import { parseBuyRules, buyRulesBps, rulesUnsupportedHint, BuyRulesRefusal } from '../sdk/buy_rules.js';
 import { redactDeep } from '../sdk/redact.js';
 import { serverError } from './errors.js';
 import { siteRoute, createReply, type Reply } from './site_registry.js';
@@ -74,7 +75,7 @@ const launchRelay = new StudioLaunchRelay();
 const pendingLaunchMeta = new Map<string, ReturnType<typeof validateMetadata>>();
 
 /** Shared validation for /api/create and /api/studio/launch/build: same rules as the program (AC-4/AC-21), QA L-16. */
-function parseLaunchBody(b: any): { error: string } | { opts: { name: string; symbol: string; steps: Step[]; uncappedAfter: bigint; migrationQuoteThresholdSol: number; percentageSupplyOnMigration: number }; meta: ReturnType<typeof validateMetadata> | null } {
+function parseLaunchBody(b: any): { error: string } | { opts: { name: string; symbol: string; steps: Step[]; uncappedAfter: bigint; migrationQuoteThresholdSol: number; percentageSupplyOnMigration: number; rules?: BuyRules }; meta: ReturnType<typeof validateMetadata> | null } {
   const name = String(b.name ?? '').slice(0, 32), symbol = String(b.symbol ?? '').toUpperCase().slice(0, 10);
   if (!name || !/^[A-Z0-9]{2,10}$/.test(symbol)) return { error: 'name and 2-10 char ticker required' };
   // Either explicit steps, or a named schedule (strict|balanced|loose|demo). Unknown names are a 400, never a silent fallback (QA L-16).
@@ -91,9 +92,11 @@ function parseLaunchBody(b: any): { error: string } | { opts: { name: string; sy
   let percentageSupplyOnMigration: number; // optional; default 20 (validated before any tx)
   try { percentageSupplyOnMigration = resolvePercentageSupplyOnMigration(b.percentageSupplyOnMigration); }
   catch (e: any) { return { error: e.message }; }
+  let rules: BuyRules | null;   // optional hooks (max single buy, max per slot, Nth-buy pot); none = the v1 hook config
+  try { rules = parseBuyRules(b.rules); } catch (e: any) { if (e instanceof BuyRulesRefusal) return { error: e.message }; throw e; }
   let meta: ReturnType<typeof validateMetadata> | null = null;   // optional token details, validated before any tx
   if (b.metadata !== undefined) { try { meta = validateMetadata(b.metadata); } catch (e: any) { return { error: e.message }; } }
-  return { opts: { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration }, meta };
+  return { opts: { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration, ...(rules ? { rules } : {}) }, meta };
 }
 // Studio sign-in (sdk/studio_auth.ts): the create and token-details routes need a session from an allowlisted wallet.
 // Fails closed on devnet (no STUDIO_WALLETS -> studio closed); a local validator without a list stays open.
@@ -124,7 +127,16 @@ async function tokenView(mintStr: string, owner: PublicKey | null = null) {
     percentageSupplyOnMigration: (rec.fee as any)?.percentageSupplyOnMigration ?? DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION } : null;
   // the connected browser wallet, when the page passes ?owner=<pubkey>: its token balance and SOL (read only)
   const wallet = owner ? { owner: owner.toBase58(), tokens: (await lp.tokenBalance(mint, owner)).toString(), sol: (await c.connection.getBalance(owner, 'confirmed')) / LAMPORTS_PER_SOL } : null;
-  return { status: st, launch: rec, metadata: publicMetadata(loadMetadata(c.name, mintStr), mintStr), fee, feeConfig, pool, balances: bal, wallet, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
+  return { status: st, launch: rec, rules: await rulesView(mint), metadata: publicMetadata(loadMetadata(c.name, mintStr), mintStr), fee, feeConfig, pool, balances: bal, wallet, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
+}
+
+/** The token's optional hooks (rules PDA), or null for a token launched without them. Shares are bps of supply. */
+async function rulesView(mint: PublicKey) {
+  const a = await c.connection.getAccountInfo(lp.hook.rulesPda(mint), 'confirmed');
+  if (!a || !a.owner.equals(lp.hook.programId)) return null;
+  const r = decodeRules(a.data);   // winners: the last 16, newest first
+  return { ...buyRulesBps(r), launchSlot: r.launchSlot.toString(), buyCount: r.buyCount.toString(), wins: r.wins.toString(),
+    winners: r.winners.map((w) => ({ owner: w.owner.toBase58(), tokenAccount: w.tokenAccount.toBase58(), buyIndex: w.buyIndex.toString(), slot: w.slot.toString() })) };
 }
 
 async function trade(b: any, rec: { mint: string; pool: string }): Promise<Reply> {
@@ -223,7 +235,9 @@ http.createServer(async (req, res) => {
       if ('error' in p) return send(res, 400, p);
       await lp.ensureGlobal(deployer, deployer.publicKey);
       await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);   // 8.3: launches are signed by the launch key, never the admin
-      const rec = await lp.launch(deployer, p.opts, launchKey);
+      let rec;
+      try { rec = await lp.launch(deployer, p.opts, launchKey); }
+      catch (e: any) { const hint = p.opts.rules && rulesUnsupportedHint(String(e?.message ?? e)); if (hint) return send(res, 400, { error: hint }); throw e; }
       if (p.meta) saveMetadata(c.name, rec.mint, p.meta);
       return send(res, 200, createReply(rec));   // ticket 8.5b: registered: false + note; the registry is never written
     }
@@ -243,6 +257,8 @@ http.createServer(async (req, res) => {
         if (p.meta) pendingLaunchMeta.set(built.mint, p.meta);   // saved only if the launch confirms
         return send(res, 200, built);
       } catch (e: any) {
+        const hint = p.opts.rules && rulesUnsupportedHint(String(e?.message ?? e));
+        if (hint) return send(res, 400, { error: hint });
         if (e instanceof LaunchUserRefusal || e instanceof KeyRuleRefusal || e instanceof MintHookRefusal) return send(res, 400, { error: e.message });
         throw e;
       }

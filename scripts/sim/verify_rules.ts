@@ -13,6 +13,7 @@ import { simEnv } from './env.js';
 import { hookAdmin, launchToken, trader, buy, tokenBalance } from './launch.js';
 import { BALANCED } from '../../sdk/schedules.js';
 import { decodeRules, type BuyRules } from '../../sdk/hook.js';
+import { parseBuyRules, buyRulesBps } from '../../sdk/buy_rules.js';
 import type { Keypair } from '@solana/web3.js';
 
 const log = (...a: unknown[]) => console.log('[rules]', ...a);
@@ -30,8 +31,12 @@ const rules: BuyRules = {
   potEvery: 10,                       // every 10th qualifying buy wins
   potMinTokens: pct(1n),              // a buy qualifies from 0.01% of supply
 };
+// the same values as the launch form sends them (bps of supply), through the server's own conversion
+assert.deepEqual(parseBuyRules({ maxBuyBps: 30, maxPerSlotBps: 50, windowSlots: 300, potEvery: 10, potMinBps: 1 }), rules, "the site's conversion gives exactly these rules");
 const o: any = { name: 'Sim Rules', symbol: 'RULE', steps: BALANCED.steps, uncappedAfter: BALANCED.uncappedAfter, migrationQuoteThresholdSol: 500, rules };
 const l = await launchToken(sim, keys, o);
+assert.ok(l.poolTxBytes <= 1232, `the create-pool tx with rules fits one packet (${l.poolTxBytes} bytes)`);
+log(`create-pool + hook config with rules: ${l.poolTxBytes} / 1232 bytes`);
 const readRules = () => decodeRules(sim.env.accountData(sim.env.hook.rulesPda(l.mint))!);
 log('v2 token launched', l.mint.toBase58(), 'rules', JSON.stringify(readRules(), (_, v) => (typeof v === 'bigint' ? v.toString() : v)).slice(0, 160));
 sim.warp(200n);                       // past the 50% opening fee so SOL amounts map to tokens predictably (rules window is 300)
@@ -98,6 +103,8 @@ for (const w of after.winners.slice(0, Number(expectedWins))) {
   assert.ok(buyers.some((b) => b.publicKey.equals(w.owner)), 'the recorded winner is the buyer who made that buy');
 }
 log(`pot: ${counted} qualifying buys counted, ${after.wins - before.wins} winners recorded (buy #${after.winners.map((w) => w.buyIndex).join(', #')})`);
+// what the token page shows (app/server.ts rulesView: decodeRules + buyRulesBps) round-trips to the form's values
+assert.deepEqual(buyRulesBps(after), { maxBuyBps: 30, maxPerSlotBps: 50, windowSlots: '300', potEvery: 10, potMinBps: 1 }, 'the token page reads back the launch values');
 
 // 5. sells are never blocked
 const seller = buyers[0];

@@ -8,7 +8,7 @@ import { curveConfigParams, buildCreatePoolTx, type LaunchOpts } from '../../sdk
 import { HOOK_PROGRAM } from './programs.js';
 import type { Sim } from './env.js';
 
-export interface Launched { mint: PublicKey; config: PublicKey; pool: PublicKey; launchSlot: bigint }
+export interface Launched { mint: PublicKey; config: PublicKey; pool: PublicKey; launchSlot: bigint; poolTxBytes: number }
 
 export function hookAdmin(sim: Sim) {
   const admin = Keypair.generate(), launch = Keypair.generate();
@@ -36,7 +36,9 @@ export async function launchToken(sim: Sim, keys: { admin: Keypair; launch: Keyp
   const launchSlot = sim.slot;
   const r2 = sim.send(poolTx, [payer, mintKp, keys.launch]);
   if (!r2.ok) throw new Error('create pool failed:\n' + r2.logs.slice(-15).join('\n'));
-  return { mint: mintKp.publicKey, config: configKp.publicKey, pool: deriveDbcPoolAddress(NATIVE_MINT, mintKp.publicKey, configKp.publicKey), launchSlot };
+  // the size a real cluster sees (litesvm itself does not enforce the 1232-byte packet limit); web3.js throws over it
+  const poolTxBytes = poolTx.serialize().length;
+  return { mint: mintKp.publicKey, config: configKp.publicKey, pool: deriveDbcPoolAddress(NATIVE_MINT, mintKp.publicKey, configKp.publicKey), launchSlot, poolTxBytes };
 }
 
 export function trader(sim: Sim, sol = 50n) {
