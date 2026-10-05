@@ -110,7 +110,9 @@ export type Side = 'buy' | 'sell';
 
 /** /api/wallet/build (sdk/wallet_tx.ts): an unsigned swap for the user's wallet, already simulated */
 export interface BuiltSwap {
+  /** unsigned transaction, hex (base64 would be mangled by the server's redaction) */
   tx: string;
+  encoding: 'hex';
   owner: string;
   side: Side;
   amount: string;
