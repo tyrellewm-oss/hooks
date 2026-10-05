@@ -34,7 +34,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
   const [preset, setPreset] = useState(presets[0].id);
   const [rows, setRows] = useState<Row[]>(rowsOf(presets[0]));
   const [unc, setUnc] = useState(presets[0].uncappedAfter.toString());
-  const [name, setName] = useState('Trenches Test');
+  const [name, setName] = useState('Hookd Test');
   const [symbol, setSymbol] = useState('TTEST');
   const [threshold, setThreshold] = useState('1');
   const bw = useWallet();
@@ -81,7 +81,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
   const cur = STEPS[at];
   const stateOf = (i: number) => (i === at ? 'now' : i > seen ? 'todo' : STEPS[i].err ? 'warn' : 'done');
   const reset = () => {
-    pick(presets[0].id); setName('Trenches Test'); setSymbol('TTEST'); setThreshold('1'); setOnMigration('20');
+    pick(presets[0].id); setName('Hookd Test'); setSymbol('TTEST'); setThreshold('1'); setOnMigration('20');
     setDetails(emptyDetails()); setResult(null); setError(null); setAt(0); setSeen(0);
   };
 

@@ -3,8 +3,8 @@ import { useSyncExternalStore } from 'react';
 
 // ---------- theme: dark by default; the choice is kept in this browser only
 export type Theme = 'dark' | 'light';
-const THEME_KEY = 'trenches-theme';
-const THEME_EVENT = 'trenches:theme';
+const THEME_KEY = 'hookd-theme';
+const THEME_EVENT = 'hookd:theme';
 const readTheme = (): Theme => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
 export function setTheme(t: Theme) {
   document.documentElement.dataset.theme = t;

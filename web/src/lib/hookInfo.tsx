@@ -1,4 +1,4 @@
-// The hooks every Trenches token runs, in one place for the hooks page and the launch tool. Values are the studio
+// The hooks every Hookd token runs, in one place for the hooks page and the launch tool. Values are the studio
 // defaults (sdk/launch.ts DEFAULT_LAUNCH_FEES, the flywheel keeper spec's 15/85 split); each token page shows its own.
 import type { ReactNode } from 'react';
 import type { Meta } from './types';

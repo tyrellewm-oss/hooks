@@ -50,7 +50,7 @@ export function App() {
   return (
     <div className="shell">
       <aside className={`sidebar ${menu ? 'open' : ''}`} aria-label="Sidebar">
-        <Link to="/" className="logo"><span className="logo-mark"><LogoMark /></span>Trenches</Link>
+        <Link to="/" className="logo"><span className="logo-mark"><LogoMark /></span>Hookd</Link>
         <nav className="side-nav" aria-label="Main">
           {nav('/', 'Home', <IconHome />)}
           {nav('/tokens', 'Tokens', <IconGrid />)}

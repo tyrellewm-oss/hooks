@@ -20,7 +20,7 @@ export function pageVars(meta, view) {
     MULTISIG: `a throwaway ${meta.cluster === 'DEVNET' ? 'devnet' : 'local'} test key (${meta.liftAuthority})`,
     ANNOUNCE_CHANNEL: 'the switch history on this page (public channel pending King decision N3)',
     RESTRICTED_LIST: 'restricted regions (list pending)',
-    REPO_COMMIT: `local repo trenches-launchpad@${meta.commit} (not yet public)`,
+    REPO_COMMIT: `local repo hookd@${meta.commit} (not yet public)`,
     PROGRAM_ID: meta.programId,
     TICKER: view?.launch ? (view.launch.symbol ?? 'TOKEN ' + view.launch.mint.slice(0, 6)) : 'TOKEN',
     CAP_START: steps.length ? pctOf(steps[0].maxBps) : 'n/a',

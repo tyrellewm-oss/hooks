@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 // ---------- routing (4 routes; no router dependency)
-const NAV = 'trenches:navigate';
+const NAV = 'hookd:navigate';
 export function navigate(to: string, { replace = false }: { replace?: boolean } = {}) {
   if (to === location.pathname) return;
   if (replace) history.replaceState(null, '', to);

@@ -212,7 +212,7 @@ export const fixtureApi: Api = {
     await latency();
     const nonce = fakeSig().slice(0, 32);
     STUDIO_NONCES.add(nonce);
-    return { nonce, message: `Trenches studio sign-in (fixture)\n\nWallet: ${wallet}\nNonce: ${nonce}`, expiresInMs: 300_000 };
+    return { nonce, message: `Hookd studio sign-in (fixture)\n\nWallet: ${wallet}\nNonce: ${nonce}`, expiresInMs: 300_000 };
   },
   async studioSession(wallet, nonce, signature) {
     await latency();

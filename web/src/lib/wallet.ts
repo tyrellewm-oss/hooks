@@ -6,7 +6,7 @@ import type { Wallet, WalletAccount } from '@wallet-standard/base';
 import { FIXTURE_MODE } from './api';
 
 const CONNECT = 'standard:connect', DISCONNECT = 'standard:disconnect', SIGN_TX = 'solana:signTransaction', SIGN_MSG = 'solana:signMessage';
-const LAST_KEY = 'trenches-last-wallet';
+const LAST_KEY = 'hookd-last-wallet';
 export const CHAIN = 'solana:devnet';
 
 export interface WalletState {

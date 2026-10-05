@@ -45,7 +45,7 @@ export function HomePage({ meta }: { meta: Meta }) {
     <div className="home">
       <section className="home-hero">
         <h1>Fairer launches.<br /><span>Rules you can check on chain.</span></h1>
-        <p>Every Trenches token runs four hooks, fixed at launch. Snipers get slowed down, the rules can only loosen, and fees buy the token back and burn it.</p>
+        <p>Every Hookd token runs four hooks, fixed at launch. Snipers get slowed down, the rules can only loosen, and fees buy the token back and burn it.</p>
         <div className="row home-cta">
           <button className="primary" onClick={() => navigate('/tokens')}>Explore tokens</button>
           <button onClick={() => navigate('/create')}>Launch</button>

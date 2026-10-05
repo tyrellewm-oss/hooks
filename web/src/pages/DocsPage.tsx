@@ -1,4 +1,4 @@
-// Docs: how Trenches works, end to end, in one page with a sticky contents list. UI copy lives here; the brief's
+// Docs: how Hookd works, end to end, in one page with a sticky contents list. UI copy lives here; the brief's
 // required rules text is rendered from page_content.json (RulesAndRisks). Numbers are the studio defaults; each token
 // page shows that token's own values.
 import { useEffect, useState, type ReactNode } from 'react';
@@ -15,16 +15,16 @@ const DAMM_V2_PROGRAM = 'cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG';
 const TOKEN_2022_PROGRAM = 'TokenzQdBNbLqP5VEhdkAS14EPLDNJcfGa3d5BSAShD';
 
 const SECTIONS: { id: string; label: string; group: string }[] = [
-  { id: 'overview', label: 'What Trenches is', group: 'Start here' },
+  { id: 'overview', label: 'What Hookd is', group: 'Start here' },
   { id: 'lifecycle', label: 'A token’s life', group: 'Start here' },
   { id: 'hooks', label: 'The four hooks', group: 'Hooks' },
   { id: 'cap', label: 'Cap per token account', group: 'Hooks' },
   { id: 'fee', label: 'Anti-sniper fee', group: 'Hooks' },
   { id: 'switch', label: 'Lift-only switch', group: 'Hooks' },
   { id: 'burn', label: 'Buyback & burn', group: 'Hooks' },
-  { id: 'graduation', label: 'Graduation', group: 'Using Trenches' },
-  { id: 'trading', label: 'Trading', group: 'Using Trenches' },
-  { id: 'launching', label: 'Launching', group: 'Using Trenches' },
+  { id: 'graduation', label: 'Graduation', group: 'Using Hookd' },
+  { id: 'trading', label: 'Trading', group: 'Using Hookd' },
+  { id: 'launching', label: 'Launching', group: 'Using Hookd' },
   { id: 'addresses', label: 'Programs & addresses', group: 'Reference' },
   { id: 'risks', label: 'Rules & risks', group: 'Reference' },
   { id: 'faq', label: 'FAQ', group: 'Reference' },
@@ -80,12 +80,12 @@ export function DocsPage({ meta }: { meta: Meta }) {
       <article className="docs-body">
         <header className="docs-hero">
           <div className="docs-kicker">Docs · {cluster}</div>
-          <h1>How Trenches works</h1>
-          <p>Everything about launching and holding a Trenches token, in one place. Each section is short; the numbers shown are the studio defaults, and each token page shows that token’s own.</p>
+          <h1>How Hookd works</h1>
+          <p>Everything about launching and holding a Hookd token, in one place. Each section is short; the numbers shown are the studio defaults, and each token page shows that token’s own.</p>
         </header>
 
-        <Section id="overview" title="What Trenches is">
-          <p>Trenches is a token launchpad on Solana where the rules are enforced on chain, not promised. Every token runs four hooks that are fixed at launch: a rising cap per token account, an anti-sniper fee, a switch that can only loosen the cap, and a bot that buys the token back and burns it after graduation.</p>
+        <Section id="overview" title="What Hookd is">
+          <p>Hookd is a token launchpad on Solana where the rules are enforced on chain, not promised. Every token runs four hooks that are fixed at launch: a rising cap per token account, an anti-sniper fee, a switch that can only loosen the cap, and a bot that buys the token back and burns it after graduation.</p>
           <div className="docs-cards">
             {hookList(meta).map((h) => (
               <a key={h.id} href={`/docs#${h.id}`} onClick={jump(h.id)} className={`docs-card tone-${h.tone}`}>
@@ -153,7 +153,7 @@ export function DocsPage({ meta }: { meta: Meta }) {
         </Section>
 
         <Section id="trading" title="Trading">
-          <p>Trenches doesn’t have a buy or sell button. Use any Solana wallet or app that supports Token-2022 tokens with transfer hooks. The rules travel with the token: the cap is checked on chain on every transfer, whatever app you use.</p>
+          <p>Hookd doesn’t have a buy or sell button. Use any Solana wallet or app that supports Token-2022 tokens with transfer hooks. The rules travel with the token: the cap is checked on chain on every transfer, whatever app you use.</p>
           <Callout>If a buy fails during the curve, the most likely reason is that it would put your token account over the cap. Try a smaller amount, or wait for the cap to rise.</Callout>
         </Section>
 
@@ -172,7 +172,7 @@ export function DocsPage({ meta }: { meta: Meta }) {
 
         <Section id="addresses" title="Programs & addresses">
           <dl className="docs-addr">
-            <dt>Trenches hook program</dt><dd><Addr value={meta.programId} n={8} /></dd>
+            <dt>Hookd hook program</dt><dd><Addr value={meta.programId} n={8} /></dd>
             <dt>Meteora bonding curve (DBC)</dt><dd><Addr value={DBC_PROGRAM} n={8} /></dd>
             <dt>Meteora DAMM v2 (pools)</dt><dd><Addr value={DAMM_V2_PROGRAM} n={8} /></dd>
             <dt>Token-2022</dt><dd><Addr value={TOKEN_2022_PROGRAM} n={8} /></dd>
