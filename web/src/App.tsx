@@ -4,8 +4,9 @@ import { navigate, usePath, usePoll } from './lib/hooks';
 import { setQuery, setTheme, useQuery, useTheme } from './lib/ui';
 import { CONTENT, fill, pageVars } from './lib/shared';
 import { Guard, Link, Skeleton } from './components/bits';
-import { IconEye, IconGrid, IconHook, IconMenu, IconMoon, IconPlus, IconSearch, IconSun, LogoMark } from './components/Icons';
+import { IconEye, IconGrid, IconHome, IconHook, IconMenu, IconMoon, IconPlus, IconSearch, IconSun, LogoMark } from './components/Icons';
 import { TokensPage } from './pages/TokensPage';
+import { HomePage } from './pages/HomePage';
 import { WalletButton } from './components/WalletButton';
 import { TokenPage } from './pages/TokenPage';
 import { HooksPage } from './pages/HooksPage';
@@ -37,10 +38,11 @@ export function App() {
   else if (path === '/hooks') page = <HooksPage meta={m} />;
   else if (path === '/create') page = <CreatePage meta={m} />;
   else if (path === '/transparency') page = <TransparencyPage meta={m} />;
-  else if (path === '/') page = <TokensPage meta={m} />;
-  else page = <div className="card"><h2>Page not found</h2><p style={{ marginTop: 8 }}><Link to="/" className="link">Back to tokens</Link></p></div>;
+  else if (path === '/tokens') page = <TokensPage meta={m} />;
+  else if (path === '/') page = <HomePage meta={m} />;
+  else page = <div className="card"><h2>Page not found</h2><p style={{ marginTop: 8 }}><Link to="/" className="link">Back to home</Link></p></div>;
 
-  const isActive = (to: string) => (to === '/' ? path === '/' || path.startsWith('/token/') : path === to);
+  const isActive = (to: string) => (to === '/tokens' ? path === '/tokens' || path.startsWith('/token/') : path === to);
   const nav = (to: string, label: string, icon: ReactNode) => <Link to={to} className={isActive(to) ? 'active' : ''}>{icon}{label}</Link>;
 
   return (
@@ -48,7 +50,8 @@ export function App() {
       <aside className={`sidebar ${menu ? 'open' : ''}`} aria-label="Sidebar">
         <Link to="/" className="logo"><span className="logo-mark"><LogoMark /></span>Trenches</Link>
         <nav className="side-nav" aria-label="Main">
-          {nav('/', 'Tokens', <IconGrid />)}
+          {nav('/', 'Home', <IconHome />)}
+          {nav('/tokens', 'Tokens', <IconGrid />)}
           {nav('/create', 'Studio launch', <IconPlus />)}
           {nav('/hooks', 'Hooks', <IconHook />)}
           {nav('/transparency', 'Transparency', <IconEye />)}
@@ -74,7 +77,7 @@ export function App() {
           <label className="search">
             <IconSearch size={15} />
             <span className="sr-only">Search tokens</span>
-            <input placeholder="Search name, ticker or mint" value={q} onChange={(e) => { setQuery(e.target.value); if (path !== '/') navigate('/'); }} />
+            <input placeholder="Search name, ticker or mint" value={q} onChange={(e) => { setQuery(e.target.value); if (path !== '/tokens') navigate('/tokens'); }} />
           </label>
           <div className="actions">
             <span className="badge">{CONTENT.devnet_label}</span>
@@ -82,10 +85,8 @@ export function App() {
             <WalletButton />
           </div>
         </header>
-        {/* AC-23: the banner string from page copy shows on every page (slim, under the top bar) */}
-        <div className="banner">{CONTENT.banner}</div>
         <main><Guard what="this page">{page}</Guard></main>
-        <footer>{m ? <Guard what="the footer">{fill(CONTENT.footer, pageVars(m, null))}</Guard> : CONTENT.banner}</footer>
+        <footer>{m ? <Guard what="the footer">{fill(CONTENT.footer, pageVars(m, null))}</Guard> : null}</footer>
       </div>
     </div>
   );
