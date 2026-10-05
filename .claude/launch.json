@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-fixtures",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd web && npx -y pnpm@10 dev:fixtures"],
+      "port": 5176,
+      "url": "http://127.0.0.1:5176"
+    }
+  ]
+}

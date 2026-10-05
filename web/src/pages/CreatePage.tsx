@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { CreateReply, Meta, StepJson } from '../lib/types';
 import { api } from '../lib/api';
+import { useWallet, signTransaction, hexToBytes, bytesToHex } from '../lib/wallet';
 import { validate, RELEASE_LIMITS, STRICT, BALANCED, LOOSE, LOCAL_DEMO, pctOf, approxDuration, type NamedSchedule, type ScheduleError } from '../lib/shared';
 import { CapRamp } from '../components/CapRamp';
 import { Addr } from '../components/bits';
@@ -30,6 +31,8 @@ export function CreatePage({ meta }: { meta: Meta }) {
   const [name, setName] = useState('Trenches Test');
   const [symbol, setSymbol] = useState('TTEST');
   const [threshold, setThreshold] = useState('1');
+  const bw = useWallet();
+  const [step, setStep] = useState('');
   const [onMigration, setOnMigration] = useState('20');
   const [details, setDetails] = useState<DetailsState>(emptyDetails());
   const [busy, setBusy] = useState(false);
@@ -60,9 +63,23 @@ export function CreatePage({ meta }: { meta: Meta }) {
   async function create() {
     if (!('steps' in check) || formErr) return;
     setBusy(true); setError(null); setResult(null);
-    try { setResult(await api.create({ name: name.trim(), symbol, steps: check.steps!, uncappedAfter: unc.trim(), thresholdSol: Number(threshold), percentageSupplyOnMigration: Number(onMigration), metadata: toInput(details) })); }
-    catch (e) { setError((e as Error).message); }
-    finally { setBusy(false); }
+    const req = { name: name.trim(), symbol, steps: check.steps!, uncappedAfter: unc.trim(), thresholdSol: Number(threshold), percentageSupplyOnMigration: Number(onMigration), metadata: toInput(details) };
+    try {
+      if (bw.address) {
+        // AC-21: the launch tx is signed in the connected wallet; the server co-signs with the launch key (8.3)
+        setStep('Preparing the launch…');
+        const built = await api.launchBuild(req);
+        setStep('Approve the launch in your wallet…');
+        let signed: Uint8Array;
+        try { signed = await signTransaction(hexToBytes(built.tx)); }
+        catch (e) { setError(/reject|denied|cancel/i.test((e as Error).message) ? 'You declined in the wallet. Nothing was launched.' : (e as Error).message); return; }
+        setStep('Sending…');
+        setResult(await api.launchSubmit(bytesToHex(signed)));
+      } else {
+        setResult(await api.create(req));   // server-signed test path (no wallet connected)
+      }
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); setStep(''); }
   }
 
   return (
@@ -70,7 +87,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
       <section className="hero">
         <div>
         <h1>Studio launch tool</h1>
-        <p>Creates a Meteora DBC config with the transfer hook, the pool and the frozen cap config, signed by the studio's throwaway {meta.cluster.toLowerCase()} launch key on the server. There is no public self-serve.</p>
+        <p>Creates a Meteora DBC config with the transfer hook, the pool and the frozen cap config. With a wallet connected, you sign the launch in your own wallet and the server co-signs with the {meta.cluster.toLowerCase()} launch key; without one, the server's throwaway keys sign. There is no public self-serve.</p>
         </div>
         <span className="hero-line" />
       </section>
@@ -122,7 +139,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
           <div className="small faint" style={{ marginBottom: 10 }}>Token details (optional, can be edited later)</div>
           <DetailsForm value={details} onChange={setDetails} mint={symbol || 'new'} ticker={symbol} />
           {(formErr || detailsError(details)) && <p className="small fail">{formErr ?? detailsError(details)}</p>}
-          <button className="primary block" disabled={busy || !!formErr || !!detailsError(details) || 'err' in check} onClick={create}>{busy ? 'Creating… (2 transactions)' : `Create on ${meta.cluster.toLowerCase()}`}</button>
+          <button className="primary block" disabled={busy || !!formErr || !!detailsError(details) || 'err' in check} onClick={create}>{busy ? step || 'Creating… (2 transactions)' : `Create on ${meta.cluster.toLowerCase()}`}</button>
           {error && <div className="notice red small" style={{ marginTop: 12 }}>{error}</div>}
           {result && (
             <div className="notice green small" style={{ marginTop: 12 }}>
