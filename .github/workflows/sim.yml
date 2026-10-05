@@ -22,14 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - name: "try A: litesvm 0.8 with a large young generation (fewer GCs)"
-        continue-on-error: true
+      - name: Simulated launch (baseline, deployed devnet programs)
+        # litesvm 0.8's Linux build can abort (std::bad_alloc) when the GC frees its objects; a large young
+        # generation keeps GC out of a run this size
         run: node --max-semi-space-size=256 --import tsx scripts/sim/verify_baseline.ts
-      - name: "try B: litesvm 1.5 (CI only, not committed)"
-        continue-on-error: true
-        run: |
-          pnpm add -w -D litesvm@1.5.0 >/dev/null
-          node --import tsx scripts/sim/verify_baseline.ts
 
   program:
     needs: sim
@@ -59,9 +55,9 @@ jobs:
       - name: Build the hook program (release + test-slots)
         run: bash scripts/build.sh
       - name: Test suite (unit + litesvm against the built program)
-        run: node --import tsx --test --test-timeout=120000 tests/*.test.ts
+        run: node --max-semi-space-size=256 --import tsx --test --test-timeout=120000 tests/*.test.ts
       - name: Simulated launches on the built program (baseline + v2 buy rules)
         env: { SIM_HOOK_SO: target/deploy/trenches_hook.so }
         run: |
-          node --import tsx scripts/sim/verify_baseline.ts
-          node --import tsx scripts/sim/verify_rules.ts
+          node --max-semi-space-size=256 --import tsx scripts/sim/verify_baseline.ts
+          node --max-semi-space-size=256 --import tsx scripts/sim/verify_rules.ts

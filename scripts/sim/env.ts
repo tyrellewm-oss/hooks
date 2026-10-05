@@ -4,6 +4,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { Keypair, PublicKey, Transaction, type AccountInfo } from '@solana/web3.js';
 import { FailedTransactionMetadata } from 'litesvm';
+import { MINT_SIZE, MintLayout, NATIVE_MINT, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { Env } from '../../tests/env.js';
 import { programBytes, DBC_PROGRAM, HOOK_PROGRAM, SIM_DIR } from './programs.js';
@@ -23,6 +24,10 @@ export async function simEnv() {
   console.log('[sim] hook program loaded');
   env.svm.addProgram(DBC_PROGRAM, dbcBytes);
   console.log('[sim] DBC program loaded');
+  // wrapped SOL's mint (the curve's quote token) is not in a fresh litesvm: write the canonical native mint
+  const nm = Buffer.alloc(MINT_SIZE);
+  MintLayout.encode({ mintAuthorityOption: 0, mintAuthority: PublicKey.default, supply: 0n, decimals: 9, isInitialized: true, freezeAuthorityOption: 0, freezeAuthority: PublicKey.default }, nm);
+  env.setAccountData(NATIVE_MINT, nm, TOKEN_PROGRAM_ID, 1_000_000_000n);
   return new Sim(env);
 }
 
