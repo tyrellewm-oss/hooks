@@ -22,6 +22,7 @@ import { staticReply, uiModeFromArgs, assertUiBuilt } from './static.js';
 import { loadPublicKeepers } from './flywheel_public.js';
 import { readIndex, candles, dammPoolFor } from '../sdk/indexer.js';
 import { validateMetadata, saveMetadata, loadMetadata, loadImage, publicMetadata, MetadataRefusal } from '../sdk/metadata.js';
+import { StudioAuth, StudioAuthError, parseAllowlist } from '../sdk/studio_auth.js';
 
 const argv = process.argv.slice(2);
 const PORT = Number(process.env.PORT ?? 5175);
@@ -66,6 +67,16 @@ async function feeInfo(config: PublicKey) {
 }
 
 const relay = new WalletRelay();
+// Studio sign-in (sdk/studio_auth.ts): the create and token-details routes need a session from an allowlisted wallet.
+// Fails closed on devnet (no STUDIO_WALLETS -> studio closed); a local validator without a list stays open.
+const studio = new StudioAuth(parseAllowlist(process.env.STUDIO_WALLETS), c.label, c.name === 'local');
+if (studio.open) console.log('studio: OPEN (local cluster, no STUDIO_WALLETS); create and token-details edits need no sign-in');
+else if (!studio.status().configured) console.log('studio: CLOSED (no STUDIO_WALLETS); create and token-details edits are refused');
+/** The studio wallet for this request, or the error reply to send. */
+function studioCheck(req: http.IncomingMessage): { wallet: string } | Reply {
+  try { return { wallet: studio.require(req.headers['x-studio-session']) }; }
+  catch (e: any) { if (e instanceof StudioAuthError) return { code: e.code, body: { error: e.message } }; throw e; }
+}
 /** A wallet address from a query/body value, or null (never throws). */
 function walletKey(v: unknown): PublicKey | null { try { return typeof v === 'string' && v.length >= 32 && v.length <= 44 ? new PublicKey(v) : null; } catch { return null; } }
 
@@ -150,12 +161,12 @@ http.createServer(async (req, res) => {
     const routed = await siteRoute(url.pathname, req.method ?? 'GET', () => body(req), {
       cluster: c.name,
       launches: () => listLaunches(c.name),
-      meta: listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: c.url, programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: deployer.publicKey.toBase58(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listing.map(l => ({ mint: l.mint, pool: l.pool, time: l.time })) }),
+      meta: listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: c.url, programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: deployer.publicKey.toBase58(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listing.map(l => ({ mint: l.mint, pool: l.pool, time: l.time })), studio: studio.status() }),
       token: mint => tokenView(mint, walletKey(url.searchParams.get('owner'))),
       trade,
       build,
       image: mint => { const im = loadImage(c.name, mint); return im ? { code: 200, body: im.data, type: im.type } : { code: 404, body: { error: 'no image' } }; },
-      metadata: (mint, b) => { try { return { code: 200, body: publicMetadata(saveMetadata(c.name, mint, validateMetadata(b ?? {})), mint) }; } catch (e: any) { if (e instanceof MetadataRefusal) return { code: 400, body: { error: e.message } }; throw e; } },
+      metadata: (mint, b) => { const who = studioCheck(req); if ('code' in who) return who; try { return { code: 200, body: publicMetadata(saveMetadata(c.name, mint, validateMetadata(b ?? {})), mint) }; } catch (e: any) { if (e instanceof MetadataRefusal) return { code: 400, body: { error: e.message } }; throw e; } },
       trades: mint => tradesView(mint, Number(url.searchParams.get('interval') ?? 300)),
       flywheel: registered => ({ cluster: c.label, ...loadPublicKeepers(c.name, registered) }),
     });
@@ -168,7 +179,17 @@ http.createServer(async (req, res) => {
       try { return send(res, 200, await submitSigned(c, relay, Buffer.from(b.tx, 'base64'))); }
       catch (e: any) { if (e instanceof WalletTxRefusal) return send(res, 400, { error: e.message }); throw e; }
     }
+    if (url.pathname.startsWith('/api/studio')) {   // studio sign-in: status, challenge, session, sign-out
+      try {
+        if (url.pathname === '/api/studio' && req.method === 'GET') { let wallet: string | null = null; try { wallet = studio.require(req.headers['x-studio-session']); } catch {} return send(res, 200, { ...studio.status(), wallet }); }
+        if (url.pathname === '/api/studio/challenge' && req.method === 'GET') return send(res, 200, studio.challenge(url.searchParams.get('wallet')));
+        if (url.pathname === '/api/studio/session' && req.method === 'POST') { const b = await body(req); return send(res, 200, studio.signIn(b.wallet, b.nonce, b.signature)); }
+        if (url.pathname === '/api/studio/signout' && req.method === 'POST') { studio.signOut(req.headers['x-studio-session']); return send(res, 200, { ok: true }); }
+        return send(res, 404, { error: 'not found' });
+      } catch (e: any) { if (e instanceof StudioAuthError) return send(res, e.code, { error: e.message }); throw e; }
+    }
     if (url.pathname === '/api/create' && req.method === 'POST') {
+      const who = studioCheck(req); if ('code' in who) return send(res, who.code, who.body);   // studio only
       const b = await body(req);
       const name = String(b.name ?? '').slice(0, 32), symbol = String(b.symbol ?? '').toUpperCase().slice(0, 10);
       if (!name || !/^[A-Z0-9]{2,10}$/.test(symbol)) return send(res, 400, { error: 'name and 2-10 char ticker required' });

@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { validate, RELEASE_LIMITS, STRICT, BALANCED, LOOSE, LOCAL_DEMO, pctOf, approxDuration, type NamedSchedule, type ScheduleError } from '../lib/shared';
 import { CapRamp } from '../components/CapRamp';
 import { Addr } from '../components/bits';
+import { StudioGate } from '../components/StudioGate';
 import { DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
 
 const SCHEDULE_ERRORS: Record<ScheduleError, string> = {
@@ -73,6 +74,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
         </div>
         <span className="hero-line" />
       </section>
+      <StudioGate meta={meta}>
       <div className="grid-token">
         <div className="card">
           <div className="card-head"><h2>Cap schedule</h2>{selected && <span className={`right pill ${selected.id === 'balanced' ? 'green' : 'amber'}`}>{selected.label}</span>}</div>
@@ -130,6 +132,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
           )}
         </div>
       </div>
+      </StudioGate>
     </div>
   );
 }

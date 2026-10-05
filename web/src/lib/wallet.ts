@@ -5,7 +5,7 @@ import { getWallets } from '@wallet-standard/app';
 import type { Wallet, WalletAccount } from '@wallet-standard/base';
 import { FIXTURE_MODE } from './api';
 
-const CONNECT = 'standard:connect', DISCONNECT = 'standard:disconnect', SIGN_TX = 'solana:signTransaction';
+const CONNECT = 'standard:connect', DISCONNECT = 'standard:disconnect', SIGN_TX = 'solana:signTransaction', SIGN_MSG = 'solana:signMessage';
 const LAST_KEY = 'trenches-last-wallet';
 export const CHAIN = 'solana:devnet';
 
@@ -75,6 +75,16 @@ export async function signTransaction(tx: Uint8Array): Promise<Uint8Array> {
   return out.signedTransaction as Uint8Array;
 }
 
+/** Ask the connected wallet to sign a plain message (studio sign-in). Not a transaction; costs nothing. */
+export async function signMessage(message: Uint8Array): Promise<Uint8Array> {
+  const { wallet, account } = state;
+  if (!wallet || !account) throw new Error('Connect a wallet first');
+  const f = wallet.features[SIGN_MSG] as any;
+  if (!f?.signMessage) throw new Error(`${wallet.name} can't sign messages; use another wallet for the studio`);
+  const [out] = await f.signMessage({ account, message });
+  return out.signature as Uint8Array;
+}
+
 export const hexToBytes = (h: string) => { if (!/^(?:[0-9a-f]{2})*$/i.test(h)) throw new Error('bad transaction encoding'); const b = new Uint8Array(h.length / 2); for (let i = 0; i < b.length; i++) b[i] = parseInt(h.substr(i * 2, 2), 16); return b; };
 export const b64ToBytes = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 export const bytesToB64 = (b: Uint8Array) => { let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
@@ -90,6 +100,7 @@ function registerFixtureWallet() {
       [CONNECT]: { version: '1.0.0', connect: async () => ({ accounts: [account] }) },
       [DISCONNECT]: { version: '1.0.0', disconnect: async () => {} },
       [SIGN_TX]: { version: '1.0.0', supportedTransactionVersions: ['legacy'], signTransaction: async ({ transaction }: any) => [{ signedTransaction: transaction }] },
+      [SIGN_MSG]: { version: '1.0.0', signMessage: async ({ message }: any) => [{ signedMessage: message, signature: new Uint8Array(64).fill(7) }] },
     } as any,
   };
   (getWallets() as any).register(w);

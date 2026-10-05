@@ -2,6 +2,7 @@
 import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, BuiltSwap, FlywheelReply, TradesReply, MetadataInput, TokenMetadata } from './types';
 import { fixtureApi } from './fixtures';
 import { ApiError } from './errors';
+import { studioToken, clearStudioSession } from './studio';
 export { ApiError };
 
 export const FIXTURE_MODE = import.meta.env.MODE === 'fixtures';
@@ -16,14 +17,22 @@ export interface Api {
   walletSubmit(signedTxBase64: string): Promise<TradeResult>;
   create(req: CreateRequest): Promise<CreateReply>;
   flywheel(): Promise<FlywheelReply>;
+  studioChallenge(wallet: string): Promise<{ nonce: string; message: string; expiresInMs: number }>;
+  studioSession(wallet: string, nonce: string, signature: string): Promise<{ token: string; wallet: string; expiresInMs: number }>;
+  studioSignOut(): Promise<{ ok: boolean }>;
   trades(mint: string, interval: number): Promise<TradesReply>;
   /** studio: set a token's image, description and links */
   saveMetadata(mint: string, m: MetadataInput): Promise<TokenMetadata>;
 }
 
 
+/** Studio routes: the session header goes with them; a 401/403 there means the session is gone. */
+const STUDIO = /^\/api\/(create|studio|token\/[^/]+\/metadata)/;
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  const studio = STUDIO.test(path), token = studioToken();
+  if (studio && token) init = { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), 'x-studio-session': token } };
   const r = await fetch(path, init);
+  if (studio && (r.status === 401 || r.status === 403) && !path.startsWith('/api/studio/challenge')) clearStudioSession();
   let body: any = null;
   try { body = await r.json(); } catch { /* non-JSON error page */ }
   if (!r.ok) throw new ApiError(body?.error ?? r.statusText, r.status);
@@ -39,6 +48,9 @@ const httpApi: Api = {
   walletSubmit: (tx) => call<TradeResult>('/api/wallet/submit', post({ tx })),
   create: (req) => call<CreateReply>('/api/create', post(req)),
   flywheel: () => call<FlywheelReply>('/api/flywheel'),
+  studioChallenge: (wallet) => call('/api/studio/challenge?wallet=' + encodeURIComponent(wallet)),
+  studioSession: (wallet, nonce, signature) => call('/api/studio/session', post({ wallet, nonce, signature })),
+  studioSignOut: () => call('/api/studio/signout', post({})),
   saveMetadata: (mint, m) => call<TokenMetadata>(`/api/token/${encodeURIComponent(mint)}/metadata`, post(m)),
   trades: (mint, interval) => call<TradesReply>(`/api/token/${encodeURIComponent(mint)}/trades?interval=${interval}`),
 };
