@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Keypair, SystemProgram, Transaction } from '@solana/web3.js';
-import { WalletRelay, WalletTxRefusal, messageHash, BUILD_TTL_MS } from '../sdk/wallet_tx.ts';
+import { WalletRelay, WalletTxRefusal, messageHash, BUILD_TTL_MS, simulateSwap } from '../sdk/wallet_tx.ts';
+import { DEFAULT_PROGRAM_ID } from '../sdk/hook.ts';
 import { siteRoute } from '../app/site_registry.ts';
 
 const BH = '11111111111111111111111111111111';
@@ -87,7 +88,8 @@ test('server: the browser-wallet path never signs with a server key and replies 
   const src = readFileSync('app/server.ts', 'utf8');
   const build = src.slice(src.indexOf('async function build('), src.indexOf('async function body('));
   assert.ok(build.length > 0);
-  assert.doesNotMatch(build, /wallets\[|deployer|launchKey|\.sign\(|partialSign|sendTx\(/, 'build() touches no server key and sends nothing');
+  assert.doesNotMatch(build, /\bwallets\b|deployer|launchKey|\.sign\(|partialSign|sendTx\(|\.swap\(|sendRaw/, 'build() touches no server key and sends nothing');
+  assert.match(build, /buildUserSwap\(lp, relay, owner, /, 'the swap is built for the requesting wallet');
   assert.match(src, /if \(url\.pathname === '\/api\/wallet\/submit' && req\.method === 'POST'\) \{[\s\S]*?return send\(res, 200, await submitSigned\(c, relay, /, 'submit replies through send()');
   const wt = readFileSync('sdk/wallet_tx.ts', 'utf8');
   assert.doesNotMatch(wt, /Keypair|\.sign\(|partialSign|loadOrCreate/, 'sdk/wallet_tx.ts never holds or uses a keypair');
@@ -106,4 +108,24 @@ test('build replies survive the server redaction unchanged (FW-17 send() redacts
   assert.ok(mangled > 0, 'base64 is not redaction-proof (keep the hex encoding)');
   const src = readFileSync('sdk/wallet_tx.ts', 'utf8');
   assert.match(src, /\.toString\('hex'\), encoding: 'hex'/, 'the build reply is hex');
+});
+
+test('the build window is 90 s: a blockhash lives about that long, so a longer window would relay dead transactions', () => {
+  assert.equal(BUILD_TTL_MS, 90_000);
+});
+
+test('pre-sign simulation: a cap hit is reported with its name and details; an empty wallet reads as a balance problem', async () => {
+  const ours = DEFAULT_PROGRAM_ID.toBase58();
+  const owner = Keypair.generate(); const tx = unsignedFor(owner);
+  const stub = (value: any) => ({ hookProgram: DEFAULT_PROGRAM_ID, connection: { simulateTransaction: async () => ({ value }) } as any });
+  const ok = await simulateSwap(stub({ err: null, logs: [], unitsConsumed: 1234 }), tx);
+  assert.deepEqual([ok.ok, ok.err, ok.hookError, ok.unitsConsumed], [true, null, null, 1234]);
+  const capLogs = [`Program ${ours} invoke [2]`, 'Program log: WalletCapExceeded: token_account=A owner=B balance=11 cap=10 slot=5 next_change=None',
+    'Program log: AnchorError thrown in programs/trenches-hook/src/lib.rs:190. Error Code: WalletCapExceeded. Error Number: 6000. Error Message: x.', `Program ${ours} failed: custom program error: 0x1770`];
+  const cap = await simulateSwap(stub({ err: { InstructionError: [2, { Custom: 6000 }] }, logs: capLogs }), tx);
+  assert.equal(cap.ok, false); assert.equal(cap.hookError, 'WalletCapExceeded'); assert.equal(String(cap.capHit?.cap), '10');
+  const empty = await simulateSwap(stub({ err: 'AccountNotFound', logs: [] }), tx);
+  assert.equal(empty.ok, false); assert.match(empty.err!, /insufficient funds/, 'the explainer keys SlippageOrBalance on "insufficient"');
+  const boom = await simulateSwap({ hookProgram: DEFAULT_PROGRAM_ID, connection: { simulateTransaction: async () => { throw new Error('rpc down'); } } as any }, tx);
+  assert.equal(boom.ok, false, 'an RPC failure never reads as a passing simulation');
 });
