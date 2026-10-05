@@ -15,4 +15,10 @@ const pd = PublicKey.findProgramAddressSync([HOOK_PROGRAM.toBuffer()], new Publi
 const acc = svm.getAccount(pd); step(`programData account: ${acc ? `${acc.data.length} bytes owner ${new PublicKey(acc.owner).toBase58()}` : 'none'}`);
 const prog = svm.getAccount(HOOK_PROGRAM); step(`program account: ${prog ? `${prog.data.length} bytes owner ${new PublicKey(prog.owner).toBase58()} exec ${prog.executable}` : 'none'}`);
 svm.addProgram(DBC_PROGRAM, dbc); step('addProgram(dbc)');
+import { SystemProgram, Transaction } from '@solana/web3.js';
+const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: k.publicKey, toPubkey: Keypair.generate().publicKey, lamports: 1_000_000 }));
+tx.recentBlockhash = svm.latestBlockhash(); tx.feePayer = k.publicKey; tx.sign(k);
+const r: any = svm.sendTransaction(tx); step('sendTransaction(transfer)');
+step(`logs: ${r.logs().length}`);
+if (process.env.PROBE_RETURN_DATA) { r.returnData(); step('returnData() read'); }
 console.log('[probe] OK');

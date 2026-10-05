@@ -52,7 +52,8 @@ export class Env {
     }
     const meta = (simulate ? (r as any).meta() : r) as TransactionMetadata;
     let returnData: Buffer | undefined;
-    try { returnData = Buffer.from(meta.returnData().data()); } catch {}
+    // only simulations read return data (view_schedule): on Linux, reading it from a send with none aborts the process
+    if (simulate) { try { returnData = Buffer.from(meta.returnData().data()); } catch {} }
     return { ok: true, logs: meta.logs(), hookError: null, returnData };
   }
 

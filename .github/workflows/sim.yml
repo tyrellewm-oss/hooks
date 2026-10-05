@@ -23,7 +23,9 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: litesvm setup probe
-        run: node --import tsx scripts/sim/probe.ts
+        run: |
+          node --import tsx scripts/sim/probe.ts
+          PROBE_RETURN_DATA=1 node --import tsx scripts/sim/probe.ts || echo "[probe] returnData() aborts (expected on Linux; Env no longer calls it on sends)"
       - name: Simulated launch (baseline, deployed devnet programs)
         run: node --import tsx scripts/sim/verify_baseline.ts
 
