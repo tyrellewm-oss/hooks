@@ -48,6 +48,7 @@ const disc = (ns: string, name: string) => createHash('sha256').update(`${ns}:${
 export const IX = {
   initializeGlobal: disc('global', 'initialize_global'),
   initializeExtraAccountMetaList: disc('global', 'initialize_extra_account_meta_list'),
+  initializeExtraAccountMetaListV2: disc('global', 'initialize_extra_account_meta_list_v2'),
   liftGlobal: disc('global', 'lift_global'),
   liftMintCap: disc('global', 'lift_mint_cap'),
   raiseMintCap: disc('global', 'raise_mint_cap'),
@@ -56,9 +57,9 @@ export const IX = {
   setLaunchAuthority: disc('global', 'set_launch_authority'),
   rotateAdmin: disc('global', 'rotate_admin'),
 };
-export const ACC = { Global: disc('account', 'Global'), MintConfig: disc('account', 'MintConfig'), LiftState: disc('account', 'LiftState') };
-export const EVT = { RestrictionsLifted: disc('event', 'RestrictionsLifted') };
-export const ERRORS = ['WalletCapExceeded', 'ConfigFrozen', 'Unauthorized', 'InvalidCapSchedule', 'NotTransferring', 'InvalidMint'] as const;
+export const ACC = { Global: disc('account', 'Global'), MintConfig: disc('account', 'MintConfig'), LiftState: disc('account', 'LiftState'), RulesState: disc('account', 'RulesState') };
+export const EVT = { RestrictionsLifted: disc('event', 'RestrictionsLifted'), PotWon: disc('event', 'PotWon') };
+export const ERRORS = ['WalletCapExceeded', 'ConfigFrozen', 'Unauthorized', 'InvalidCapSchedule', 'NotTransferring', 'InvalidMint', 'MaxBuyExceeded', 'SlotBuyLimitExceeded', 'InvalidRules'] as const;
 export type HookErrorName = (typeof ERRORS)[number];
 export const errorFromCode = (code: number): HookErrorName | null => (code >= 6000 && code < 6000 + ERRORS.length ? ERRORS[code - 6000] : null);
 
@@ -69,6 +70,7 @@ export class HookClient {
   configPda = (mint: PublicKey) => this.pda(Buffer.from('config'), mint.toBuffer());
   liftPda = (mint: PublicKey) => this.pda(Buffer.from('lift'), mint.toBuffer());
   extraMetasPda = (mint: PublicKey) => this.pda(Buffer.from('extra-account-metas'), mint.toBuffer());
+  rulesPda = (mint: PublicKey) => this.pda(Buffer.from('rules'), mint.toBuffer());
   programDataPda = () => PublicKey.findProgramAddressSync([this.programId.toBuffer()], BPF_UPGRADEABLE)[0];
 
   initializeGlobal(payer: PublicKey, authority: PublicKey): TransactionInstruction {
@@ -112,6 +114,21 @@ export class HookClient {
       ],
       data: b,
     });
+  }
+
+  /** v2 per-mint setup: the v1 cap config plus buy rules (program: initialize_extra_account_meta_list_v2). */
+  initializeExtraAccountMetaListV2(p: Parameters<HookClient['initializeExtraAccountMetaList']>[0] & { rules: BuyRules }): TransactionInstruction {
+    const v1 = this.initializeExtraAccountMetaList(p);
+    const r = Buffer.alloc(8 + 8 + 8 + 4 + 8);
+    let o = 0;
+    r.writeBigUInt64LE(p.rules.maxBuyTokens, o); o += 8;
+    r.writeBigUInt64LE(p.rules.maxPerSlotTokens, o); o += 8;
+    r.writeBigUInt64LE(p.rules.windowSlots, o); o += 8;
+    r.writeUInt32LE(p.rules.potEvery, o); o += 4;
+    r.writeBigUInt64LE(p.rules.potMinTokens, o);
+    const keys = [...v1.keys];
+    keys.splice(keys.length - 1, 0, { pubkey: this.rulesPda(p.mint), isSigner: false, isWritable: true });
+    return new TransactionInstruction({ programId: this.programId, keys, data: Buffer.concat([IX.initializeExtraAccountMetaListV2, v1.data.subarray(8), r]) });
   }
 
   /** 8.3, admin-only, once: append the launch key to Global (42 -> 74 bytes); `payer` pays the rent increase. */
@@ -165,11 +182,12 @@ export class HookClient {
     ] });
   }
   /** Extra accounts Token-2022 needs for a transfer of `mint` (static resolution of our 3 metas). */
-  transferHookExtraAccounts(mint: PublicKey): AccountMeta[] {
+  transferHookExtraAccounts(mint: PublicKey, v2 = false): AccountMeta[] {
     return [
       { pubkey: this.configPda(mint), isSigner: false, isWritable: false },
       { pubkey: this.liftPda(mint), isSigner: false, isWritable: false },
       { pubkey: this.globalPda(), isSigner: false, isWritable: false },
+      ...(v2 ? [{ pubkey: this.rulesPda(mint), isSigner: false, isWritable: true }] : []),
       { pubkey: this.programId, isSigner: false, isWritable: false },
       { pubkey: this.extraMetasPda(mint), isSigner: false, isWritable: false },
     ];
@@ -178,6 +196,27 @@ export class HookClient {
 
 // ---------- decoders
 const pk = (b: Buffer, o: number) => new PublicKey(b.subarray(o, o + 32));
+
+/** v2 buy rules, fixed at launch (raw token amounts; 0 turns a rule off). Program: RulesArgs. */
+export interface BuyRules { maxBuyTokens: bigint; maxPerSlotTokens: bigint; windowSlots: bigint; potEvery: number; potMinTokens: bigint }
+export interface PotWinAcc { owner: PublicKey; tokenAccount: PublicKey; buyIndex: bigint; slot: bigint }
+export interface RulesAcc extends BuyRules { mint: PublicKey; launchSlot: bigint; curSlot: bigint; boughtInSlot: bigint; buyCount: bigint; lastCountedSlot: bigint; wins: bigint; winners: PotWinAcc[] }
+export const POT_WINNERS = 16;
+/** RulesState (program state.rs): fields in declaration order; winners is a ring buffer, the newest at (wins-1) % 16. */
+export function decodeRules(data: Uint8Array): RulesAcc {
+  const b = Buffer.from(data); if (!b.subarray(0, 8).equals(ACC.RulesState)) throw new Error('not RulesState');
+  let o = 8;
+  const mint = pk(b, o); o += 32; o += 1;   // bump
+  const u64 = () => { const v = b.readBigUInt64LE(o); o += 8; return v; };
+  const launchSlot = u64(), maxBuyTokens = u64(), maxPerSlotTokens = u64(), windowSlots = u64();
+  const potEvery = b.readUInt32LE(o); o += 4;
+  const potMinTokens = u64(), curSlot = u64(), boughtInSlot = u64(), buyCount = u64(), lastCountedSlot = u64(), wins = u64();
+  const all: PotWinAcc[] = [];
+  for (let i = 0; i < POT_WINNERS; i++) { const owner = pk(b, o); const tokenAccount = pk(b, o + 32); o += 64; all.push({ owner, tokenAccount, buyIndex: u64(), slot: u64() }); }
+  const n = Number(wins < BigInt(POT_WINNERS) ? wins : BigInt(POT_WINNERS));
+  const winners = all.filter((w) => w.buyIndex > 0n).sort((x, y) => Number(y.buyIndex - x.buyIndex)).slice(0, n);
+  return { mint, launchSlot, maxBuyTokens, maxPerSlotTokens, windowSlots, potEvery, potMinTokens, curSlot, boughtInSlot, buyCount, lastCountedSlot, wins, winners };
+}
 /** Global lengths (8.3): 42 before `migrate_global_v2`, 74 after (launch key at bytes 42..74). */
 export const GLOBAL_V1_LEN = 42, GLOBAL_V2_LEN = 74;
 export interface GlobalAcc { authority: PublicKey; lifted: boolean; launchAuthority: PublicKey | null }

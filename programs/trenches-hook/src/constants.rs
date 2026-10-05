@@ -4,6 +4,15 @@ pub const GLOBAL_SEED: &[u8] = b"global";
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const LIFT_SEED: &[u8] = b"lift";
 pub const EXTRA_METAS_SEED: &[u8] = b"extra-account-metas";
+/// Per-mint buy rules (v2 mints only): max single buy, max bought per slot, Nth-buy pot counter.
+pub const RULES_SEED: &[u8] = b"rules";
+/// Pot winners kept on chain (ring buffer); every win is also logged and emitted as an event.
+pub const POT_WINNERS: usize = 16;
+/// Nth-buy pot: allowed range for "every N qualifying buys".
+pub const POT_EVERY_MIN: u32 = 10;
+pub const POT_EVERY_MAX: u32 = 100_000;
+/// Opening window for the buy limits (slots); 0 means the whole bonding curve.
+pub const RULES_WINDOW_MAX: u64 = 1_000_000;
 pub const MAX_EXEMPT: usize = 4;
 
 pub const SCOPE_GLOBAL: u8 = 0;

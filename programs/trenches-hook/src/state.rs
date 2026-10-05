@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::constants::MAX_EXEMPT;
+use crate::constants::{MAX_EXEMPT, POT_WINNERS};
 
 #[account]
 #[derive(InitSpace)]
@@ -104,4 +104,47 @@ pub struct ScheduleView {
     pub mint_lifted: bool,
     pub raised_floor_bps: u16,
     pub global_lifted: bool,
+}
+
+/// v2 buy rules, fixed at launch (only the counters below the line change, and only in the transfer hook).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct RulesArgs {
+    /// Max tokens (raw) one buy from the curve may take during the window; 0 = off.
+    pub max_buy_tokens: u64,
+    /// Max tokens (raw) all buys together may take in one slot during the window; 0 = off.
+    pub max_per_slot_tokens: u64,
+    /// Window for the two buy limits, in slots after launch; 0 = the whole bonding curve.
+    pub window_slots: u64,
+    /// Nth-buy pot: every Nth qualifying buy wins; 0 = off.
+    pub pot_every: u32,
+    /// Nth-buy pot: a buy qualifies from this many tokens (raw).
+    pub pot_min_tokens: u64,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, InitSpace, PartialEq, Eq)]
+pub struct PotWin {
+    pub owner: Pubkey,
+    pub token_account: Pubkey,
+    pub buy_index: u64,
+    pub slot: u64,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct RulesState {
+    pub mint: Pubkey,
+    pub bump: u8,
+    pub launch_slot: u64,
+    pub max_buy_tokens: u64,
+    pub max_per_slot_tokens: u64,
+    pub window_slots: u64,
+    pub pot_every: u32,
+    pub pot_min_tokens: u64,
+    // ---- counters (written only by transfer_hook)
+    pub cur_slot: u64,
+    pub bought_in_slot: u64,
+    pub buy_count: u64,
+    pub last_counted_slot: u64,
+    pub wins: u64,
+    pub winners: [PotWin; POT_WINNERS],
 }

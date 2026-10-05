@@ -13,7 +13,7 @@ export const HOOK_PROGRAM = new PublicKey('FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYT
 /** ELF bytes of an upgradeable program (ProgramData header is 45 bytes). Cached by program id. */
 export async function programBytes(id: PublicKey, rpc = process.env.DEVNET_RPC ?? DEVNET_RPC_DEFAULT): Promise<Buffer> {
   const file = `${SIM_DIR}/${id.toBase58()}.so`;
-  if (existsSync(file)) return readFileSync(file);
+  if (existsSync(file)) return trimElf(readFileSync(file));
   assertNotMainnet(rpc);
   const conn = new Connection(rpc, 'confirmed');
   const prog = await conn.getAccountInfo(id);
@@ -21,8 +21,18 @@ export async function programBytes(id: PublicKey, rpc = process.env.DEVNET_RPC ?
   const programData = new PublicKey(prog.data.subarray(4, 36));
   const pd = await conn.getAccountInfo(programData);
   if (!pd) throw new Error(`no ProgramData for ${id.toBase58()}`);
-  const elf = pd.data.subarray(45);
+  const elf = trimElf(pd.data.subarray(45));
   mkdirSync(SIM_DIR, { recursive: true });
   writeFileSync(file, elf);
   return Buffer.from(elf);
+}
+
+/** ProgramData is allocated with spare room for upgrades: drop the zero padding after the ELF (64-bit ELF: the
+ *  section header table is the last thing in the file, so its end is the file size). */
+export function trimElf(b: Buffer): Buffer {
+  if (b.readUInt32BE(0) !== 0x7f454c46 || b[4] !== 2) throw new Error('not a 64-bit ELF');
+  const shoff = Number(b.readBigUInt64LE(0x28)), shentsize = b.readUInt16LE(0x3a), shnum = b.readUInt16LE(0x3c);
+  const end = shoff + shentsize * shnum;
+  if (!(end > 64 && end <= b.length)) throw new Error(`bad ELF size ${end} (buffer ${b.length})`);
+  return Buffer.from(b.subarray(0, end));
 }

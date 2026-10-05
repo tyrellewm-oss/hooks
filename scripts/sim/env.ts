@@ -9,13 +9,20 @@ import { Env } from '../../tests/env.js';
 import { programBytes, DBC_PROGRAM, HOOK_PROGRAM, SIM_DIR } from './programs.js';
 
 export async function simEnv() {
-  const hookBytes = await programBytes(HOOK_PROGRAM);
+  // SIM_HOOK_SO: a hook build from this checkout (target/deploy/trenches_hook.so); default: the deployed devnet program
+  let hookFile = process.env.SIM_HOOK_SO;
+  if (!hookFile) {
+    const hookBytes = await programBytes(HOOK_PROGRAM);
+    mkdirSync(SIM_DIR, { recursive: true });
+    hookFile = `${SIM_DIR}/${HOOK_PROGRAM.toBase58()}.so`;
+    writeFileSync(hookFile, hookBytes);
+  }
   const dbcBytes = await programBytes(DBC_PROGRAM);
-  mkdirSync(SIM_DIR, { recursive: true });
-  const hookFile = `${SIM_DIR}/${HOOK_PROGRAM.toBase58()}.so`;
-  writeFileSync(hookFile, hookBytes);
+  console.log(`[sim] hook ${hookFile}, DBC ${dbcBytes.length} bytes`);
   const env = new Env(hookFile, HOOK_PROGRAM);
+  console.log('[sim] hook program loaded');
   env.svm.addProgram(DBC_PROGRAM, dbcBytes);
+  console.log('[sim] DBC program loaded');
   return new Sim(env);
 }
 

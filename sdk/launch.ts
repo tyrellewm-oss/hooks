@@ -8,7 +8,7 @@ import {
 } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { appendFileSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { HookClient, DEFAULT_PROGRAM_ID, DBC_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, readHookAuthorities, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted } from './hook.js';
+import { HookClient, DEFAULT_PROGRAM_ID, DBC_PROGRAM_ID, HookProgramPinRefusal, resolveHookProgramId, type HookProgramResolution, TOKEN_2022, decodeGlobal, readHookAuthorities, decodeMintConfig, decodeLift, toCapConfig, hookErrorFromLogs, hookCodeFromLogs, capHitDetails, parseRestrictionsLifted, type BuyRules } from './hook.js';
 import { effectiveCap, nextChange, type Step } from './capMath.js';
 import { type Cluster, type ClusterName, type ClusterClass, explorerTx, nowIct, classifyCluster } from './cluster.js';
 import { launchConfigChecks, KeyRuleRefusal, type Authorities } from './keyrules.js';
@@ -132,6 +132,7 @@ export interface LaunchOpts {
   migrationFeeOption?: MigrationFeeOption;         // DAMM v2 pool fee after migration (FixedBps25 = 0.25%)
   percentageSupplyOnMigration?: number;            // % of supply reserved for the DAMM v2 pool at migration (integer 1..49, default 20 -> 80% sold on the curve)
   authorities?: Authorities;                       // hook upgrade + lift + launch authority for the §12a preflight (read from chain if omitted)
+  rules?: BuyRules;                                // v2 buy rules (max single buy, max per slot, Nth-buy pot); omitted = v1 hook config
 }
 /** Default % of supply that goes to the migration pool (behaviour unchanged from the hard-coded 20). */
 export const DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION = 20;
@@ -264,7 +265,8 @@ export async function buildCreatePoolTx(lp: { dbc: any; hook: HookClient }, o: L
   } as any);
   const supplyRef = BigInt(o.totalSupply ?? 1_000_000_000) * 1_000_000n;
   // Same tx: hook config is frozen in the pool-creation slot, so the ramp starts exactly at launch.
-  poolTx.add(lp.hook.initializeExtraAccountMetaList({ payer: keys.payer, authority: keys.launchAuthority, mint: keys.mint, steps: o.steps, uncappedAfter: o.uncappedAfter, supplyRef }));
+  const hookInit = { payer: keys.payer, authority: keys.launchAuthority, mint: keys.mint, steps: o.steps, uncappedAfter: o.uncappedAfter, supplyRef };
+  poolTx.add(o.rules ? lp.hook.initializeExtraAccountMetaListV2({ ...hookInit, rules: o.rules }) : lp.hook.initializeExtraAccountMetaList(hookInit));
   poolTx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }));
   return poolTx;
 }
