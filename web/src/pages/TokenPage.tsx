@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { Meta } from '../lib/types';
+import type { Meta, RulesView } from '../lib/types';
 import { api, ApiError } from '../lib/api';
 import { usePoll, useNow } from '../lib/hooks';
 import { useWallet } from '../lib/wallet';
 import { pageVars, pctOf, tok, BPS_DENOM, approxDuration } from '../lib/shared';
 import { curveFeePctAt, elapsedSlots, estimateSlot, isGraduated, liveCap, liveNextChange, phaseOf } from '../lib/token';
 import { CapRamp } from '../components/CapRamp';
-import { hookList, FLYWHEEL_SPLIT } from '../lib/hookInfo';
+import { hookList, optionalHookList, FLYWHEEL_SPLIT, ordinal, windowText } from '../lib/hookInfo';
 import { Dropdown, RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
 import { Addr, CurveProgress, Guard, Link, PhasePill, PhaseStepper, Skeleton, Stat } from '../components/bits';
 import { TokenImage, TokenLinks, DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
@@ -130,7 +130,8 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
 
         {/* right: the token's hooks live, phases under it, then the stacked info sections */}
         <div className="sticky stack" style={{ marginTop: 0 }}>
-          <LiveHooks meta={meta} capText={graduated ? 'ended' : capPct ?? 'no cap'} feeText={graduated ? 'ended' : feeNow === null ? 'n/a' : `~${feeNow}%`} switchUses={view.switchHistory.length} graduated={graduated} />
+          <LiveHooks meta={meta} capText={graduated ? 'ended' : capPct ?? 'no cap'} feeText={graduated ? 'ended' : feeNow === null ? 'n/a' : `~${feeNow}%`} switchUses={view.switchHistory.length} graduated={graduated} rules={view.rules ?? null} slot={slot} />
+          {view.rules && view.rules.potEvery > 0 && <PotCard rules={view.rules} graduated={graduated} />}
           <Dropdown title="Phase" aside={<PhasePill phase={phase} />} defaultOpen>
             <PhaseStepper phase={phase} />
           </Dropdown>
@@ -179,9 +180,17 @@ function EditDetails({ meta, mint, ticker, metadata, onClose, onSaved }: { meta:
   );
 }
 
-/** The four hooks with this token's live state; links to the hooks page for the diagrams. */
-function LiveHooks({ meta, capText, feeText, switchUses, graduated }: { meta: Meta; capText: string; feeText: string; switchUses: number; graduated: boolean }) {
+/** The four hooks, plus any optional ones this token launched with, with this token's live state; links to the hooks
+ *  page for the diagrams. */
+function LiveHooks({ meta, capText, feeText, switchUses, graduated, rules, slot }: { meta: Meta; capText: string; feeText: string; switchUses: number; graduated: boolean; rules: RulesView | null; slot: bigint }) {
+  // max buy and the per-slot limit apply for their window (0 = until graduation); the hook is gone after graduation
+  const inWindow = !!rules && !graduated && (rules.windowSlots === '0' || slot <= BigInt(rules.launchSlot) + BigInt(rules.windowSlots));
+  const ruleState = (pct: string) => (graduated ? 'ended' : inWindow ? pct : 'window over');
+  const extras = rules ? optionalHookList(rules).filter((h) => (h.id === 'maxbuy' ? rules.maxBuyBps > 0 : h.id === 'slot' ? rules.maxPerSlotBps > 0 : rules.potEvery > 0)) : [];
   const value: Record<string, string> = {
+    maxbuy: rules ? ruleState(pctOf(rules.maxBuyBps)) : '',
+    slot: rules ? ruleState(`${pctOf(rules.maxPerSlotBps)} / slot`) : '',
+    pot: rules ? `${Number(rules.wins)} winner${rules.wins === '1' ? '' : 's'}` : '',
     cap: capText,
     fee: feeText,
     switch: switchUses ? `used ${switchUses}×` : 'never used',
@@ -194,7 +203,7 @@ function LiveHooks({ meta, capText, feeText, switchUses, graduated }: { meta: Me
         <Link to="/hooks" className="right small link">How they work</Link>
       </div>
       <div className="hk-live">
-        {hookList(meta).map((h) => (
+        {[...hookList(meta), ...extras].map((h) => (
           <Link key={h.id} to={`/hooks#hook-${h.id}`} className={`hk-live-row tone-${h.tone}`}>
             <span className="hook-tile">{h.icon}</span>
             <span className="nm">{h.name}</span>
@@ -202,6 +211,39 @@ function LiveHooks({ meta, capText, feeText, switchUses, graduated }: { meta: Me
           </Link>
         ))}
       </div>
+      {rules && (rules.maxBuyBps > 0 || rules.maxPerSlotBps > 0) && <div className="small faint" style={{ marginTop: 8 }}>Max buy and per-slot limit: {windowText(rules.windowSlots)}.</div>}
+    </section>
+  );
+}
+
+/** Buy pot: the count so far, the next winning buy number, and the latest winners (on chain, last 16). */
+function PotCard({ rules: r, graduated }: { rules: RulesView; graduated: boolean }) {
+  const count = Number(r.buyCount), every = r.potEvery;
+  const next = (Math.trunc(count / every) + 1) * every;
+  const into = count % every;
+  return (
+    <section className="card tone-amber">
+      <div className="card-head" style={{ marginBottom: 8 }}>
+        <h2 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>Buy pot</h2>
+        <Link to="/hooks#hook-pot" className="right small link">How it works</Link>
+      </div>
+      <div className="pot-stats">
+        <div><div className="k">Counted buys</div><div className="v">{count.toLocaleString()}</div></div>
+        <div><div className="k">{graduated ? 'Ended at' : 'Next winner'}</div><div className="v">{graduated ? `#${count.toLocaleString()}` : `#${next.toLocaleString()}`}</div></div>
+        <div><div className="k">Winners</div><div className="v">{Number(r.wins).toLocaleString()}</div></div>
+      </div>
+      {!graduated && <>
+        <div className="pot-bar" role="progressbar" aria-valuemin={0} aria-valuemax={every} aria-valuenow={into} aria-label="Buys towards the next winner"><span style={{ width: `${(into / every) * 100}%` }} /></div>
+        <div className="small faint" style={{ marginBottom: 10 }}>{every - into} more counted buy{every - into === 1 ? '' : 's'} to the next winner · every {ordinal(every)} buy of at least {pctOf(r.potMinBps)} wins</div>
+      </>}
+      {r.winners.length
+        ? <ol className="pot-winners" aria-label="Latest pot winners">
+            {r.winners.map((w) => (
+              <li key={w.buyIndex}><span className="idx">#{Number(w.buyIndex).toLocaleString()}</span><Addr value={w.owner} n={5} /><span className="faint">slot {w.slot}</span></li>
+            ))}
+          </ol>
+        : <p className="small faint" style={{ margin: 0 }}>No winners yet.</p>}
+      <p className="small faint" style={{ margin: '10px 0 0' }}>Recorded on chain by the hook. Payouts aren’t switched on yet.</p>
     </section>
   );
 }

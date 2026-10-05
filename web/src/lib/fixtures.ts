@@ -3,7 +3,8 @@
 // The cap rule itself is the real one: buys over the cap fail with WalletCapExceeded via sdk/capMath.ts.
 import { effectiveCap, nextChange } from '../../../sdk/capMath';
 import { BALANCED } from '../../../sdk/schedules';
-import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent, BuiltSwap, FlywheelReply, PublicKeeper, TradesReply, IndexedTrade, Candle, MetadataInput, TokenMetadata } from './types';
+import { parseBuyRules, BuyRulesRefusal } from '../../../sdk/buy_rules';
+import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent, BuiltSwap, FlywheelReply, PublicKeeper, TradesReply, IndexedTrade, Candle, MetadataInput, TokenMetadata, RulesView, PotWinner } from './types';
 import type { Api } from './api';
 import { ApiError } from './errors';
 
@@ -19,6 +20,8 @@ interface Sim {
   mint: string; pool: string; config: string; name: string; symbol: string;
   launchedMsAgo: number; graduated: boolean; reserveSol: number;
   balances: Record<string, bigint>; switchHistory: SwitchEvent[]; raisedFloorBps: number;
+  /** optional hooks: rules plus how many buys the pot has counted so far */
+  rules?: { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number; buyCount: number };
 }
 const tokens = (n: number) => BigInt(Math.round(n * 1e6)) * (UNIT / 1_000_000n);
 const fakeKey = (tag: string) => (tag + '1'.repeat(44)).slice(0, 44);
@@ -27,10 +30,12 @@ const SIMS: Sim[] = [
   { mint: fakeKey('FixtureEarLyFeeMint'), pool: fakeKey('FixturePooA'), config: fakeKey('FixtureCfgA'), name: 'Fixture Early', symbol: 'TFEE',
     launchedMsAgo: 25_000, graduated: false, reserveSol: 0.031, balances: { A: 0n, B: tokens(4_000_000) }, switchHistory: [], raisedFloorBps: 0 },
   { mint: fakeKey('FixtureCappedMint'), pool: fakeKey('FixturePooB'), config: fakeKey('FixtureCfgB'), name: 'Fixture Capped', symbol: 'TCAP',
-    launchedMsAgo: 245_000, graduated: false, reserveSol: 0.082, balances: { A: tokens(12_400_000), B: tokens(3_000_000) }, switchHistory: [], raisedFloorBps: 0 },
+    launchedMsAgo: 245_000, graduated: false, reserveSol: 0.082, balances: { A: tokens(12_400_000), B: tokens(3_000_000) }, switchHistory: [], raisedFloorBps: 0,
+    rules: { maxBuyBps: 50, maxPerSlotBps: 150, windowSlots: '1500', potEvery: 25, potMinBps: 1, buyCount: 68 } },
   { mint: fakeKey('FixtureOpenMint'), pool: fakeKey('FixturePooC'), config: fakeKey('FixtureCfgC'), name: 'Fixture Open', symbol: 'TOPEN',
     launchedMsAgo: 40 * 60_000, graduated: false, reserveSol: 0.164, balances: { A: tokens(52_000_000), B: tokens(8_500_000) }, raisedFloorBps: 500,
-    switchHistory: [{ scope: 'mint', oldMinCapBps: 0, newMinCapBps: 500, lifted: false, slot: String(slotAt(T0 - 32 * 60_000)), signer: fakeKey('FixtureLiftAuthority'), link: '' }] },
+    switchHistory: [{ scope: 'mint', oldMinCapBps: 0, newMinCapBps: 500, lifted: false, slot: String(slotAt(T0 - 32 * 60_000)), signer: fakeKey('FixtureLiftAuthority'), link: '' }],
+    rules: { maxBuyBps: 0, maxPerSlotBps: 0, windowSlots: '0', potEvery: 100, potMinBps: 1, buyCount: 341 } },
   { mint: fakeKey('FixtureGraduatedMint'), pool: fakeKey('FixturePooD'), config: fakeKey('FixtureCfgD'), name: 'Fixture Graduated', symbol: 'TGRAD',
     launchedMsAgo: 3 * 3600_000, graduated: true, reserveSol: 0.2, balances: { A: tokens(9_000_000), B: tokens(41_000_000) }, switchHistory: [], raisedFloorBps: 0 },
 ];
@@ -67,7 +72,27 @@ function view(s: Sim, owner?: string | null): TokenView {
     wallet: owner ? { owner, tokens: (s.balances[owner] ?? 0n).toString(), sol: 1.5 } : null,
     switchHistory: s.switchHistory,
     explorer: { mint: '', pool: '', program: '' },
+    rules: rulesOf(s),
   };
+}
+
+/** The rules account as the server would show it: winners are every potEvery-th counted buy, newest first (last 16). */
+function rulesOf(s: Sim): RulesView | null {
+  if (!s.rules) return null;
+  const { buyCount, ...r } = s.rules;
+  const wins = r.potEvery ? Math.trunc(buyCount / r.potEvery) : 0;
+  const L = launchSlot(s), span = slotAt(T0) - L;
+  const winners: PotWinner[] = [];
+  for (let k = wins; k > 0 && winners.length < 16; k--) {
+    const i = k * r.potEvery;
+    winners.push({ owner: fakeKey(`FixtureWinner${k}x`), tokenAccount: fakeKey(`FixtureWinAta${k}x`), buyIndex: String(i), slot: String(L + Math.round((span * i) / (buyCount + 4))) });
+  }
+  return { ...r, launchSlot: String(L), buyCount: String(buyCount), wins: String(wins), winners };
+}
+
+/** Same checks as the server (sdk/buy_rules.ts), so the launch form sees the real refusals in fixture mode. */
+function checkRules(req: CreateRequest) {
+  try { parseBuyRules(req.rules); } catch (e) { if (e instanceof BuyRulesRefusal) throw new ApiError(e.message, 400); throw e; }
 }
 
 const find = (mint: string) => {
@@ -227,11 +252,11 @@ export const fixtureApi: Api = {
     return { cluster: 'DEVNET', skipped: [], keepers: [fixtureKeeper(SIMS[3], 'active', 13), fixtureKeeper(SIMS[2], 'waiting_for_graduation', 0)] };
   },
   async create(req: CreateRequest): Promise<CreateReply> {
-    await latency(); await latency();
+    await latency(); await latency(); checkRules(req);
     return { mint: fakeKey('FixtureNew' + req.symbol), pool: fakeKey('FixtureNewPooL'), registered: false, note: 'not registered: add to keeper/registry.json' };
   },
   async launchBuild(req: CreateRequest) {
-    await latency(); await latency();
+    await latency(); await latency(); checkRules(req);
     const tx = Array.from(fakeSig(), (ch) => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('');   // stand-in hex
     LAUNCHES.set(tx, req);
     return { tx, mint: fakeKey('FixtureNew' + req.symbol), config: fakeKey('FixtureNewCfg'), pool: fakeKey('FixtureNewPooL'), createConfigSig: fakeSig(), simulation: 'ok before signing (simulated)', expiresInMs: 90_000 };

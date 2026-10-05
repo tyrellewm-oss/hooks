@@ -3,13 +3,25 @@
 import type { ReactNode } from 'react';
 import type { Meta } from './types';
 import { approxDuration, pctOf } from './shared';
-import { CapDiagram, FlywheelDiagram, LiftDiagram, SniperFeeDiagram } from '../components/HookArt';
-import { IconFee, IconFlame, IconShield, IconSwitch } from '../components/Icons';
+import { CapDiagram, FlywheelDiagram, LiftDiagram, SniperFeeDiagram, MaxBuyDiagram, SlotLimitDiagram, PotDiagram } from '../components/HookArt';
+import { IconFee, IconFlame, IconShield, IconSwitch, IconCeiling, IconBlocks, IconTrophy } from '../components/Icons';
 
 export const SNIPER_DEFAULT = { startBps: 5000, endBps: 100, periods: 10, durationSlots: 150 };
 export const FLYWHEEL_SPLIT = { devPct: 15, buybackPct: 85 };
 
-export type HookId = 'cap' | 'fee' | 'switch' | 'burn';
+export type HookId = 'cap' | 'fee' | 'switch' | 'burn' | OptionalHookId;
+export type OptionalHookId = 'maxbuy' | 'slot' | 'pot';
+export const HOOK_IDS: HookId[] = ['cap', 'fee', 'switch', 'burn', 'maxbuy', 'slot', 'pot'];
+
+/** Studio defaults for the optional hooks (shares of supply in bps; window in slots, 0 = until graduation). */
+export const RULES_DEFAULT = { maxBuyBps: 50, maxPerSlotBps: 150, windowSlots: '1500', potEvery: 50, potMinBps: 1 };
+export const RULES_WINDOWS: { slots: string; label: string }[] = [
+  { slots: '150', label: 'First ~1 min' },
+  { slots: '1500', label: 'First ~10 min' },
+  { slots: '4500', label: 'First ~30 min' },
+  { slots: '0', label: 'Until graduation' },
+];
+export const windowText = (slots: string) => (slots === '0' ? 'until graduation' : `first ${approxDuration(slots)}`);
 export interface HookInfo {
   id: HookId;
   name: string;
@@ -26,7 +38,7 @@ export interface HookInfo {
   limits: string;
   diagram: ReactNode;
   /** how the launch tool treats it */
-  launch: 'tunable' | 'always';
+  launch: 'tunable' | 'always' | 'optional';
 }
 
 export function hookList(meta: Meta): HookInfo[] {
@@ -110,4 +122,73 @@ export function hookList(meta: Meta): HookInfo[] {
       diagram: <FlywheelDiagram {...FLYWHEEL_SPLIT} />,
     },
   ];
+}
+
+/** The optional hooks a launch can turn on (program v2 rules). Values shown are the studio defaults unless `r` is a
+ *  token's own rules. */
+export function optionalHookList(r: { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number } = RULES_DEFAULT): HookInfo[] {
+  const win = windowText(r.windowSlots);
+  const Win = win[0].toUpperCase() + win.slice(1);
+  return [
+    {
+      id: 'maxbuy', name: 'Max single buy', icon: <IconCeiling size={20} />, tone: 'accent', launch: 'optional',
+      short: `No single buy over ${pctOf(r.maxBuyBps)} of supply`,
+      when: `Curve · ${win}`, runs: 'Transfer hook program, checked on every curve buy',
+      steps: [
+        'Someone buys on the bonding curve.',
+        'The hook checks the size of that one buy, not how much the buyer already holds.',
+        `If it is over ${pctOf(r.maxBuyBps)} of supply, the buy fails and nothing moves. Smaller buys land as normal.`,
+      ],
+      settings: [
+        { k: 'Max per buy', v: pctOf(r.maxBuyBps) },
+        { k: 'Applies', v: Win },
+        { k: 'Selling', v: 'never limited' },
+      ],
+      limits: 'Someone can still split a big buy into several smaller ones, or use several wallets. Together with the cap and the per-slot limit that gets slower and more expensive. Selling is never limited.',
+      diagram: <MaxBuyDiagram maxText={pctOf(r.maxBuyBps)} />,
+    },
+    {
+      id: 'slot', name: 'Per-slot buy limit', icon: <IconBlocks size={20} />, tone: 'sim', launch: 'optional',
+      short: `At most ${pctOf(r.maxPerSlotBps)} of supply bought in any one slot (~0.4 s)`,
+      when: `Curve · ${win}`, runs: 'Transfer hook program, a running total per slot',
+      steps: [
+        'Every curve buy in the same slot (about 0.4 seconds) is added up, across all wallets.',
+        `If a buy would take that slot over ${pctOf(r.maxPerSlotBps)} of supply, it fails and nothing moves.`,
+        'The next slot starts again from zero. Bundles that buy with many wallets at once hit the limit together.',
+      ],
+      settings: [
+        { k: 'Limit per slot', v: pctOf(r.maxPerSlotBps) },
+        { k: 'Applies', v: Win },
+        { k: 'Counts', v: 'all buyers together' },
+      ],
+      limits: 'It limits everyone together, so in a busy opening an honest buy can fail too; trying again a moment later works. It does not stop buying spread over many slots.',
+      diagram: <SlotLimitDiagram limitText={pctOf(r.maxPerSlotBps)} />,
+    },
+    {
+      id: 'pot', name: 'Buy pot', icon: <IconTrophy size={20} />, tone: 'amber', launch: 'optional',
+      short: `Every ${ordinal(r.potEvery)} buy is a pot winner`,
+      when: 'Bonding curve', runs: 'Transfer hook program counts buys and records winners on chain',
+      steps: [
+        `The hook counts curve buys in order: the first buy in each slot that is at least ${pctOf(r.potMinBps)} of supply.`,
+        `Every ${ordinal(r.potEvery)} counted buy is recorded on chain as a winner: wallet, buy number and slot.`,
+        'Winners are listed live on the token page.',
+      ],
+      settings: [
+        { k: 'Winner every', v: `${r.potEvery} buys` },
+        { k: 'Minimum buy', v: pctOf(r.potMinBps) },
+        { k: 'Counted per slot', v: '1 buy' },
+        { k: 'Payouts', v: 'not live yet' },
+      ],
+      limits: 'It is not random: anyone watching the count can try to time the winning buy. The hook only records winners; it cannot hold or send SOL, and payouts are not switched on yet.',
+      diagram: <PotDiagram every={r.potEvery} minText={pctOf(r.potMinBps)} />,
+    },
+  ];
+}
+
+/** Every hook: the four each token runs, then the optional ones. */
+export const allHooks = (meta: Meta): HookInfo[] => [...hookList(meta), ...optionalHookList()];
+
+export function ordinal(n: number): string {
+  const t = n % 100, o = n % 10;
+  return `${n}${t >= 11 && t <= 13 ? 'th' : o === 1 ? 'st' : o === 2 ? 'nd' : o === 3 ? 'rd' : 'th'}`;
 }

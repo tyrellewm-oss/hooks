@@ -2,19 +2,19 @@
 import { useEffect, useState } from 'react';
 import type { Meta } from '../lib/types';
 import { approxDuration } from '../lib/shared';
-import { hookList, SNIPER_DEFAULT, type HookId, type HookInfo } from '../lib/hookInfo';
+import { allHooks, HOOK_IDS, SNIPER_DEFAULT, type HookId, type HookInfo } from '../lib/hookInfo';
 import { LifecycleDiagram, CapGauge } from '../components/HookArt';
 import { CapExplanation } from '../components/CapExplanation';
 import { Guard, Link } from '../components/bits';
 import { IconArrow, IconHook, IconInfo } from '../components/Icons';
 
 function hookFromHash(): HookId {
-  const id = location.hash.replace('#hook-', '');
-  return id === 'fee' || id === 'switch' || id === 'burn' ? id : 'cap';
+  const id = location.hash.replace('#hook-', '') as HookId;
+  return HOOK_IDS.includes(id) ? id : 'cap';
 }
 
 export function HooksPage({ meta }: { meta: Meta }) {
-  const hooks = hookList(meta);
+  const hooks = allHooks(meta);
   const [active, setActive] = useState<HookId>(hookFromHash);
   const selected = hooks.find((hook) => hook.id === active)!;
   const capStartPct = (meta.defaultSchedule.steps[0]?.maxBps ?? 100) / 100;
@@ -40,20 +40,25 @@ export function HooksPage({ meta }: { meta: Meta }) {
         <div>
           <span className="eyebrow"><IconHook size={14} />Hooks</span>
           <h1>The rules every token runs</h1>
-          <p>Four rules, fixed at launch. Explore what each does, when it runs and where its limits are.</p>
+          <p>Four rules every token runs, plus three a launch can add. All fixed at launch. Explore what each does, when it runs and where its limits are.</p>
         </div>
         <span className="hero-line" />
       </section>
 
-      <div className="hook-selector" role="group" aria-label="Explore a hook">
-        {hooks.map((hook, i) => (
-          <button key={hook.id} type="button" className={`hook-choice tone-${hook.tone}`} aria-pressed={active === hook.id} aria-controls="hook-explorer-panel" onClick={() => selectHook(hook.id)}>
-            <span className="hook-choice-top"><span className="hook-tile">{hook.icon}</span><span className="mono faint">0{i + 1}</span></span>
-            <span className="hook-choice-name">{hook.name}</span>
-            <span className="hook-choice-when">{hook.when}</span>
-          </button>
-        ))}
-      </div>
+      {([['always', 'On every token'], ['optional', 'Optional · chosen at launch']] as const).map(([group, title]) => (
+        <div key={group} className="hook-group">
+          <div className="hook-group-head small faint">{title}</div>
+          <div className={`hook-selector ${group === 'optional' ? 'opt' : ''}`} role="group" aria-label={title}>
+            {hooks.filter((hook) => (hook.launch === 'optional') === (group === 'optional')).map((hook) => (
+              <button key={hook.id} type="button" className={`hook-choice tone-${hook.tone}`} aria-pressed={active === hook.id} aria-controls="hook-explorer-panel" onClick={() => selectHook(hook.id)}>
+                <span className="hook-choice-top"><span className="hook-tile">{hook.icon}</span><span className="mono faint">0{hooks.indexOf(hook) + 1}</span></span>
+                <span className="hook-choice-name">{hook.name}</span>
+                <span className="hook-choice-when">{hook.when}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
 
       <div id="hook-explorer-panel">
         <HookPanel key={selected.id} hook={selected} capStartPct={capStartPct} meta={meta} />

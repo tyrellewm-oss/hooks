@@ -31,7 +31,7 @@
 .launch-entry-link a:hover { color: var(--text); }
 
 .wiz-bar { display: flex; align-items: flex-start; gap: 14px; }
-.wiz-steps { list-style: none; margin: 0; padding: 0; flex: 1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.wiz-steps { list-style: none; margin: 0; padding: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr); gap: 8px; }
 .wiz-steps li { min-width: 0; }
 button.wiz-step { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-rows: auto auto 18px; gap: 8px; width: 100%; padding-bottom: 2px; }
 button.wiz-step:disabled { cursor: not-allowed; }

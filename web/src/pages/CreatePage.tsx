@@ -1,7 +1,7 @@
 // Studio launch tool (no public self-serve). Same validation as the program (validate + RELEASE_LIMITS, AC-4) before
 // anything is sent; the server validates again. A new mint stays off the listing until it's added to the registry.
-import { useMemo, useState } from 'react';
-import type { CreateReply, Meta, StepJson } from '../lib/types';
+import { useMemo, useState, type ReactNode } from 'react';
+import type { BuyRulesInput, CreateReply, Meta, StepJson } from '../lib/types';
 import { api } from '../lib/api';
 import { useWallet, signTransaction, hexToBytes, bytesToHex } from '../lib/wallet';
 import { validate, RELEASE_LIMITS, STRICT, BALANCED, LOOSE, LOCAL_DEMO, pctOf, approxDuration, type NamedSchedule, type ScheduleError } from '../lib/shared';
@@ -11,7 +11,7 @@ import { StudioGate, StudioSessionControls } from '../components/StudioGate';
 import { useStudioAccess } from '../lib/studio';
 import { DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
 import { CapDiagram } from '../components/HookArt';
-import { hookList, type HookId } from '../lib/hookInfo';
+import { hookList, optionalHookList, RULES_DEFAULT, RULES_WINDOWS, windowText, ordinal, type HookId, type OptionalHookId } from '../lib/hookInfo';
 import { HooksLink } from './HooksPage';
 import { IconArrow, IconCheck } from '../components/Icons';
 
@@ -26,6 +26,27 @@ const SCHEDULE_ERRORS: Record<ScheduleError, string> = {
 };
 
 interface Row { offset: string; pct: string }
+
+/** The optional hooks as the form holds them (percent strings); `on` says which are switched on. */
+interface Extras { on: Record<OptionalHookId, boolean>; maxBuyPct: string; perSlotPct: string; windowSlots: string; potEvery: string; potMinPct: string }
+const pctStr = (bps: number) => String(bps / 100);
+const emptyExtras = (): Extras => ({ on: { maxbuy: false, slot: false, pot: false }, maxBuyPct: pctStr(RULES_DEFAULT.maxBuyBps), perSlotPct: pctStr(RULES_DEFAULT.maxPerSlotBps), windowSlots: RULES_DEFAULT.windowSlots, potEvery: String(RULES_DEFAULT.potEvery), potMinPct: pctStr(RULES_DEFAULT.potMinBps) });
+/** percent of supply (up to 2 decimals) -> bps, or null if it isn't one */
+const toBps = (v: string, min: number) => { const t = v.trim(); if (!/^\d+(\.\d{1,2})?$/.test(t)) return null; const b = Math.round(Number(t) * 100); return b >= min && b <= 10_000 ? b : null; };
+/** Same limits as the server (sdk/buy_rules.ts) and the program (validate_rules). */
+function checkExtras(x: Extras): { err: string | null; rules?: BuyRulesInput } {
+  if (!x.on.maxbuy && !x.on.slot && !x.on.pot) return { err: null };
+  const maxBuyBps = x.on.maxbuy ? toBps(x.maxBuyPct, 1) : 0;
+  if (maxBuyBps === null) return { err: 'Max single buy: 0.01% to 100% of supply.' };
+  const maxPerSlotBps = x.on.slot ? toBps(x.perSlotPct, 1) : 0;
+  if (maxPerSlotBps === null) return { err: 'Per-slot limit: 0.01% to 100% of supply.' };
+  if (maxBuyBps && maxPerSlotBps && maxPerSlotBps < maxBuyBps) return { err: 'The per-slot limit must be at least the max single buy.' };
+  const potEvery = x.on.pot ? (/^\d+$/.test(x.potEvery.trim()) ? Number(x.potEvery) : NaN) : 0;
+  if (x.on.pot && !(potEvery >= 10 && potEvery <= 100_000)) return { err: 'Buy pot: a winner every 10 to 100,000 buys.' };
+  const potMinBps = x.on.pot ? toBps(x.potMinPct, 0) : 0;
+  if (potMinBps === null) return { err: 'Buy pot minimum: 0% to 100% of supply, up to 2 decimals.' };
+  return { err: null, rules: { maxBuyBps, maxPerSlotBps, windowSlots: x.on.maxbuy || x.on.slot ? x.windowSlots : '0', potEvery, potMinBps } };
+}
 const rowsOf = (s: NamedSchedule): Row[] => s.steps.map((x) => ({ offset: x.slotOffset.toString(), pct: String(x.maxBps / 100) }));
 
 export function CreatePage({ meta }: { meta: Meta }) {
@@ -41,6 +62,9 @@ export function CreatePage({ meta }: { meta: Meta }) {
   const [step, setStep] = useState('');
   const [onMigration, setOnMigration] = useState('20');
   const [details, setDetails] = useState<DetailsState>(emptyDetails());
+  const [extras, setExtras] = useState<Extras>(emptyExtras());
+  const extrasCheck = useMemo(() => checkExtras(extras), [extras]);
+  const extrasOn = (Object.keys(extras.on) as OptionalHookId[]).filter((k) => extras.on[k]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CreateReply | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,24 +95,26 @@ export function CreatePage({ meta }: { meta: Meta }) {
   const STEPS: { id: string; label: string; err: string | null }[] = [
     { id: 'hooks', label: 'Hooks', err: null },
     { id: 'cap', label: 'Cap schedule', err: 'err' in check ? check.err! : null },
+    { id: 'extras', label: 'Optional hooks', err: extrasCheck.err },
     { id: 'token', label: 'Token', err: nameErr },
-    { id: 'curve', label: 'Curve & graduation', err: curveErr },
-    { id: 'review', label: 'Review & launch', err: null },
+    { id: 'curve', label: 'Graduation', err: curveErr },
+    { id: 'review', label: 'Review', err: null },
   ];
   const [at, setAt] = useState(0);
   const [seen, setSeen] = useState(0);   // furthest step reached
   const go = (i: number) => { setAt(i); setSeen((s) => Math.max(s, i)); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const cur = STEPS[at];
+  const goId = (id: string) => go(STEPS.findIndex((x) => x.id === id));
   const stateOf = (i: number) => (i === at ? 'now' : i > seen ? 'todo' : STEPS[i].err ? 'warn' : 'done');
   const reset = () => {
     pick(presets[0].id); setName('Hookd Test'); setSymbol('TTEST'); setThreshold('1'); setOnMigration('20');
-    setDetails(emptyDetails()); setResult(null); setError(null); setAt(0); setSeen(0);
+    setDetails(emptyDetails()); setExtras(emptyExtras()); setResult(null); setError(null); setAt(0); setSeen(0);
   };
 
   async function create() {
-    if (!('steps' in check) || formErr) return;
+    if (!('steps' in check) || formErr || extrasCheck.err) return;
     setBusy(true); setError(null); setResult(null);
-    const req = { name: name.trim(), symbol, steps: check.steps!, uncappedAfter: unc.trim(), thresholdSol: Number(threshold), percentageSupplyOnMigration: Number(onMigration), metadata: toInput(details) };
+    const req = { name: name.trim(), symbol, steps: check.steps!, uncappedAfter: unc.trim(), thresholdSol: Number(threshold), percentageSupplyOnMigration: Number(onMigration), metadata: toInput(details), ...(extrasCheck.rules ? { rules: extrasCheck.rules } : {}) };
     try {
       if (bw.address) {
         // AC-21: the launch tx is signed in the connected wallet; the server co-signs with the launch key (8.3)
@@ -115,7 +141,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
       <section className="wiz-head">
         <div className="small faint wiz-kicker">Studio launch · {meta.cluster.toLowerCase()}</div>
         <h1>Launch a token</h1>
-        <p className="muted">Five short steps. Everything is fixed at launch, except the cap, which can only be lifted later.</p>
+        <p className="muted">Six short steps. Everything is fixed at launch, except the cap, which can only be lifted later.</p>
       </section>
       {studioAccess && studioRequired && studioSession && <StudioSessionControls wallet={studioSession.wallet} />}
       </div>
@@ -142,7 +168,9 @@ export function CreatePage({ meta }: { meta: Meta }) {
 
       <div className="wiz-grid">
         <div className="wiz-main">
-          {cur.id === 'hooks' && <HooksPicker meta={meta} capText={'err' in check ? null : pctOf(check.steps![0].maxBps)} />}
+          {cur.id === 'hooks' && <HooksPicker meta={meta} capText={'err' in check ? null : pctOf(check.steps![0].maxBps)} extrasOn={extrasOn.length} onExtras={() => goId('extras')} />}
+
+          {cur.id === 'extras' && <OptionalHooksStep value={extras} onChange={setExtras} err={extrasCheck.err} capStartBps={'err' in check ? null : check.steps![0].maxBps} />}
 
           {cur.id === 'cap' && (
             <div className="card">
@@ -214,14 +242,15 @@ export function CreatePage({ meta }: { meta: Meta }) {
             <div className="card">
               <div className="card-head"><h2>Review &amp; launch</h2><span className="right small faint">nothing is sent until you press launch</span></div>
               <div className="wiz-review">
-                <ReviewRow k="Token" v={`${name.trim() || '–'} · $${symbol || '–'}`} edit={() => go(2)} />
-                <ReviewRow k="Hooks" v="Cap per token account, anti-sniper fee, lift-only switch, buyback & burn" edit={() => go(0)} />
-                <ReviewRow k="Cap" v={capRange ? `${capRange}, no cap after ${approxDuration(unc)} · ${selected ? selected.name : 'custom'}` : 'needs attention'} edit={() => go(1)} />
-                <ReviewRow k="Graduates at" v={`${threshold} SOL · ${onMigration}% of supply to the pool`} edit={() => go(3)} />
+                <ReviewRow k="Token" v={`${name.trim() || '–'} · $${symbol || '–'}`} edit={() => goId('token')} />
+                <ReviewRow k="Hooks" v="Cap per token account, anti-sniper fee, lift-only switch, buyback & burn" edit={() => goId('hooks')} />
+                <ReviewRow k="Optional hooks" v={extrasSummary(extras, extrasCheck)} edit={() => goId('extras')} />
+                <ReviewRow k="Cap" v={capRange ? `${capRange}, no cap after ${approxDuration(unc)} · ${selected ? selected.name : 'custom'}` : 'needs attention'} edit={() => goId('cap')} />
+                <ReviewRow k="Graduates at" v={`${threshold} SOL · ${onMigration}% of supply to the pool`} edit={() => goId('curve')} />
                 <ReviewRow k="Signed by" v={bw.address ? `your wallet (${bw.address.slice(0, 4)}…${bw.address.slice(-4)}) + the ${meta.cluster.toLowerCase()} launch key` : `the server's throwaway ${meta.cluster.toLowerCase()} keys (connect a wallet to sign it yourself)`} />
               </div>
               {blocking >= 0 && <div className="notice red small" style={{ marginTop: 14 }}>Step {blocking + 1} ({STEPS[blocking].label}) needs attention: {STEPS[blocking].err}</div>}
-              <button className="primary block" style={{ marginTop: 16 }} disabled={busy || !!formErr || 'err' in check} onClick={create}>{busy ? step || 'Creating… (2 transactions)' : `Launch on ${meta.cluster.toLowerCase()}`}</button>
+              <button className="primary block" style={{ marginTop: 16 }} disabled={busy || !!formErr || 'err' in check || !!extrasCheck.err} onClick={create}>{busy ? step || 'Creating… (2 transactions)' : `Launch on ${meta.cluster.toLowerCase()}`}</button>
               {error && <div className="notice red small" style={{ marginTop: 12 }}>{error}</div>}
               {result && (
                 <div className="notice green small" style={{ marginTop: 12 }}>
@@ -243,7 +272,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
           <div className="small faint" style={{ marginBottom: 6 }}>Draft</div>
           <dl className="kv">
             <dt>Token</dt><dd>{symbol ? `$${symbol}` : '–'}</dd>
-            <dt>Hooks</dt><dd>4 on</dd>
+            <dt>Hooks</dt><dd>{4 + extrasOn.length} on{extrasOn.length ? ` · ${extrasOn.length} optional` : ''}</dd>
             <dt>Cap</dt><dd>{capRange ?? '–'}</dd>
             <dt>Graduates at</dt><dd>{threshold} SOL</dd>
             <dt>Step</dt><dd>{at + 1} / {STEPS.length}</dd>
@@ -268,7 +297,7 @@ function ReviewRow({ k, v, edit }: { k: string; v: string; edit?: () => void }) 
 
 /** Which hooks this launch gets. The cap is tuned in the schedule card below; the other three are on for every token.
  *  Picking one shows its diagram and how it works. */
-function HooksPicker({ meta, capText }: { meta: Meta; capText: string | null }) {
+function HooksPicker({ meta, capText, extrasOn, onExtras }: { meta: Meta; capText: string | null; extrasOn: number; onExtras: () => void }) {
   const hooks = hookList(meta);
   const [sel, setSel] = useState<HookId>('cap');
   const h = hooks.find((x) => x.id === sel)!;
@@ -303,6 +332,94 @@ function HooksPicker({ meta, capText }: { meta: Meta; capText: string | null }) 
           </p>
         </div>
       </div>
+      <button type="button" className="opt-teaser" onClick={onExtras}>
+        <span className="opt-teaser-icons">{optionalHookList().map((x) => <span key={x.id} className={`hook-tile tone-${x.tone}`}>{x.icon}</span>)}</span>
+        <span><b>{extrasOn ? `${extrasOn} optional hook${extrasOn > 1 ? 's' : ''} on` : 'Add optional hooks'}</b><span className="small faint"> · max single buy, per-slot buy limit, buy pot</span></span>
+        <IconArrow size={15} />
+      </button>
+    </div>
+  );
+}
+
+function extrasSummary(x: Extras, c: { err: string | null; rules?: BuyRulesInput }): string {
+  if (c.err) return 'needs attention';
+  const r = c.rules;
+  if (!r) return 'none';
+  const parts: string[] = [];
+  if (r.maxBuyBps) parts.push(`max buy ${pctOf(r.maxBuyBps)}`);
+  if (r.maxPerSlotBps) parts.push(`${pctOf(r.maxPerSlotBps)} per slot`);
+  if (r.maxBuyBps || r.maxPerSlotBps) parts.push(windowText(x.windowSlots));
+  if (r.potEvery) parts.push(`pot: every ${ordinal(r.potEvery)} buy`);
+  return parts.join(' · ');
+}
+
+/** Step 3: the optional hooks. Each one is off until switched on; switching on shows its diagram (with the values
+ *  typed here) and its settings. */
+function OptionalHooksStep({ value: x, onChange, err, capStartBps }: { value: Extras; onChange: (x: Extras) => void; err: string | null; capStartBps: number | null }) {
+  const set = (patch: Partial<Extras>) => onChange({ ...x, ...patch });
+  const toggle = (id: OptionalHookId) => onChange({ ...x, on: { ...x.on, [id]: !x.on[id] } });
+  // the diagrams and copy follow the typed values while they are valid, else the defaults
+  const live = {
+    maxBuyBps: toBps(x.maxBuyPct, 1) ?? RULES_DEFAULT.maxBuyBps, maxPerSlotBps: toBps(x.perSlotPct, 1) ?? RULES_DEFAULT.maxPerSlotBps,
+    windowSlots: x.windowSlots, potEvery: /^\d+$/.test(x.potEvery) && +x.potEvery >= 10 ? +x.potEvery : RULES_DEFAULT.potEvery, potMinBps: toBps(x.potMinPct, 0) ?? RULES_DEFAULT.potMinBps,
+  };
+  const hooks = optionalHookList(live);
+  const maxBuyBps = toBps(x.maxBuyPct, 1);
+  const windowField = (
+    <label className="field"><span>Applies for</span>
+      <select value={x.windowSlots} onChange={(e) => set({ windowSlots: e.target.value })}>
+        {RULES_WINDOWS.map((w) => <option key={w.slots} value={w.slots}>{w.label}</option>)}
+      </select>
+      <span className="hint">Shared by the max single buy and the per-slot limit. After this they stop; the cap still applies.</span>
+    </label>
+  );
+  const fields: Record<OptionalHookId, ReactNode> = {
+    maxbuy: <>
+      <label className="field"><span>Max per buy (% of supply)</span><input value={x.maxBuyPct} inputMode="decimal" onChange={(e) => set({ maxBuyPct: e.target.value })} />
+        {capStartBps !== null && maxBuyBps !== null && maxBuyBps >= capStartBps && <span className="hint">This is at or above the launch cap ({pctOf(capStartBps)}), so the cap is the tighter rule at first.</span>}
+      </label>
+      {windowField}
+    </>,
+    slot: <>
+      <label className="field"><span>Limit per slot, all buyers (% of supply)</span><input value={x.perSlotPct} inputMode="decimal" onChange={(e) => set({ perSlotPct: e.target.value })} />
+        <span className="hint">A slot is about 0.4 seconds. Keep this at or above the max single buy.</span>
+      </label>
+      {x.on.maxbuy ? <div className="hint">Applies for: the same time as the max single buy ({windowText(x.windowSlots)}).</div> : windowField}
+    </>,
+    pot: <>
+      <div className="wiz-two">
+        <label className="field"><span>A winner every</span><input value={x.potEvery} inputMode="numeric" onChange={(e) => set({ potEvery: e.target.value })} /><span className="hint">10 to 100,000 buys</span></label>
+        <label className="field"><span>Minimum buy (% of supply)</span><input value={x.potMinPct} inputMode="decimal" onChange={(e) => set({ potMinPct: e.target.value })} /><span className="hint">Smaller buys aren’t counted</span></label>
+      </div>
+      <div className="notice small">Winners are recorded on chain and listed on the token page. Payouts aren’t switched on yet.</div>
+    </>,
+  };
+  return (
+    <div className="card">
+      <div className="card-head"><h2>Optional hooks</h2><span className="right small faint">all off by default · fixed at launch</span></div>
+      <p className="small muted" style={{ marginTop: -6 }}>Extra rules the transfer hook enforces during the bonding curve. Turn on any you want; leave them off for a standard launch.</p>
+      <div className="opt-list">
+        {hooks.map((h) => {
+          const on = x.on[h.id as OptionalHookId];
+          return (
+            <section key={h.id} className={`opt-hook tone-${h.tone} ${on ? 'on' : ''}`}>
+              <div className="opt-hook-head">
+                <span className="hook-tile">{h.icon}</span>
+                <span style={{ minWidth: 0 }}><span className="nm">{h.name}</span><span className="st">{h.short}</span></span>
+                <button type="button" role="switch" aria-checked={on} aria-label={`${h.name}: ${on ? 'on' : 'off'}`} className="tgl" onClick={() => toggle(h.id as OptionalHookId)} />
+              </div>
+              {on && (
+                <div className="opt-hook-body">
+                  <div>{h.diagram}</div>
+                  <div className="opt-hook-fields">{fields[h.id as OptionalHookId]}</div>
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+      {err && <div className="notice red small" style={{ marginTop: 12 }}>{err}</div>}
+      <p className="small faint" style={{ margin: '12px 0 0' }}>Selling is never limited by these. Each needs the upgraded hook program; if the cluster doesn’t have it yet, the launch is refused before anything is sent. <HooksLink /></p>
     </div>
   );
 }

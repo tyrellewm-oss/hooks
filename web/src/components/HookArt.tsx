@@ -224,3 +224,120 @@ export function LifecycleDiagram({ feeText, rampText }: { feeText: string; rampT
     </Frame>
   );
 }
+
+// ---- optional hooks (chosen at launch; program v2 rules)
+
+/** 5 · Max single buy: three buys against one limit. Each buy is judged on its own size, not on what the buyer holds. */
+export function MaxBuyDiagram({ maxText }: { maxText: string }) {
+  const L = 70, M = 250, top = 40, rowH = 42, bh = 22;
+  const rows = [
+    { label: 'Buy A', f: 0.42, ok: true },
+    { label: 'Buy B', f: 0.86, ok: true },
+    { label: 'Buy C', f: 1.45, ok: false },
+  ];
+  const x = (f: number) => L + (M - L) * f;
+  return (
+    <Frame w={420} h={196} label={`Three buys against a ${maxText} max single buy: the two under it land, the one over it fails and nothing moves`}>
+      <text x={M} y={20} textAnchor="middle" className="hd-t small">max {maxText}</text>
+      <text x={M} y={33} textAnchor="middle" className="hd-s">per buy</text>
+      {rows.map((r, i) => {
+        const y = top + 8 + i * rowH;
+        return (
+          <g key={r.label}>
+            <text x={L - 10} y={y + bh / 2 + 4} textAnchor="end" className="hd-s">{r.label}</text>
+            <rect x={L} y={y} width={x(1.6) - L} height={bh} rx="6" className="hd-well" />
+            {r.ok
+              ? <rect x={L} y={y} width={x(r.f) - L} height={bh} rx="6" className="hd-fill" />
+              : <rect x={L + 2} y={y + 2} width={x(r.f) - L - 4} height={bh - 4} rx="5" className="hd-ghost" />}
+            <text x={414} y={y + bh / 2 + 4} textAnchor="end" className={`hd-s strong ${r.ok ? 'ok' : 'bad'}`}>{r.ok ? '✓ lands' : '✕ fails'}</text>
+          </g>
+        );
+      })}
+      <line x1={M} x2={M} y1={top} y2={top + 3 * rowH + 6} className="hd-capline" />
+      <text x={L} y={186} className="hd-s faint">Only the size of this one buy counts, not what the buyer already holds.</text>
+    </Frame>
+  );
+}
+
+/** 6 · Max bought per slot: every buy in one slot (~0.4 s) adds up against one shared limit. The buy that would go
+ *  over fails; the next slot starts again from zero. */
+export function SlotLimitDiagram({ limitText }: { limitText: string }) {
+  const uid = useId().replace(/:/g, '');
+  const top = 34, base = 150, capY = 64;
+  const lv = (f: number) => base - (base - capY) * f;
+  const cols = [
+    { x: 74, label: 'slot n', parts: [{ k: 'A', f: 0.42 }, { k: 'B', f: 0.4 }], fail: { k: 'C', f: 0.38 } },
+    { x: 266, label: 'slot n + 1', parts: [{ k: 'C', f: 0.38 }], fail: null as null | { k: string; f: number } },
+  ];
+  const w = 80;
+  return (
+    <Frame w={420} h={196} label={`All buys in one slot share a ${limitText} limit: A and B land, C would go over and fails, then lands in the next slot`}>
+      {cols.map((c, i) => {
+        let acc = 0;
+        return (
+          <g key={c.label}>
+            <clipPath id={`${uid}-s${i}`}><rect x={c.x} y={top} width={w} height={base - top} rx="7" /></clipPath>
+            <rect x={c.x} y={top} width={w} height={base - top} rx="7" className="hd-well" />
+            <g clipPath={`url(#${uid}-s${i})`}>
+              {c.parts.map((p, j) => {
+                const y0 = lv(acc), y1 = lv(acc + p.f); acc += p.f;
+                return (
+                  <g key={p.k}>
+                    <rect x={c.x} y={y1} width={w} height={y0 - y1} className={`hd-fill${j % 2 ? ' old' : ''}`} />
+                    {j > 0 && <line x1={c.x} x2={c.x + w} y1={y0} y2={y0} className="hd-seam" />}
+                  </g>
+                );
+              })}
+            </g>
+            {c.parts.map((p, j) => {
+              const before = c.parts.slice(0, j).reduce((s, q) => s + q.f, 0);
+              return <text key={p.k} x={c.x - 8} y={(lv(before) + lv(before + p.f)) / 2 + 4} textAnchor="end" className="hd-s strong">{p.k}</text>;
+            })}
+            {c.fail && (() => { const y0 = lv(acc), y1 = lv(acc + c.fail.f); return (
+              <g>
+                <rect x={c.x + 3} y={y1} width={w - 6} height={y0 - y1 - 3} rx="5" className="hd-ghost" />
+                <text x={c.x - 8} y={(y0 + y1) / 2 + 3} textAnchor="end" className="hd-s strong bad">{c.fail.k}</text>
+              </g>
+            ); })()}
+            <text x={c.x + w / 2} y={base + 17} textAnchor="middle" className="hd-s">{c.label}</text>
+            <text x={c.x + w / 2} y={base + 32} textAnchor="middle" className={`hd-s strong ${c.fail ? 'bad' : 'ok'}`}>{c.fail ? `✕ ${c.fail.k} fails` : `✓ ${c.parts[0].k} lands`}</text>
+          </g>
+        );
+      })}
+      <path d={`M${74 + w + 14} ${lv(0.6)} H${266 - 14}`} className="hd-arrow dashed" markerEnd="url(#hd-head)" />
+      <text x={(74 + w + 266) / 2} y={lv(0.6) - 8} textAnchor="middle" className="hd-s">try again</text>
+      <line x1={74} x2={364} y1={capY} y2={capY} className="hd-capline" />
+      <text x={370} y={capY - 2} className="hd-t small">limit</text>
+      <text x={370} y={capY + 12} className="hd-s">{limitText}</text>
+      <text x={370} y={capY + 25} className="hd-s">per slot</text>
+    </Frame>
+  );
+}
+
+/** 7 · Nth-buy pot: buys are counted in order and every Nth one is recorded on chain as a winner. */
+export function PotDiagram({ every, minText }: { every: number; minText: string }) {
+  const cy = 74, r = 17, gap = 45, x0 = 30;
+  const cells: { t: string; win?: boolean; dots?: boolean }[] = [
+    { t: '1' }, { t: '2' }, { t: '…', dots: true }, { t: String(every - 1) }, { t: String(every), win: true },
+    { t: String(every + 1) }, { t: '…', dots: true }, { t: String(2 * every - 1) }, { t: String(2 * every), win: true },
+  ];
+  return (
+    <Frame w={420} h={176} label={`Buys are counted in order; every ${every}th counted buy is recorded on chain as a pot winner`}>
+      <text x={x0 - r} y={24} className="hd-t small">counted buys</text>
+      <line x1={x0} x2={x0 + gap * (cells.length - 1)} y1={cy} y2={cy} className="hd-axis" />
+      {cells.map((c, i) => {
+        const x = x0 + gap * i;
+        if (c.dots) return <text key={i} x={x} y={cy + 4} textAnchor="middle" className="hd-t">…</text>;
+        return (
+          <g key={i} className={`hd-pot ${c.win ? 'win' : ''}`}>
+            <circle cx={x} cy={cy} r={c.win ? r + 2 : r} />
+            <text x={x} y={cy + 4} textAnchor="middle" className="hd-t small">#{c.t}</text>
+            {c.win && <text x={x} y={cy + r + 20} textAnchor="middle" className="hd-s strong hd-win">wins</text>}
+          </g>
+        );
+      })}
+      <text x={x0 - r} y={146} className="hd-s">One buy per slot counts (the first). Buys under {minText} don’t count.</text>
+      <text x={x0 - r} y={162} className="hd-s faint">Winners are picked by order, never at random, and recorded on chain.</text>
+    </Frame>
+  );
+}

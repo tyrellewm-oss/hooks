@@ -4,8 +4,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Meta } from '../lib/types';
 import { pageVars, pctOf, approxDuration } from '../lib/shared';
-import { hookList, SNIPER_DEFAULT, FLYWHEEL_SPLIT } from '../lib/hookInfo';
-import { LifecycleDiagram, CapDiagram, SniperFeeDiagram, FlywheelDiagram, LiftDiagram } from '../components/HookArt';
+import { hookList, optionalHookList, SNIPER_DEFAULT, FLYWHEEL_SPLIT, RULES_DEFAULT, ordinal, windowText } from '../lib/hookInfo';
+import { LifecycleDiagram, CapDiagram, SniperFeeDiagram, FlywheelDiagram, LiftDiagram, MaxBuyDiagram, SlotLimitDiagram, PotDiagram } from '../components/HookArt';
 import { RulesAndRisks } from '../components/Disclosures';
 import { Addr, Link } from '../components/bits';
 import { IconInfo } from '../components/Icons';
@@ -22,6 +22,10 @@ const SECTIONS: { id: string; label: string; group: string }[] = [
   { id: 'fee', label: 'Anti-sniper fee', group: 'Hooks' },
   { id: 'switch', label: 'Lift-only switch', group: 'Hooks' },
   { id: 'burn', label: 'Buyback & burn', group: 'Hooks' },
+  { id: 'optional', label: 'Optional hooks', group: 'Optional hooks' },
+  { id: 'maxbuy', label: 'Max single buy', group: 'Optional hooks' },
+  { id: 'slot', label: 'Per-slot buy limit', group: 'Optional hooks' },
+  { id: 'pot', label: 'Buy pot', group: 'Optional hooks' },
   { id: 'graduation', label: 'Graduation', group: 'Using Hookd' },
   { id: 'trading', label: 'Trading', group: 'Using Hookd' },
   { id: 'launching', label: 'Launching', group: 'Using Hookd' },
@@ -85,9 +89,9 @@ export function DocsPage({ meta }: { meta: Meta }) {
         </header>
 
         <Section id="overview" title="What Hookd is">
-          <p>Hookd is a token launchpad on Solana where the rules are enforced on chain, not promised. Every token runs four hooks that are fixed at launch: a rising cap per token account, an anti-sniper fee, a switch that can only loosen the cap, and a bot that buys the token back and burns it after graduation.</p>
+          <p>Hookd is a token launchpad on Solana where the rules are enforced on chain, not promised. Every token runs four hooks that are fixed at launch: a rising cap per token account, an anti-sniper fee, a switch that can only loosen the cap, and a bot that buys the token back and burns it after graduation. A launch can also turn on three optional hooks: a max single buy, a per-slot buy limit and a buy pot.</p>
           <div className="docs-cards">
-            {hookList(meta).map((h) => (
+            {[...hookList(meta), ...optionalHookList()].map((h) => (
               <a key={h.id} href={`/docs#${h.id}`} onClick={jump(h.id)} className={`docs-card tone-${h.tone}`}>
                 <span className="hook-tile">{h.icon}</span>
                 <span><b>{h.name}</b><span className="small faint">{h.when}</span></span>
@@ -142,6 +146,36 @@ export function DocsPage({ meta }: { meta: Meta }) {
           <p>Every claim, buy and burn is public and linked to its transaction on <Link to="/transparency" className="link">Transparency</Link>. Burning supply doesn’t set or support any price.</p>
         </Section>
 
+        <Section id="optional" title="Optional hooks">
+          <p>Three more rules a launch can switch on. They are off by default, chosen in the launch’s <b>Optional hooks</b> step and, like everything else, fixed at launch. All three run in the same transfer hook as the cap, only on buys from the bonding curve: selling and wallet-to-wallet transfers are never touched, and they end at graduation when the hook is removed.</p>
+          <p>Each token page lists the optional hooks that token launched with, live.</p>
+        </Section>
+
+        <Section id="maxbuy" title="Max single buy">
+          <p>No single buy can be bigger than a set share of the supply (by default <b>{pctOf(RULES_DEFAULT.maxBuyBps)}</b>), for a set time after launch (by default the {windowText(RULES_DEFAULT.windowSlots)}). Unlike the cap, it looks only at the size of that one buy, not at what the buyer already holds.</p>
+          <Figure caption="Each buy is judged on its own size."><MaxBuyDiagram maxText={pctOf(RULES_DEFAULT.maxBuyBps)} /></Figure>
+          <ul className="docs-list">
+            <li>A buy over the max fails, and nothing moves.</li>
+            <li>Someone can still split a big buy into smaller ones or use several wallets; with the cap and the per-slot limit that gets slower and more expensive.</li>
+          </ul>
+        </Section>
+
+        <Section id="slot" title="Per-slot buy limit">
+          <p>All buys in the same slot (about 0.4 seconds) are added up, across every wallet. A buy that would take the slot over the limit (by default <b>{pctOf(RULES_DEFAULT.maxPerSlotBps)}</b> of supply) fails; the next slot starts from zero. It applies for the same time as the max single buy.</p>
+          <Figure caption="One shared limit per slot."><SlotLimitDiagram limitText={pctOf(RULES_DEFAULT.maxPerSlotBps)} /></Figure>
+          <Callout>This limit is shared by everyone. In a busy opening an ordinary buy can fail too; trying again a moment later works.</Callout>
+        </Section>
+
+        <Section id="pot" title="Buy pot">
+          <p>The hook counts buys on the curve in order, and every Nth one (by default every <b>{ordinal(RULES_DEFAULT.potEvery)}</b>) is recorded on chain as a winner, with its wallet, buy number and slot. Only the first buy in each slot counts, and only if it’s at least the minimum size (by default {pctOf(RULES_DEFAULT.potMinBps)} of supply), so splitting a buy into dust doesn’t help.</p>
+          <Figure caption="Every Nth counted buy wins."><PotDiagram every={RULES_DEFAULT.potEvery} minText={pctOf(RULES_DEFAULT.potMinBps)} /></Figure>
+          <ul className="docs-list">
+            <li>Winners are picked by order, not at random. Anyone watching the count can try to time the winning buy.</li>
+            <li>The hook only records winners: a transfer hook can approve or refuse a transfer, but it can’t hold or send SOL.</li>
+            <li>Payouts aren’t switched on yet. The token page shows the count, the next winning buy number and the latest winners.</li>
+          </ul>
+        </Section>
+
         <Section id="graduation" title="Graduation">
           <p>When the bonding curve holds its target amount of SOL (set at launch), the token graduates:</p>
           <ul className="docs-list">
@@ -158,13 +192,14 @@ export function DocsPage({ meta }: { meta: Meta }) {
         </Section>
 
         <Section id="launching" title="Launching">
-          <p>Launching is studio-only for now; there is no public self-serve. A studio wallet signs in by signing a short message (no transaction, no fee), then follows five steps:</p>
+          <p>Launching is studio-only for now; there is no public self-serve. A studio wallet signs in by signing a short message (no transaction, no fee), then follows six steps:</p>
           <ol className="docs-steps">
             <li><b>Hooks</b>: see what the token will run.</li>
             <li><b>Cap schedule</b>: pick a preset or set your own steps.</li>
+            <li><b>Optional hooks</b>: switch on a max single buy, a per-slot buy limit or a buy pot, if you want them.</li>
             <li><b>Token</b>: name, ticker and optional image, description and links.</li>
-            <li><b>Curve & graduation</b>: the SOL target and how much supply goes to the pool.</li>
-            <li><b>Review & launch</b>: check everything, then sign.</li>
+            <li><b>Graduation</b>: the SOL target and how much supply goes to the pool.</li>
+            <li><b>Review</b>: check everything, then sign.</li>
           </ol>
           <p>With a wallet connected, you sign the launch in your own wallet and the server co-signs with the {cluster} launch key. The server only sends launches it built itself, once, within 90 seconds.</p>
           <p><Link to="/create" className="link">Open Studio launch</Link></p>
@@ -192,6 +227,7 @@ export function DocsPage({ meta }: { meta: Meta }) {
           <Faq q="Can I always sell?">Yes. Selling back into the curve is never blocked by the cap.</Faq>
           <Faq q="What happens at graduation?">Liquidity moves to a locked DAMM v2 pool, the cap ends, and buyback and burn starts.</Faq>
           <Faq q="Where do the fees go?">{FLYWHEEL_SPLIT.devPct}% to the dev wallet, {FLYWHEEL_SPLIT.buybackPct}% to buying the token back and burning it. Every step is on the Transparency page.</Faq>
+          <Faq q="What are the optional hooks?">A max single buy, a per-slot buy limit and a buy pot. A launch can switch any of them on; they’re off by default. The token page shows which ones a token has.</Faq>
           <Faq q="Can anyone launch a token?">Not yet. Launching is limited to studio wallets during this test.</Faq>
         </Section>
       </article>
