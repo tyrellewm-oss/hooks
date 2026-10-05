@@ -59,7 +59,7 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
     try {
       if (usingWallet) {
         setStep('Preparing…');
-        const built = await api.walletBuild(st.mint, bw.address!, s, amt, onPool ? { venue: 'pool', slippageBps } : undefined);
+        const built = await api.walletBuild(st.mint, bw.address!, s, amt, onPool ? { venue: 'pool', slippageBps } : s === 'sell' ? { venue: 'curve', slippageBps } : undefined);
         if (!built.simulation.ok) {   // stop before the wallet prompt: explain why it would fail
           const sim = built.simulation;
           setOutcome({ kind: 'result', presign: true, side: s, wallet: YOU, amount, r: { ok: false, sig: '', link: '', err: sim.err ?? undefined, hookError: sim.hookError, hookCode: sim.hookCode, capHit: sim.capHit ?? undefined } });
@@ -154,8 +154,18 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
           </div>
         )
       ) : (
-        <div className="notice small">
-          Selling back into the curve is never blocked by the rule.{sellTooMuch && <><br /><span className="fail">That's more than {who} holds.</span></>}
+        <div>
+          {usingWallet && (
+            <div className="spread small" style={{ alignItems: 'center', marginBottom: 8 }}>
+              <span className="muted">Slippage limit</span>
+              <div className="tabs" role="radiogroup" aria-label="Slippage limit" style={{ padding: 3 }}>
+                {[50, 100, 200, 500].map((b) => <button key={b} role="radio" aria-checked={slippageBps === b} className={slippageBps === b ? 'on' : ''} style={{ padding: '3px 10px', fontSize: 12.5 }} onClick={() => setSlippageBps(b)}>{b / 100}%</button>)}
+              </div>
+            </div>
+          )}
+          <div className="notice small">
+            Selling back into the curve is never blocked by the rule.{usingWallet && <> The sell fails rather than receive less than the quote minus {slippageBps / 100}%.</>}{sellTooMuch && <><br /><span className="fail">That's more than {who} holds.</span></>}
+          </div>
         </div>
       )}
 

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Keypair, SystemProgram, Transaction } from '@solana/web3.js';
-import { WalletRelay, WalletTxRefusal, messageHash, BUILD_TTL_MS, simulateSwap, poolSides, parseSlippageBps } from '../sdk/wallet_tx.ts';
+import { WalletRelay, WalletTxRefusal, messageHash, BUILD_TTL_MS, simulateSwap, poolSides, parseSlippageBps, quoteCurveSellMinOut } from '../sdk/wallet_tx.ts';
 import { NATIVE_MINT, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { TOKEN_2022 } from '../sdk/hook.ts';
 import { DEFAULT_PROGRAM_ID } from '../sdk/hook.ts';
@@ -168,4 +168,34 @@ test('pool build (source): graduation gate first, quote limits written into the 
   assert.match(b, /buildUserPoolSwap\(lp, relay, owner, new PublicKey\(rec\.pool\), await dammPoolOf\(rec\.mint\), rec\.mint, /, 'the pool comes from the mint, server side');
   assert.doesNotMatch(b, /b\.pool\b/, 'the browser never names the pool');
   assert.match(b, /if \(!venue\) return \{ code: 400/, 'an unknown venue is refused');
+});
+
+test('curve sell: the minimum out comes from the quote minus slippage, never 0 (the #27 review follow-up)', () => {
+  const w = readFileSync('sdk/wallet_tx.ts', 'utf8');
+  const fn = w.slice(w.indexOf('export async function buildUserSwap'), w.indexOf('export async function quoteCurveSellMinOut'));
+  assert.match(fn, /parseSlippageBps\(slippageBps\);/, 'the slippage is validated like the pool path');
+  assert.match(fn, /minimumAmountOut: new BN\(minOut\.limit\.toString\(\)\)/, 'the sell carries the quoted minimum');
+  assert.doesNotMatch(fn, /minimumAmountOut: new BN\(0\)/, 'no sell rides with minimumAmountOut 0');
+  assert.ok(fn.indexOf('quoteCurveSellMinOut(') < fn.indexOf('swap2WithTransferHook'), 'quoted before the build');
+  const srv = readFileSync('app/server.ts', 'utf8');
+  const b = srv.slice(srv.indexOf('async function build('), srv.indexOf('async function body('));
+  assert.match(b, /buildUserSwap\(lp, relay, owner, new PublicKey\(rec\.pool\), rec\.mint, b\.side, tokens, parseSlippageBps\(b\.slippageBps\)\)/, 'the route passes the slippage to curve builds');
+});
+
+test('curve sell quote: returns the expected and the slippage-bounded limit; a zero minimum is refused', async () => {
+  const mk = (minOut: bigint, out: bigint) => ({
+    c: { connection: { getSlot: async () => 42 } },
+    dbc: {
+      state: { getPool: async () => ({ config: 'CFG' }), getPoolConfig: async () => ({ activationType: 0 }) },
+      pool: { swapQuote2: (p: any) => { assert.equal(p.swapBaseForQuote, true, 'a sell swaps base for quote'); assert.equal(p.slippageBps, 250); return { minimumAmountOut: { toString: () => minOut.toString() }, outputAmount: { toString: () => out.toString() } }; } },
+    },
+  }) as any;
+  const q = await quoteCurveSellMinOut(mk(975n, 1000n), Keypair.generate().publicKey, 5n, 250);
+  assert.deepEqual(q, { expected: 1000n, limit: 975n });
+  await assert.rejects(quoteCurveSellMinOut(mk(0n, 0n), Keypair.generate().publicKey, 5n, 250), WalletTxRefusal, 'no usable minimum = refused');
+});
+
+test('test-wallet trades: /api/trade is studio-gated off LOCAL (gate before hosting)', () => {
+  const srv = readFileSync('app/server.ts', 'utf8');
+  assert.match(srv, /trade: \(b, rec\) => \{ if \(c\.name !== 'local'\) \{ const who = studioCheck\(req\); if \('code' in who\) return Promise\.resolve\(who as Reply\); \} return trade\(b, rec\); \}/, 'devnet test-wallet trades need a studio session');
 });

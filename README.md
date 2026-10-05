@@ -207,19 +207,19 @@ pnpm page -- --cluster devnet   # (repo root) backend on :5175, then in web/:
 pnpm dev                     # new UI against the real backend (proxies /api)  -> http://127.0.0.1:5176
 ```
 - Binds 127.0.0.1 only, like the backend. Signing is still server-side with the throwaway test wallets (AC-21 / H-7 open).
-- Fixture mode shows a "simulated" banner on every page; nothing in it is chain data and no transaction is sent.
+- The AC-23 banner and the DEVNET badge show on every page. In fixture mode nothing is chain data and no transaction is sent.
 - `scripts/ci.sh` covers it: forbidden words and the mainnet grep include `web/src`, and `web/` is type-checked when `web/node_modules` exists. Pure page logic is tested in `tests/web_token_logic.test.ts`.
 
 ### Backend pieces for the new UI
 | What | How | Notes |
 |---|---|---|
 | Host the new UI | `cd web && pnpm build`, then `pnpm page -- --cluster devnet --web` | `app/static.ts`: serves `web/dist`, client routes fall back to `index.html`; without `--web` the classic page is served (e2e target) |
-| Browser-wallet signing (AC-21) | `POST /api/wallet/build`, `POST /api/wallet/submit` | `sdk/wallet_tx.ts`: unsigned swap for the user's wallet, simulated first; the relay forwards only transactions this server built (one use, 90 s). The build reply is hex because `send()`'s redaction mangles base64 |
+| Browser-wallet signing (AC-21) | `POST /api/wallet/build`, `POST /api/wallet/submit` | `sdk/wallet_tx.ts`: unsigned swap for the user's wallet, simulated first; the relay forwards only transactions this server built (one use, 90 s). Curve sells and all pool trades carry a quote-minus-slippage limit. The build reply is hex because `send()`'s redaction mangles base64 |
 | Transparency page | `GET /api/flywheel`, page `/transparency` | `app/flywheel_public.ts`: the keeper's public logs (`flywheel/`), registry mints only, every claim/payout/swap/burn linked |
 | Trade indexer | `node --import tsx scripts/indexer.ts loop --cluster devnet --every 30` | `sdk/indexer.ts`, read-only RPC, writes `.index/<cluster>/` (gitignored). Amounts from the pool side; cap-hit failures kept as blocked rows. `GET /api/token/:mint/trades` feeds the price chart and trades feed |
 | Token details | launch form, or "Edit details" on the token page (`POST /api/token/:mint/metadata`) | `sdk/metadata.ts`: image (PNG/JPEG/WebP/GIF by file bytes, 512 KB), description (280 chars, site forbidden words refused), https links (X on x.com/twitter.com, Telegram on t.me). Stored in `metadata/<cluster>/` (gitignored, like `launches/`). The on-chain URI stays the devnet placeholder until there is a public host |
 
-All `/api/token/<mint>/...` routes go through `app/site_registry.ts`: registry mints with a local launch record only. The studio routes (`/api/create`, `POST /api/token/<mint>/metadata`) need a studio sign-in (`STUDIO_WALLETS`, `sdk/studio_auth.ts`). Still unauthenticated: `/api/trade` with the server's throwaway test wallets (devnet demo); gate or remove it before any hosting.
+All `/api/token/<mint>/...` routes go through `app/site_registry.ts`: registry mints with a local launch record only. The studio routes (`/api/create`, `POST /api/token/<mint>/metadata`) need a studio sign-in (`STUDIO_WALLETS`, `sdk/studio_auth.ts`). `/api/trade` (the server's throwaway test wallets) is open on LOCAL and needs a studio sign-in on any other cluster.
 
 ## Admin powers (disclosed)
 - **Program upgrade authority:** a throwaway key on devnet. It can replace the program. This is the largest power, and mainnet would need a multisig plus timelock (**out of scope**).
