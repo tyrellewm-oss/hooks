@@ -121,6 +121,18 @@ export interface BuiltSwap {
   simulation: { ok: boolean; err: string | null; hookError: string | null; hookCode: number | null; capHit: TradeResult['capHit'] | null; unitsConsumed: number | null };
 }
 
+/** GET /api/flywheel (app/flywheel_public.ts): the keeper's public logs, registry mints only */
+export interface PublicRun { runId: string; startedAt: string; status: string; reason: string; claimedLamports: string; links: { what: string; sig: string; link: string }[] }
+export interface PublicKeeper {
+  name: string; mint: string; state: string; paused: boolean; pauseReason: string;
+  claimedSol: string; devSol: string; spentSol: string; reserveSol: string;
+  burnedTokens: string; supplyTokens: string; pctOfSupply: string;
+  burns: { at: string; tokens: string; sol: string; sig: string; link: string }[];
+  runs: PublicRun[];
+  pools: { dbc: string | null; route: string | null };
+}
+export interface FlywheelReply { cluster: string; keepers: PublicKeeper[]; skipped: string[] }
+
 export interface CreateRequest {
   name: string;
   symbol: string;

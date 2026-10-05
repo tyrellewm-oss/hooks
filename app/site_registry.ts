@@ -24,6 +24,8 @@ export interface SiteDeps<R extends SiteRecord = SiteRecord> {
   trade(body: any, rec: R): Promise<Reply>;
   /** browser-wallet build (AC-21): an unsigned swap for the user's wallet; reads the chain, never signs or sends */
   build?(body: any, rec: R): Promise<Reply>;
+  /** transparency page: the keeper's public logs, filtered to the registry read for this request */
+  flywheel?(registered: ReadonlySet<string>): unknown | Promise<unknown>;
 }
 
 const NOT_FOUND: Reply = { code: 404, body: { error: 'unknown token' } };
@@ -32,10 +34,12 @@ const NOT_FOUND: Reply = { code: 404, body: { error: 'unknown token' } };
 export async function siteRoute<R extends SiteRecord>(pathname: string, method: string, readBody: () => Promise<any>, d: SiteDeps<R>): Promise<Reply | null> {
   const isMeta = pathname === '/api/meta', isToken = pathname.startsWith('/api/token/'), isTrade = pathname === '/api/trade' && method === 'POST';
   const isBuild = pathname === '/api/wallet/build' && method === 'POST' && !!d.build;
-  if (!isMeta && !isToken && !isTrade && !isBuild) return null;
+  const isFlywheel = pathname === '/api/flywheel' && method === 'GET' && !!d.flywheel;
+  if (!isMeta && !isToken && !isTrade && !isBuild && !isFlywheel) return null;
   let reg: ReadonlySet<string>;
   try { reg = (d.load ?? loadRegistry)(d.cluster, d.registryPath ?? REGISTRY_PATH); }
   catch (e: any) { return { code: 503, body: { error: `mint registry unavailable: ${String(e?.message ?? e)}` } }; }   // the whole response; never an empty listing
+  if (isFlywheel) return { code: 200, body: await d.flywheel!(reg) };
   if (isMeta) return { code: 200, body: await d.meta(d.launches().filter(l => reg.has(l.mint))) };   // registry ∩ local records, record order
   if (isToken) {
     let mint: string;

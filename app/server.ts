@@ -19,6 +19,7 @@ import { siteRoute, createReply, type Reply } from './site_registry.js';
 import { WalletRelay, WalletTxRefusal, buildUserSwap, submitSigned } from '../sdk/wallet_tx.js';
 import { MintHookRefusal } from '../sdk/mint_hook.js';
 import { staticReply, uiModeFromArgs, assertUiBuilt } from './static.js';
+import { loadPublicKeepers } from './flywheel_public.js';
 
 const argv = process.argv.slice(2);
 const PORT = Number(process.env.PORT ?? 5175);
@@ -124,6 +125,7 @@ http.createServer(async (req, res) => {
       token: mint => tokenView(mint, walletKey(url.searchParams.get('owner'))),
       trade,
       build,
+      flywheel: registered => ({ cluster: c.label, ...loadPublicKeepers(c.name, registered) }),
     });
     if (routed) return send(res, routed.code, routed.body);
     if (url.pathname === '/api/wallets') { const o: any = {}; for (const [k, w] of Object.entries(wallets)) o[k] = { pubkey: w.publicKey.toBase58(), sol: (await c.connection.getBalance(w.publicKey)) / LAMPORTS_PER_SOL }; return send(res, 200, o); }

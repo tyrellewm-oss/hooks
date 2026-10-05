@@ -1,5 +1,5 @@
 // Data source: the real backend (app/server.ts via the Vite proxy), or the simulated one in fixture mode.
-import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, BuiltSwap } from './types';
+import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, BuiltSwap, FlywheelReply } from './types';
 import { fixtureApi } from './fixtures';
 import { ApiError } from './errors';
 export { ApiError };
@@ -15,6 +15,7 @@ export interface Api {
   walletBuild(mint: string, owner: string, side: Side, amount: string): Promise<BuiltSwap>;
   walletSubmit(signedTxBase64: string): Promise<TradeResult>;
   create(req: CreateRequest): Promise<CreateReply>;
+  flywheel(): Promise<FlywheelReply>;
 }
 
 
@@ -34,6 +35,7 @@ const httpApi: Api = {
   walletBuild: (mint, owner, side, amount) => call<BuiltSwap>('/api/wallet/build', post({ mint, owner, side, amount })),
   walletSubmit: (tx) => call<TradeResult>('/api/wallet/submit', post({ tx })),
   create: (req) => call<CreateReply>('/api/create', post(req)),
+  flywheel: () => call<FlywheelReply>('/api/flywheel'),
 };
 
 export const api: Api = FIXTURE_MODE ? fixtureApi : httpApi;

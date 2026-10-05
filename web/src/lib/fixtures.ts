@@ -3,7 +3,7 @@
 // The cap rule itself is the real one: buys over the cap fail with WalletCapExceeded via sdk/capMath.ts.
 import { effectiveCap, nextChange } from '../../../sdk/capMath';
 import { BALANCED } from '../../../sdk/schedules';
-import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent, BuiltSwap } from './types';
+import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent, BuiltSwap, FlywheelReply, PublicKeeper } from './types';
 import type { Api } from './api';
 import { ApiError } from './errors';
 
@@ -98,6 +98,20 @@ function exec(s: Sim, wallet: string, side: Side, amount: string, dry: boolean):
   return { ok: true, sig, link: '' };
 }
 
+/** Simulated keeper log in the shape of app/flywheel_public.ts (fixture mode only). */
+function fixtureKeeper(s: Sim, state: string, nBurns: number): PublicKeeper {
+  const burns = Array.from({ length: nBurns }, (_, i) => ({ at: new Date(T0 - (i + 1) * 5 * 60_000).toISOString(), tokens: (190_000 - i * 1_300).toFixed(6), sol: '0.001000000', sig: fakeSig(), link: '' }));
+  const burned = burns.reduce((a, b) => a + Number(b.tokens), 0);
+  const runs = Array.from({ length: Math.max(2, nBurns) }, (_, i) => ({
+    runId: `fixture-run-${i}`, startedAt: new Date(T0 - (i + 1) * 5 * 60_000).toISOString(),
+    status: nBurns === 0 ? 'logged' : i === 3 ? 'failed_price' : 'logged', reason: nBurns === 0 ? 'waiting for graduation: no buyback on the curve' : i === 3 ? 'price check: spot vs 30-min average > 10%' : '',
+    claimedLamports: nBurns ? '1400000' : '0',
+    links: nBurns && i !== 3 ? [{ what: 'claim (damm_v2)', sig: fakeSig(), link: '' }, { what: 'dev payout (15%)', sig: fakeSig(), link: '' }, { what: 'buyback swap', sig: fakeSig(), link: '' }, { what: 'burn', sig: fakeSig(), link: '' }] : [],
+  }));
+  return { name: `devnet-${s.symbol.toLowerCase()}`, mint: s.mint, state, paused: false, pauseReason: '', claimedSol: (nBurns * 0.0014).toFixed(9), devSol: (nBurns * 0.00021).toFixed(9), spentSol: (nBurns * 0.001).toFixed(9), reserveSol: '0.000190000',
+    burnedTokens: burned.toFixed(6), supplyTokens: (1_000_000_000 - burned).toFixed(6), pctOfSupply: ((burned / 1e9) * 100).toFixed(4), burns, runs, pools: { dbc: s.pool, route: s.graduated ? fakeKey('FixtureDammPooL') : null } };
+}
+
 const fakeSig = () => Array.from({ length: 88 }, () => '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'[Math.trunc(Math.random() * 58)]).join('');
 
 export const fixtureApi: Api = {
@@ -131,6 +145,10 @@ export const fixtureApi: Api = {
     if (!p) throw new ApiError('refusing: this transaction was not built by this page, was changed after it was built, or has expired. Build it again.', 400);
     PENDING.delete(hex);
     return exec(find(p.mint), p.owner, p.side, p.amount, false);
+  },
+  async flywheel(): Promise<FlywheelReply> {
+    await latency();
+    return { cluster: 'DEVNET', skipped: [], keepers: [fixtureKeeper(SIMS[3], 'active', 13), fixtureKeeper(SIMS[2], 'waiting_for_graduation', 0)] };
   },
   async create(req: CreateRequest): Promise<CreateReply> {
     await latency(); await latency();

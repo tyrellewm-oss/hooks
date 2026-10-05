@@ -9,6 +9,7 @@ export const IconGrid = (p: { size?: number }) => <I {...p}><rect x="4" y="4" wi
 export const IconRamp = (p: { size?: number }) => <I {...p}><path d="M4 18h4v-4h5v-5h7" /><path d="M4 21h16" /></I>;
 export const IconPlus = (p: { size?: number }) => <I {...p}><rect x="4" y="4" width="16" height="16" rx="4" /><path d="M12 8.5v7M8.5 12h7" /></I>;
 export const IconCode = (p: { size?: number }) => <I {...p}><path d="M9 8l-4 4 4 4M15 8l4 4-4 4" /></I>;
+export const IconEye = (p: { size?: number }) => <I {...p}><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="2.8" /></I>;
 export const IconSearch = (p: { size?: number }) => <I {...p}><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.2-4.2" /></I>;
 export const IconMenu = (p: { size?: number }) => <I {...p}><path d="M4 7h16M4 12h16M4 17h16" /></I>;
 export const IconSun = (p: { size?: number }) => <I {...p}><circle cx="12" cy="12" r="4" /><path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.6 5.6l1 1M17.4 17.4l1 1M5.6 18.4l1-1M17.4 6.6l1-1" /></I>;
