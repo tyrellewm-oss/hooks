@@ -14,8 +14,14 @@ export interface Launched { mint: PublicKey; config: PublicKey; pool: PublicKey;
 export function hookAdmin(sim: Sim) {
   const admin = Keypair.generate(), launch = Keypair.generate();
   sim.env.fund(admin.publicKey); sim.env.fund(launch.publicKey);
-  const r = sim.env.initGlobalV2(admin, launch);
+  const r = sim.env.initGlobal(admin.publicKey);
   if (!r.ok) throw new Error('hook global init failed:\n' + r.logs.join('\n'));
+  // migrate_global_v2 resizes Global (42 -> 74 bytes); litesvm's Linux build aborts (std::bad_alloc) on account
+  // resizes, so write the migrated state directly: the v1 bytes unchanged + the launch key at 42..74.
+  const g = sim.env.hook.globalPda();
+  const v1 = sim.env.accountData(g)!;
+  if (v1.length !== 42) throw new Error(`unexpected Global length ${v1.length}`);
+  sim.env.setAccountData(g, Buffer.concat([v1, launch.publicKey.toBuffer()]));
   return { admin, launch };
 }
 

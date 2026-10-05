@@ -36,5 +36,4 @@ svm2.setAccount(pd2, { ...acc2, data, owner: BPF_UPGRADEABLE }); step('2: setAcc
 const env = new Env(file, HOOK_PROGRAM); step('3: new Env');
 const admin = Keypair.generate(), launch = Keypair.generate(); env.fund(admin.publicKey); env.fund(launch.publicKey);
 const g = env.initGlobal(admin.publicKey); step(`3: initGlobal ok=${g.ok}`);
-const m = env.migrateGlobal(admin, launch.publicKey); step(`3: migrateGlobal ok=${m.ok}`);
 console.log('[probe] ENV OK');
