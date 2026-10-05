@@ -92,3 +92,18 @@ test('server: the browser-wallet path never signs with a server key and replies 
   const wt = readFileSync('sdk/wallet_tx.ts', 'utf8');
   assert.doesNotMatch(wt, /Keypair|\.sign\(|partialSign|loadOrCreate/, 'sdk/wallet_tx.ts never holds or uses a keypair');
 });
+
+test('build replies survive the server redaction unchanged (FW-17 send() redacts every JSON string)', async () => {
+  const { redactDeep } = await import('../sdk/redact.ts');
+  const { randomBytes } = await import('node:crypto');
+  for (let i = 0; i < 500; i++) {
+    const hex = randomBytes(1232).toString('hex');   // max legacy tx size
+    const body = { tx: hex, encoding: 'hex', owner: Keypair.generate().publicKey.toBase58(), side: 'buy', amount: '1', lastValidBlockHeight: 1, expiresInMs: 1, simulation: { ok: true, err: null, hookError: null, hookCode: null, capHit: null, unitsConsumed: 1 } };
+    assert.deepEqual(redactDeep(body), body, 'redaction left the build reply intact');
+  }
+  // the reason for hex: base64 does get mangled
+  let mangled = 0; for (let i = 0; i < 200; i++) { const b = randomBytes(900).toString('base64'); if (redactDeep({ tx: b }).tx !== b) mangled++; }
+  assert.ok(mangled > 0, 'base64 is not redaction-proof (keep the hex encoding)');
+  const src = readFileSync('sdk/wallet_tx.ts', 'utf8');
+  assert.match(src, /\.toString\('hex'\), encoding: 'hex'/, 'the build reply is hex');
+});

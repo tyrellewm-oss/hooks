@@ -119,16 +119,17 @@ export const fixtureApi: Api = {
     await latency();
     const s = find(mint);
     const r = exec(s, owner, side, amount, true);   // simulate only
-    const tx = btoa(fakeSig());                       // stand-in bytes; the fixture wallet hands them back unchanged
+    const tx = Array.from(fakeSig(), (ch) => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('');   // stand-in hex
     PENDING.set(tx, { mint, owner, side, amount });
-    return { tx, owner, side, amount, lastValidBlockHeight: 0, expiresInMs: 90_000,
+    return { tx, encoding: 'hex', owner, side, amount, lastValidBlockHeight: 0, expiresInMs: 90_000,
       simulation: { ok: r.ok, err: r.err ?? null, hookError: r.hookError ?? null, hookCode: r.hookCode ?? null, capHit: r.capHit ?? null, unitsConsumed: 120_000 } };
   },
   async walletSubmit(tx): Promise<TradeResult> {
     await latency(); await latency();
-    const p = PENDING.get(tx);
+    const hex = Array.from(atob(tx), (ch) => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('');   // the page sends base64 back
+    const p = PENDING.get(hex);
     if (!p) throw new ApiError('refusing: this transaction was not built by this page, was changed after it was built, or has expired. Build it again.', 400);
-    PENDING.delete(tx);
+    PENDING.delete(hex);
     return exec(find(p.mint), p.owner, p.side, p.amount, false);
   },
   async create(req: CreateRequest): Promise<CreateReply> {

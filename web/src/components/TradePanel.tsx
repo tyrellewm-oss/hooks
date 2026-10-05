@@ -9,7 +9,7 @@ import { api, FIXTURE_MODE } from '../lib/api';
 import { CONTENT, fill, tok, pctOf, explainerKey, explainerTemplate, allowRetry, explainVars, approxDuration } from '../lib/shared';
 import { buyPreview, curveFeePctAt, elapsedSlots, formatTokenAmount, isGraduated, liveCap, liveNextChange, parseTokenAmount } from '../lib/token';
 import { useChecklist } from '../lib/hooks';
-import { b64ToBytes, bytesToB64, signTransaction, useWallet } from '../lib/wallet';
+import { bytesToB64, hexToBytes, signTransaction, useWallet } from '../lib/wallet';
 import { Addr } from './bits';
 import { ChecklistModal } from './ChecklistModal';
 
@@ -74,7 +74,7 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
         }
         setStep('Approve in your wallet…');
         let signed: Uint8Array;
-        try { signed = await signTransaction(b64ToBytes(built.tx)); }
+        try { signed = await signTransaction(hexToBytes(built.tx)); }
         catch (e) { setOutcome({ kind: 'error', message: /reject|denied|cancel/i.test((e as Error).message) ? 'You declined in the wallet. Nothing was sent.' : (e as Error).message }); return; }
         setStep('Sending…');
         const r = await api.walletSubmit(bytesToB64(signed));

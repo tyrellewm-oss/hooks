@@ -57,7 +57,9 @@ export class WalletRelay {
 }
 
 export interface Simulation { ok: boolean; err: string | null; hookError: string | null; hookCode: number | null; capHit: ReturnType<typeof capHitDetails> | null; unitsConsumed: number | null }
-export interface BuiltSwap { tx: string; owner: string; side: 'buy' | 'sell'; amount: string; lastValidBlockHeight: number; expiresInMs: number; simulation: Simulation }
+/** `tx` is HEX on purpose: every JSON body goes through redactDeep (FW-17), whose path rules corrupt base64 ('+/x'
+ *  reads as a POSIX path). Hex has no separators, so it passes unchanged (tests/wallet_tx.test.ts). */
+export interface BuiltSwap { tx: string; encoding: 'hex'; owner: string; side: 'buy' | 'sell'; amount: string; lastValidBlockHeight: number; expiresInMs: number; simulation: Simulation }
 
 /** Minimal view of Launchpad that the build needs (tests can stub it). */
 export interface SwapBuilder { c: Cluster; dbc: any; hook: any; requestedHookProgram?: PublicKey }
@@ -86,7 +88,7 @@ export async function buildUserSwap(lp: SwapBuilder, relay: WalletRelay, owner: 
   const simulation = await simulate(lp.c, tx);
   relay.issue(message, { owner: owner.toBase58(), mint, side, amount: tokens.toString(), blockhash, lastValidBlockHeight });
   return {
-    tx: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64'),
+    tx: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('hex'), encoding: 'hex',
     owner: owner.toBase58(), side, amount: tokens.toString(), lastValidBlockHeight, expiresInMs: BUILD_TTL_MS, simulation,
   };
 }
