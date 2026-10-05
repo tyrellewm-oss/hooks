@@ -58,3 +58,6 @@ artifacts/
 
 # local editor/app helpers
 .claude/
+
+# local simulation: deployed devnet program bytecode (scripts/sim/programs.ts)
+.sim-programs/
