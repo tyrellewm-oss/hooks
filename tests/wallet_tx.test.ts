@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Keypair, SystemProgram, Transaction } from '@solana/web3.js';
-import { WalletRelay, WalletTxRefusal, messageHash, BUILD_TTL_MS, simulateSwap } from '../sdk/wallet_tx.ts';
+import { WalletRelay, WalletTxRefusal, messageHash, BUILD_TTL_MS, simulateSwap, poolSides, parseSlippageBps } from '../sdk/wallet_tx.ts';
+import { NATIVE_MINT, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { TOKEN_2022 } from '../sdk/hook.ts';
 import { DEFAULT_PROGRAM_ID } from '../sdk/hook.ts';
 import { siteRoute } from '../app/site_registry.ts';
 
@@ -128,4 +130,42 @@ test('pre-sign simulation: a cap hit is reported with its name and details; an e
   assert.equal(empty.ok, false); assert.match(empty.err!, /insufficient funds/, 'the explainer keys SlippageOrBalance on "insufficient"');
   const boom = await simulateSwap({ hookProgram: DEFAULT_PROGRAM_ID, connection: { simulateTransaction: async () => { throw new Error('rpc down'); } } as any }, tx);
   assert.equal(boom.ok, false, 'an RPC failure never reads as a passing simulation');
+});
+
+// ---- after graduation: the DAMM v2 pool path (buildUserPoolSwap)
+test('pool sides: only a (token, wSOL) pool; buy = wSOL in / token out, sell = the reverse; Token-2022 for the token', () => {
+  const mint = Keypair.generate().publicKey, other = Keypair.generate().publicKey, m = mint.toBase58();
+  for (const [A, B] of [[mint, NATIVE_MINT], [NATIVE_MINT, mint]]) {
+    const buy = poolSides({ tokenAMint: A, tokenBMint: B }, m, 'buy');
+    assert.ok(buy.inputTokenMint.equals(NATIVE_MINT) && buy.outputTokenMint.equals(mint), 'buy pays SOL for the token');
+    const sell = poolSides({ tokenAMint: A, tokenBMint: B }, m, 'sell');
+    assert.ok(sell.inputTokenMint.equals(mint) && sell.outputTokenMint.equals(NATIVE_MINT), 'sell pays the token for SOL');
+    const progOf = (x: PublicKey) => (x.equals(NATIVE_MINT) ? TOKEN_PROGRAM_ID : TOKEN_2022);
+    assert.ok(buy.tokenAProgram.equals(progOf(A)) && buy.tokenBProgram.equals(progOf(B)), 'token program per side');
+  }
+  assert.throws(() => poolSides({ tokenAMint: other, tokenBMint: NATIVE_MINT }, m, 'buy'), /not .*wSOL/, 'another token\'s pool');
+  assert.throws(() => poolSides({ tokenAMint: mint, tokenBMint: other }, m, 'buy'), WalletTxRefusal, 'token paired with something other than wSOL');
+  assert.throws(() => poolSides({ tokenAMint: mint, tokenBMint: mint }, m, 'sell'), WalletTxRefusal, 'same mint twice');
+});
+
+test('pool slippage: default 1%, whole bps from 0.1% to 10% only', () => {
+  assert.equal(parseSlippageBps(undefined), 100); assert.equal(parseSlippageBps(''), 100);
+  assert.equal(parseSlippageBps(10), 10); assert.equal(parseSlippageBps('1000'), 1000);
+  for (const bad of [9, 1001, 0, -5, 50.5, 'abc', 10_000]) assert.throws(() => parseSlippageBps(bad), WalletTxRefusal, String(bad));
+});
+
+test('pool build (source): graduation gate first, quote limits written into the swap, pool chosen by the server', () => {
+  const w = readFileSync('sdk/wallet_tx.ts', 'utf8');
+  const fn = w.slice(w.indexOf('export async function buildUserPoolSwap'), w.indexOf('async function finishBuild'));
+  assert.match(fn, /await assertPoolMintHook\(lp as any, dbcPool, 'post', /, 'refuses unless the token has graduated');
+  assert.ok(fn.indexOf("assertPoolMintHook(lp as any, dbcPool, 'post'") < fn.indexOf('cp.swap2('), 'gate before any build');
+  assert.match(fn, /maximumAmountIn: q\.maximumAmountIn \}/, 'buy: most SOL in comes from the slippage-limited quote');
+  assert.match(fn, /minimumAmountOut: q\.minimumAmountOut \}/, 'sell: least SOL out comes from the slippage-limited quote');
+  assert.match(fn, /slippage: slippageBps,/, 'the quote uses the requested slippage');
+  assert.match(fn, /return finishBuild\(lp\.c, relay, tx, owner, /, 'same tail: wallet is the only signer, simulated, relay entry');
+  const srv = readFileSync('app/server.ts', 'utf8');
+  const b = srv.slice(srv.indexOf('async function build('), srv.indexOf('async function body('));
+  assert.match(b, /buildUserPoolSwap\(lp, relay, owner, new PublicKey\(rec\.pool\), await dammPoolOf\(rec\.mint\), rec\.mint, /, 'the pool comes from the mint, server side');
+  assert.doesNotMatch(b, /b\.pool\b/, 'the browser never names the pool');
+  assert.match(b, /if \(!venue\) return \{ code: 400/, 'an unknown venue is refused');
 });
