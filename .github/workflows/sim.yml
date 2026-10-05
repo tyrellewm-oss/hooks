@@ -22,6 +22,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: "probe: litesvm 1.5 (CI only, not committed)"
+        run: pnpm add -D litesvm@1.5.0 && node -p "require('litesvm/package.json').version"
       - name: Simulated launch (baseline, deployed devnet programs)
         # litesvm 0.8's Linux build can abort (std::bad_alloc) when the GC frees its objects; a large young
         # generation keeps GC out of a run this size
