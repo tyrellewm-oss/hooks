@@ -1,10 +1,13 @@
 // Price chart (candles) and trades feed from the indexer (GET /api/token/:mint/trades). Prices are shown as SOL per
-// 1M tokens so devnet-sized numbers stay readable. Only individual on-chain trades and prices: no volume totals (AC-28).
-import { useMemo, useState } from 'react';
+// 1M tokens so devnet-sized numbers stay readable. Only individual on-chain trades and prices: no volume totals (AC-28),
+// which is also why the chart has no volume histogram. Rendering: TradingView's open-source lightweight-charts.
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createChart, CandlestickSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
 import type { Candle, IndexedTrade, Meta } from '../lib/types';
 import { api, FIXTURE_MODE } from '../lib/api';
 import { usePoll } from '../lib/hooks';
 import { useWallet } from '../lib/wallet';
+import { useTheme } from '../lib/ui';
 import { short } from './bits';
 
 const INTERVALS = [{ s: 60, l: '1m' }, { s: 300, l: '5m' }, { s: 900, l: '15m' }, { s: 3600, l: '1h' }];
@@ -34,7 +37,7 @@ export function PriceCard({ mint }: { mint: string }) {
           {INTERVALS.map((x) => <button key={x.s} role="tab" aria-selected={interval === x.s} className={interval === x.s ? 'on' : ''} style={{ padding: '3px 10px', fontSize: 12.5 }} onClick={() => setIv(x.s)}>{x.l}</button>)}
         </div>
       </div>
-      {!d ? (live.error ? <div className="notice red small">{live.error.message}</div> : <div className="skeleton" style={{ height: 220 }} />)
+      {!d ? (live.error ? <div className="notice red small">{live.error.message}</div> : <div className="skeleton" style={{ height: 340 }} />)
         : !d.indexed ? <div className="notice small">No trades indexed yet. The indexer fills this in: <code>node --import tsx scripts/indexer.ts loop --cluster devnet</code></div>
         : d.candles.length === 0 ? <div className="notice small">No trades yet.</div>
         : <Candles candles={d.candles} interval={d.interval} />}
@@ -43,36 +46,87 @@ export function PriceCard({ mint }: { mint: string }) {
   );
 }
 
+/** Quiet intervals get a flat candle at the previous close (no trades, price unchanged), up to now, so the
+ *  chart reads as a continuous series instead of only the minutes that happened to trade. */
+function fillGaps(candles: Candle[], interval: number): Candle[] {
+  const out: Candle[] = [];
+  const flat = (t: number, p: number): Candle => ({ t, o: p, h: p, l: p, c: p, n: 0 });
+  for (const c of candles) {
+    let prev = out[out.length - 1];
+    while (prev && c.t - prev.t > interval && out.length < 5000) out.push(prev = flat(prev.t + interval, prev.c));
+    out.push(c);
+  }
+  let prev = out[out.length - 1];
+  const now = Math.trunc(Date.now() / 1000 / interval) * interval;
+  while (prev && now - prev.t > interval && out.length < 2000) out.push(prev = flat(prev.t + interval, prev.c));
+  return out;
+}
+
+type Ohlc = { o: number; h: number; l: number; c: number; n: number };
+
+/** TradingView lightweight-charts candlesticks over the indexer's candles (themed from the CSS variables).
+ *  Crosshair, zoom and pan come with the library; the OHLC readout sits top-left like a terminal chart. */
 function Candles({ candles, interval }: { candles: Candle[]; interval: number }) {
-  const W = 640, H = 220, L = 8, R = 62, T = 10, B = 24;
-  const cs = candles.slice(-80);
-  const lo = Math.min(...cs.map((c) => c.l)), hi = Math.max(...cs.map((c) => c.h));
-  const pad = (hi - lo) * 0.08 || hi * 0.05;
-  const y = (p: number) => T + (H - T - B) * (1 - (p - (lo - pad)) / (hi + pad - (lo - pad)));
-  const slot = (W - L - R) / Math.max(cs.length, 12), bw = Math.max(2, Math.min(12, slot * 0.6));
-  const x = (i: number) => L + slot * i + slot / 2;
-  const ticks = [lo, (lo + hi) / 2, hi];
-  const timeLbl = (t: number) => new Date(t * 1000).toLocaleTimeString([], interval >= 3600 ? { month: 'short', day: 'numeric', hour: '2-digit' } : { hour: '2-digit', minute: '2-digit' });
-  const lastC = cs[cs.length - 1];
+  const box = useRef<HTMLDivElement>(null);
+  const chart = useRef<IChartApi | null>(null);
+  const series = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const theme = useTheme();
+  const filled = useMemo(() => fillGaps(candles, interval), [candles, interval]);
+  const byTime = useMemo(() => new Map(filled.map((c) => [c.t, c])), [filled]);
+  const byTimeRef = useRef(byTime);
+  byTimeRef.current = byTime;
+  const dataKey = useRef('');
+  const [legend, setLegend] = useState<Ohlc | null>(null);
+  const shown: Ohlc | null = legend ?? (filled.length ? filled[filled.length - 1] : null);
+
+  useEffect(() => {   // create per theme (colors are read from the CSS variables once)
+    const el = box.current;
+    if (!el) return;
+    const css = getComputedStyle(el);
+    const v = (n: string) => css.getPropertyValue(n).trim();
+    const ch = createChart(el, {
+      autoSize: true,
+      layout: { background: { color: 'transparent' }, textColor: v('--text-3'), fontFamily: v('--mono'), fontSize: 11, attributionLogo: false },
+      grid: { vertLines: { color: v('--card-border') }, horzLines: { color: v('--card-border') } },
+      rightPriceScale: { borderVisible: false },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 3, barSpacing: 7, minBarSpacing: 1.5 },
+      crosshair: { horzLine: { labelBackgroundColor: v('--text') }, vertLine: { labelBackgroundColor: v('--text') } },
+      localization: { priceFormatter: (p: number) => fmtPrice(p / PER) },
+    });
+    const s = ch.addSeries(CandlestickSeries, {
+      upColor: v('--green'), downColor: v('--red'), wickUpColor: v('--green'), wickDownColor: v('--red'), borderVisible: false,
+      priceFormat: { type: 'custom', formatter: (p: number) => fmtPrice(p / PER), minMove: 1e-9 },
+      priceLineColor: v('--text-3'),
+    });
+    ch.subscribeCrosshairMove((p) => {
+      const d = p.time !== undefined ? byTimeRef.current.get(p.time as number) : null;
+      setLegend(d ?? null);
+    });
+    chart.current = ch; series.current = s; dataKey.current = '';
+    return () => { ch.remove(); chart.current = null; series.current = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme]);
+
+  useEffect(() => {   // feed data without recreating the chart, so the user's zoom and scroll survive polling
+    const s = series.current, ch = chart.current;
+    if (!s || !ch || !filled.length) return;
+    s.setData(filled.map((c) => ({ time: c.t as UTCTimestamp, open: c.o * PER, high: c.h * PER, low: c.l * PER, close: c.c * PER })));
+    const key = `${interval}:${theme}`;
+    if (dataKey.current !== key) { ch.timeScale().scrollToRealTime(); dataKey.current = key; }
+  }, [filled, interval, theme]);
+
   return (
-    <svg className="ramp" viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Price candles, ${cs.length} intervals, last ${fmtPrice(lastC.c)} SOL per 1M tokens`}>
-      {ticks.map((p, i) => (
-        <g key={i}><line x1={L} x2={W - R} y1={y(p)} y2={y(p)} stroke="var(--border, var(--card-border))" strokeDasharray="2 4" /><text x={W - R + 6} y={y(p) + 3.5}>{fmtPrice(p)}</text></g>
-      ))}
-      {cs.map((c, i) => {
-        const up = c.c >= c.o, col = up ? 'var(--green)' : 'var(--red)';
-        const top = y(Math.max(c.o, c.c)), h = Math.max(1, Math.abs(y(c.o) - y(c.c)));
-        return (
-          <g key={c.t}>
-            <title>{`${timeLbl(c.t)}  O ${fmtPrice(c.o)}  H ${fmtPrice(c.h)}  L ${fmtPrice(c.l)}  C ${fmtPrice(c.c)}  (${c.n} trade${c.n > 1 ? 's' : ''})`}</title>
-            <line x1={x(i)} x2={x(i)} y1={y(c.h)} y2={y(c.l)} stroke={col} strokeWidth="1" />
-            <rect x={x(i) - bw / 2} y={top} width={bw} height={h} fill={col} rx="1" />
-          </g>
-        );
-      })}
-      <line x1={L} x2={W - R} y1={y(lastC.c)} y2={y(lastC.c)} stroke="var(--text-3)" strokeDasharray="1 3" />
-      {cs.length > 1 && <><text x={x(0)} y={H - 6} textAnchor="start">{timeLbl(cs[0].t)}</text><text x={x(cs.length - 1)} y={H - 6} textAnchor="end">{timeLbl(lastC.t)}</text></>}
-    </svg>
+    // isolation: the chart library layers its canvases with z-indexes; keep them inside this box's own stacking context
+    <div style={{ position: 'relative', isolation: 'isolate' }}>
+      {shown && (
+        <div className="chart-legend num" aria-live="off">
+          <span className="faint">O</span> {fmtPrice(shown.o)} <span className="faint">H</span> {fmtPrice(shown.h)} <span className="faint">L</span> {fmtPrice(shown.l)} <span className="faint">C</span> {fmtPrice(shown.c)}
+          <span className={shown.c >= shown.o ? 'ok' : 'fail'}> {shown.o ? `${shown.c >= shown.o ? '+' : ''}${(((shown.c - shown.o) / shown.o) * 100).toFixed(2)}%` : ''}</span>
+          {shown.n === 0 && <span className="faint"> · no trades</span>}
+        </div>
+      )}
+      <div ref={box} role="img" aria-label={`Price candles, ${filled.length} intervals, SOL per 1M tokens`} style={{ height: 340, minWidth: 0 }} />
+    </div>
   );
 }
 
@@ -80,7 +134,7 @@ export function TradesFeed({ mint, meta, decimals = 6 }: { mint: string; meta: M
   const live = useTrades(mint, 300);
   const { address } = useWallet();
   const [all, setAll] = useState(false);
-  const rows: IndexedTrade[] = useMemo(() => (live.data?.trades ?? []).slice(0, all ? 100 : 12), [live.data, all]);
+  const rows: IndexedTrade[] = useMemo(() => (live.data?.trades ?? []).slice(0, all ? 500 : 100), [live.data, all]);
   const tok = (raw: string) => (Number(raw) / 10 ** decimals).toLocaleString('en-US', { maximumFractionDigits: 0 });
   return (
     <div className="card">
@@ -88,7 +142,7 @@ export function TradesFeed({ mint, meta, decimals = 6 }: { mint: string; meta: M
       {!live.data ? <div className="skeleton" style={{ height: 120 }} />
         : rows.length === 0 ? <p className="small faint" style={{ margin: 0 }}>{live.data.indexed ? 'No trades yet.' : 'Not indexed yet.'}</p>
         : (
-          <div style={{ overflowX: 'auto' }}>
+          <div className="feed-scroll">
             <table className="small">
               <thead><tr><th>Age</th><th>Type</th><th>Wallet</th><th style={{ textAlign: 'right' }}>Tokens</th><th style={{ textAlign: 'right' }}>SOL</th><th>Where</th><th>Tx</th></tr></thead>
               <tbody>{rows.map((t) => {
@@ -106,7 +160,7 @@ export function TradesFeed({ mint, meta, decimals = 6 }: { mint: string; meta: M
                 );
               })}</tbody>
             </table>
-            {(live.data.trades.length > 12) && <button className="ghost small" onClick={() => setAll((v) => !v)}>{all ? 'Show fewer' : `Show ${Math.min(100, live.data.trades.length)}`}</button>}
+            {(live.data.trades.length > 100) && <button className="ghost small" onClick={() => setAll((v) => !v)}>{all ? 'Show fewer' : `Show ${Math.min(500, live.data.trades.length)}`}</button>}
           </div>
         )}
     </div>

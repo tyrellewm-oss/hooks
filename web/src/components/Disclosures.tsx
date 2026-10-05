@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from 'react';
 import type { TokenView } from '../lib/types';
 import { CONTENT, fill, tok, pctOf, supplySoldText, approxDuration } from '../lib/shared';
 import { Addr } from './bits';
@@ -24,15 +25,28 @@ export function RulesAndRisks({ vars }: { vars: Record<string, string> }) {
   );
 }
 
+/** Collapsible card: a summary row that opens into the full content (switch history, on-chain details).
+ *  Not a <details>: the content sits in a grid row animated 0fr <-> 1fr, so opening AND closing are smooth. */
+export function Dropdown({ title, aside, defaultOpen, children }: { title: string; aside?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <section className={`card dd ${open ? 'open' : ''}`}>
+      <button type="button" className="dd-sum" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <h2>{title}</h2>
+        <span className="right row" style={{ gap: 8 }}>{aside}<span className="dd-chev" aria-hidden="true" /></span>
+      </button>
+      <div className="dd-wrap" aria-hidden={!open}>
+        <div className="dd-body">{children}</div>
+      </div>
+    </section>
+  );
+}
+
 /** AC-29: every RestrictionsLifted event for this token (and global ones). */
 export function SwitchHistory({ view }: { view: TokenView }) {
   const h = view.switchHistory;
   return (
-    <div className="card">
-      <div className="card-head">
-        <h2>Lift-only switch history</h2>
-        <span className="right pill">{h.length ? `${h.length} use${h.length > 1 ? 's' : ''}` : 'none'}</span>
-      </div>
+    <Dropdown title="Lift-only switch history" aside={<span className="pill">{h.length ? `${h.length} use${h.length > 1 ? 's' : ''}` : 'none'}</span>}>
       <p className="small muted">The admin switch can only raise or remove the cap, never lower or re-enable it. Every use emits an on-chain RestrictionsLifted event, listed here.</p>
       {h.length === 0 ? <p className="small faint" style={{ margin: 0 }}>No uses for this token.</p> : (
         <div style={{ overflowX: 'auto' }}>
@@ -52,7 +66,7 @@ export function SwitchHistory({ view }: { view: TokenView }) {
           </table>
         </div>
       )}
-    </div>
+    </Dropdown>
   );
 }
 
@@ -62,9 +76,8 @@ export function TokenDetails({ view }: { view: TokenView }) {
   const hooked = st.transferHookProgram !== null;
   const ex = (a: string | null | undefined) => a || null;
   return (
-    <details className="card" open>
-      <summary style={{ cursor: 'pointer', listStyle: 'none' }}><h2 style={{ display: 'inline' }}>On-chain details</h2> <span className="faint small">live, read from the chain</span></summary>
-      <dl className="kv small" style={{ marginTop: 12 }}>
+    <Dropdown title="On-chain details" aside={<span className="faint small hide-sm">live, read from the chain</span>}>
+      <dl className="kv small">
         <dt>Mint</dt><dd><Addr value={st.mint} href={ex(view.explorer.mint)} n={6} /></dd>
         <dt>Curve pool</dt><dd><Addr value={view.launch?.pool} href={ex(view.explorer.pool)} n={6} /></dd>
         <dt>Supply</dt><dd className="num">{tok(st.supply)}</dd>
@@ -84,6 +97,6 @@ export function TokenDetails({ view }: { view: TokenView }) {
         <dt>Supply split</dt><dd>{supplySoldText((view.feeConfig as any)?.percentageSupplyOnMigration)}</dd>
         <dt>Launch key / admin</dt><dd><Addr value={st.launchAuthority} /> / <Addr value={st.liftAuthority} /></dd>
       </dl>
-    </details>
+    </Dropdown>
   );
 }

@@ -1,6 +1,7 @@
 // AC-24: the 8-line pre-trade checklist. Buy/Sell stay disabled until all 8 are ticked; the confirmation is stored
 // locally, expires after 30 days and resets when the copy version changes (lib/hooks.ts).
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CONTENT, fill } from '../lib/shared';
 import { confirmChecklist } from '../lib/hooks';
 
@@ -19,7 +20,7 @@ export function ChecklistModal({ vars, onClose }: { vars: Record<string, string>
     return () => { window.removeEventListener('keydown', esc); document.body.style.overflow = prev; };
   }, [onClose]);
 
-  return (
+  return createPortal(   // on document.body: the overlay must sit above the chart's canvas layers wherever it is opened
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="ck-title">
         <div className="spread" style={{ marginBottom: 4 }}>
@@ -40,6 +41,7 @@ export function ChecklistModal({ vars, onClose }: { vars: Record<string, string>
           <button className="primary" disabled={!all} onClick={() => { confirmChecklist(); onClose(); }}>{CONTENT.checklist_button}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

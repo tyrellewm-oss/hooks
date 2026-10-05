@@ -108,7 +108,7 @@ function fixtureTrades(s: Sim): IndexedTrade[] {
   let t = TRADES.get(s.mint);
   if (t) return t;
   const start = Math.trunc((T0 - s.launchedMsAgo) / 1000), end = Math.trunc(T0 / 1000);
-  const n = Math.min(80, Math.max(6, Math.trunc((end - start) / 45)));
+  const n = Math.min(420, Math.max(6, Math.trunc((end - start) / 25)));
   let seed = s.mint.length * 7919; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   let price = 2.8e-10; t = [];
   for (let i = 0; i < n; i++) {
