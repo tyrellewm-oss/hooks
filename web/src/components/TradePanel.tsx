@@ -1,24 +1,33 @@
 // AC-22 trade panel: buy/sell on the curve with a preview of the destination token account's room under the cap
 // (same cap math as the program). AC-26: a failed trade shows the "Why did my trade fail?" text for its error.
-// Signing: today the backend signs with throwaway devnet test wallets (A/B). Browser-wallet signing (AC-21) replaces
-// the "Signer" block; the rest of the panel stays as is.
-import { useMemo, useState } from 'react';
+// Signing (AC-21): with a connected browser wallet, the server builds an unsigned swap (simulated first, so a cap hit
+// is explained before signing), the wallet signs, and the server relays it. The server-signed throwaway test wallets
+// (A/B) stay selectable for the devnet demo.
+import { useEffect, useMemo, useState } from 'react';
 import type { Meta, Side, TokenView, TradeResult } from '../lib/types';
 import { api, FIXTURE_MODE } from '../lib/api';
 import { CONTENT, fill, tok, pctOf, explainerKey, explainerTemplate, allowRetry, explainVars, approxDuration } from '../lib/shared';
 import { buyPreview, curveFeePctAt, elapsedSlots, formatTokenAmount, isGraduated, liveCap, liveNextChange, parseTokenAmount } from '../lib/token';
 import { useChecklist } from '../lib/hooks';
+import { b64ToBytes, bytesToB64, signTransaction, useWallet } from '../lib/wallet';
 import { Addr } from './bits';
 import { ChecklistModal } from './ChecklistModal';
 
 interface Props { view: TokenView; meta: Meta; slot: bigint; vars: Record<string, string>; onTraded: () => Promise<void> }
-type Outcome = { kind: 'result'; r: TradeResult; side: Side; wallet: string; amount: string } | { kind: 'error'; message: string };
+type Outcome = { kind: 'result'; r: TradeResult; side: Side; wallet: string; amount: string; presign?: boolean } | { kind: 'error'; message: string };
+/** Signer value for the connected browser wallet (test wallets use their keys 'A'/'B'). */
+const YOU = '__wallet__';
 
 export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
   const ck = useChecklist();
   const [showCk, setShowCk] = useState(false);
   const [side, setSide] = useState<Side>('buy');
-  const [wallet, setWallet] = useState(Object.keys(meta.wallets)[0] ?? 'A');
+  const bw = useWallet();
+  const [wallet, setWallet] = useState(bw.address ? YOU : Object.keys(meta.wallets)[0] ?? 'A');
+  useEffect(() => {   // follow the wallet: connected -> sign with it; disconnected -> back to a test wallet
+    if (bw.address) setWallet(YOU); else setWallet((w) => (w === YOU ? Object.keys(meta.wallets)[0] ?? 'A' : w));
+  }, [bw.address, meta.wallets]);
+  const [step, setStep] = useState('');
   const [amount, setAmount] = useState('1000000');
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -26,7 +35,9 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
   const st = view.status;
   const dec = st.decimals ?? 6;
   const sym = view.launch?.symbol ?? 'tokens';
-  const balance = BigInt(view.balances[wallet] ?? '0');
+  const usingWallet = wallet === YOU && !!bw.address;
+  const who = usingWallet ? 'your wallet' : `test wallet ${wallet}`;
+  const balance = BigInt((usingWallet ? view.wallet?.tokens : view.balances[wallet]) ?? '0');
   const cap = liveCap(view, slot);
   const next = liveNextChange(view, slot);
   const feeNow = curveFeePctAt(view.fee, elapsedSlots(st, slot));
@@ -51,12 +62,32 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
   async function send(s: Side = side) {
     if (!('v' in parsed) || !ck.valid) return;
     setBusy(true); setOutcome(null);
+    const amt = amount.trim().replace(/,/g, '');
     try {
-      const r = await api.trade(st.mint, wallet, s, amount.trim().replace(/,/g, ''));
-      await onTraded();
-      setOutcome({ kind: 'result', r, side: s, wallet, amount });
+      if (usingWallet) {
+        setStep('Preparing…');
+        const built = await api.walletBuild(st.mint, bw.address!, s, amt);
+        if (!built.simulation.ok) {   // stop before the wallet prompt: explain why it would fail
+          const sim = built.simulation;
+          setOutcome({ kind: 'result', presign: true, side: s, wallet: YOU, amount, r: { ok: false, sig: '', link: '', err: sim.err ?? undefined, hookError: sim.hookError, hookCode: sim.hookCode, capHit: sim.capHit ?? undefined } });
+          return;
+        }
+        setStep('Approve in your wallet…');
+        let signed: Uint8Array;
+        try { signed = await signTransaction(b64ToBytes(built.tx)); }
+        catch (e) { setOutcome({ kind: 'error', message: /reject|denied|cancel/i.test((e as Error).message) ? 'You declined in the wallet. Nothing was sent.' : (e as Error).message }); return; }
+        setStep('Sending…');
+        const r = await api.walletSubmit(bytesToB64(signed));
+        await onTraded();
+        setOutcome({ kind: 'result', r, side: s, wallet: YOU, amount });
+      } else {
+        setStep('Sending…');
+        const r = await api.trade(st.mint, wallet, s, amt);
+        await onTraded();
+        setOutcome({ kind: 'result', r, side: s, wallet, amount });
+      }
     } catch (e) { setOutcome({ kind: 'error', message: (e as Error).message }); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setStep(''); }
   }
 
   return (
@@ -74,12 +105,19 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
       <label className="field">
         <span>Signer</span>
         <select value={wallet} onChange={(e) => { setWallet(e.target.value); setOutcome(null); }}>
-          {Object.entries(meta.wallets).map(([k, pk]) => <option key={k} value={k}>Test wallet {k} · {pk.slice(0, 4)}…{pk.slice(-4)}</option>)}
+          {bw.address && <option value={YOU}>Your wallet · {bw.address.slice(0, 4)}…{bw.address.slice(-4)}</option>}
+          {Object.entries(meta.wallets).map(([k, pk]) => <option key={k} value={k}>Test wallet {k} (server-signed) · {pk.slice(0, 4)}…{pk.slice(-4)}</option>)}
         </select>
       </label>
-      <div className="notice amber small" style={{ marginTop: -4, marginBottom: 14 }}>
-        Devnet demo: trades are signed on the server by throwaway test wallets, not your own wallet. Browser-wallet signing comes before any hosted page.
-      </div>
+      {usingWallet ? (
+        <div className="notice green small" style={{ marginTop: -4, marginBottom: 14 }}>
+          You sign in {bw.wallet?.name ?? 'your wallet'}; the page never sees your key. Devnet only: use devnet SOL{view.wallet ? <> (you have <span className="num">{view.wallet.sol.toFixed(3)}</span>)</> : null}.
+        </div>
+      ) : (
+        <div className="notice amber small" style={{ marginTop: -4, marginBottom: 14 }}>
+          Throwaway test wallet: this trade is signed on the server. {bw.address ? 'Pick "Your wallet" to sign yourself.' : 'Connect a wallet (top right) to sign yourself.'}
+        </div>
+      )}
 
       <label className="field">
         <span className="spread"><span>Amount</span><span className="faint">balance <span className="num">{tok(balance)}</span></span></span>
@@ -102,7 +140,7 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
         ) : (
           <div>
             <div className="spread small" style={{ marginBottom: 5 }}>
-              <span className="muted">Token account of wallet {wallet} after this buy</span>
+              <span className="muted">Token account of {who} after this buy</span>
               <span className="num">{tok(pv.after)} / {tok(cap)}</span>
             </div>
             <CapMeter balance={pv.balance} after={pv.after} cap={cap} />
@@ -113,7 +151,7 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
         )
       ) : (
         <div className="notice small">
-          Selling back into the curve is never blocked by the rule.{sellTooMuch && <><br /><span className="fail">That's more than wallet {wallet} holds.</span></>}
+          Selling back into the curve is never blocked by the rule.{sellTooMuch && <><br /><span className="fail">That's more than {who} holds.</span></>}
         </div>
       )}
 
@@ -145,7 +183,7 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
         ) : (
           <>
             <button className="primary block" disabled={busy || !('v' in parsed) || sellTooMuch} onClick={() => send()}>
-              {busy ? 'Sending…' : `${side === 'buy' ? (pv.overBy > 0n ? 'Buy anyway (will fail)' : 'Buy') : 'Sell'} ${'v' in parsed ? tok(amt) : ''} ${sym}`}
+              {busy ? step || 'Sending…' : `${side === 'buy' ? (pv.overBy > 0n ? 'Buy anyway (will fail)' : 'Buy') : 'Sell'} ${'v' in parsed ? tok(amt) : ''} ${sym}`}
             </button>
             <p className="small faint" style={{ marginTop: 6, textAlign: 'center' }}>Checklist confirmed · valid 30 days</p>
           </>
@@ -175,18 +213,23 @@ function CapMeter({ balance, after, cap }: { balance: bigint; after: bigint; cap
 function Outcome({ o, view, vars, onRetry }: { o: Outcome; view: TokenView; vars: Record<string, string>; onRetry: (s: Side) => void }) {
   if (o.kind === 'error') return <div className="notice red small" style={{ marginTop: 12 }} role="alert"><b>The trade wasn't sent.</b> {o.message}</div>;
   const { r, side, wallet } = o;
-  const txLink = r.link
+  // the browser wallet's balance lives in view.wallet; the explainer's {WALLET_BALANCE} reads balances[wallet]
+  const v = wallet === YOU ? { ...view, balances: { ...view.balances, [YOU]: view.wallet?.tokens ?? '0' } } : view;
+  const txLink = o.presign
+    ? <span className="mono faint">not signed, not sent</span>
+    : r.link
     ? <a href={r.link} target="_blank" rel="noreferrer" className="mono">{r.sig.slice(0, 16)}… ↗</a>
     : <span className="mono faint">{FIXTURE_MODE ? 'simulated, no transaction' : r.sig ? `${r.sig.slice(0, 16)}…` : 'no signature'}</span>;
   if (r.ok) return <div className="notice green small" style={{ marginTop: 12 }} role="status"><b>{side === 'buy' ? 'Bought' : 'Sold'} {tok(parseTokenAmount(o.amount, view.status.decimals ?? 6))} {view.launch?.symbol ?? 'tokens'}.</b> {txLink}</div>;
   const t = CONTENT.trade_fail_explainer;
   const key = explainerKey(r, side);
   let text: string;
-  try { text = fill(explainerTemplate(t, key), { ...vars, ...explainVars(r, view, wallet) }); }
+  try { text = fill(explainerTemplate(t, key), { ...vars, ...explainVars(r, v, wallet) }); }
   catch (e) { text = `${(e as Error).message}. Raw error: ${r.hookError || r.err || 'unknown'}`; }
   return (
     <div className="notice red small" style={{ marginTop: 12 }} role="alert" data-key={key}>
       <div className="spread"><b>{t.title}</b>{txLink}</div>
+      {o.presign && <p style={{ margin: '6px 0 0' }}><b>Stopped before your wallet asked you to sign:</b> a check of this trade shows it would fail.</p>}
       <p style={{ margin: '6px 0 0' }}>{text}</p>
       {allowRetry(key) && <button className="small" style={{ marginTop: 8 }} onClick={() => onRetry(side)}>Try again</button>}
     </div>

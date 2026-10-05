@@ -1,4 +1,4 @@
-// Ticket 8.5b: the site serves registry mints only. The listing (/api/meta), /api/token/<mint> and /api/trade go
+// Ticket 8.5b: the site serves registry mints only. The listing (/api/meta), /api/token/<mint>, /api/trade and /api/wallet/build go
 // through siteRoute: one loadRegistry read per request (sdk/registry.ts, no second parser, nothing cached), shared by
 // every check in that request, and run before any local-record lookup, RPC call or `new PublicKey`. Matching is exact
 // (base58 string equality after one URL decode). An unknown or malformed mint is a 404, and so is a registered mint
@@ -22,6 +22,8 @@ export interface SiteDeps<R extends SiteRecord = SiteRecord> {
   token(mint: string): Promise<unknown>;
   /** the trade; reads the chain and sends */
   trade(body: any, rec: R): Promise<Reply>;
+  /** browser-wallet build (AC-21): an unsigned swap for the user's wallet; reads the chain, never signs or sends */
+  build?(body: any, rec: R): Promise<Reply>;
 }
 
 const NOT_FOUND: Reply = { code: 404, body: { error: 'unknown token' } };
@@ -29,7 +31,8 @@ const NOT_FOUND: Reply = { code: 404, body: { error: 'unknown token' } };
 /** The reply for a site route that is registry-gated, or null for any other route (unchanged). */
 export async function siteRoute<R extends SiteRecord>(pathname: string, method: string, readBody: () => Promise<any>, d: SiteDeps<R>): Promise<Reply | null> {
   const isMeta = pathname === '/api/meta', isToken = pathname.startsWith('/api/token/'), isTrade = pathname === '/api/trade' && method === 'POST';
-  if (!isMeta && !isToken && !isTrade) return null;
+  const isBuild = pathname === '/api/wallet/build' && method === 'POST' && !!d.build;
+  if (!isMeta && !isToken && !isTrade && !isBuild) return null;
   let reg: ReadonlySet<string>;
   try { reg = (d.load ?? loadRegistry)(d.cluster, d.registryPath ?? REGISTRY_PATH); }
   catch (e: any) { return { code: 503, body: { error: `mint registry unavailable: ${String(e?.message ?? e)}` } }; }   // the whole response; never an empty listing
@@ -45,7 +48,7 @@ export async function siteRoute<R extends SiteRecord>(pathname: string, method: 
   const mint = b?.mint;
   if (typeof mint !== 'string' || !reg.has(mint)) return NOT_FOUND;
   const rec = d.launches().find(l => l.mint === mint); if (!rec) return NOT_FOUND;
-  return d.trade(b, rec);
+  return isBuild ? d.build!(b, rec) : d.trade(b, rec);
 }
 
 /** /api/create success body: the new mint is not in the registry until someone adds it by hand. */

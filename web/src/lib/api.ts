@@ -1,5 +1,5 @@
 // Data source: the real backend (app/server.ts via the Vite proxy), or the simulated one in fixture mode.
-import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply } from './types';
+import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, BuiltSwap } from './types';
 import { fixtureApi } from './fixtures';
 import { ApiError } from './errors';
 export { ApiError };
@@ -8,8 +8,12 @@ export const FIXTURE_MODE = import.meta.env.MODE === 'fixtures';
 
 export interface Api {
   meta(): Promise<Meta>;
-  token(mint: string): Promise<TokenView>;
+  token(mint: string, owner?: string | null): Promise<TokenView>;
+  /** server-signed demo trade with throwaway test wallet A/B */
   trade(mint: string, wallet: string, side: Side, amount: string): Promise<TradeResult>;
+  /** AC-21: unsigned swap for the user's wallet (simulated); the wallet signs, then walletSubmit relays it */
+  walletBuild(mint: string, owner: string, side: Side, amount: string): Promise<BuiltSwap>;
+  walletSubmit(signedTxBase64: string): Promise<TradeResult>;
   create(req: CreateRequest): Promise<CreateReply>;
 }
 
@@ -25,8 +29,10 @@ const post = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'cont
 
 const httpApi: Api = {
   meta: () => call<Meta>('/api/meta'),
-  token: (mint) => call<TokenView>(`/api/token/${encodeURIComponent(mint)}`),
+  token: (mint, owner) => call<TokenView>(`/api/token/${encodeURIComponent(mint)}${owner ? `?owner=${encodeURIComponent(owner)}` : ''}`),
   trade: (mint, wallet, side, amount) => call<TradeResult>('/api/trade', post({ mint, wallet, side, amount })),
+  walletBuild: (mint, owner, side, amount) => call<BuiltSwap>('/api/wallet/build', post({ mint, owner, side, amount })),
+  walletSubmit: (tx) => call<TradeResult>('/api/wallet/submit', post({ tx })),
   create: (req) => call<CreateReply>('/api/create', post(req)),
 };
 

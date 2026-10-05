@@ -3,7 +3,7 @@
 // The cap rule itself is the real one: buys over the cap fail with WalletCapExceeded via sdk/capMath.ts.
 import { effectiveCap, nextChange } from '../../../sdk/capMath';
 import { BALANCED } from '../../../sdk/schedules';
-import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent } from './types';
+import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent, BuiltSwap } from './types';
 import type { Api } from './api';
 import { ApiError } from './errors';
 
@@ -43,7 +43,7 @@ const latency = () => new Promise((r) => setTimeout(r, 150 + Math.random() * 250
 function launchSlot(s: Sim) { return slotAt(T0 - s.launchedMsAgo); }
 function capCfg(s: Sim) { return { launchSlot: BigInt(launchSlot(s)), supply: SUPPLY, steps: BALANCED.steps, uncappedAfter: BALANCED.uncappedAfter }; }
 
-function view(s: Sim): TokenView {
+function view(s: Sim, owner?: string | null): TokenView {
   const slot = slotAt(Date.now());
   const cfg = capCfg(s);
   const cap = effectiveCap(cfg, { lifted: false, raisedFloorBps: s.raisedFloorBps }, false, BigInt(slot));
@@ -63,6 +63,7 @@ function view(s: Sim): TokenView {
     feeConfig: FEE_CONFIG,
     pool: { quoteReserveSol: Math.round(s.reserveSol * 1e4) / 1e4, isMigrated: s.graduated, curveComplete: s.graduated },
     balances: Object.fromEntries(Object.entries(s.balances).map(([k, v]) => [k, v.toString()])),
+    wallet: owner ? { owner, tokens: (s.balances[owner] ?? 0n).toString(), sol: 1.5 } : null,
     switchHistory: s.switchHistory,
     explorer: { mint: '', pool: '', program: '' },
   };
@@ -73,6 +74,30 @@ const find = (mint: string) => {
   if (!s) throw new ApiError('unknown token', 404);
   return s;
 };
+const PENDING = new Map<string, { mint: string; owner: string; side: Side; amount: string }>();
+
+/** The simulated swap: same cap rule as the program (sdk/capMath.ts). `dry` = simulate without changing balances. */
+function exec(s: Sim, wallet: string, side: Side, amount: string, dry: boolean): TradeResult {
+  if (s.graduated) throw new ApiError('refusing: DBC pool has graduated (simulated)', 400);
+  const amt = BigInt(Math.round(Number(amount) * 1e6)) * (UNIT / 1_000_000n);
+  if (amt <= 0n) throw new ApiError('amount must be > 0', 400);
+  const bal = s.balances[wallet] ?? 0n;
+  const sig = dry ? '' : fakeSig();
+  if (side === 'sell') {
+    if (amt > bal) return { ok: false, sig, link: '', err: 'insufficient funds (simulated)', hookError: null, hookCode: null };
+    if (!dry) { s.balances[wallet] = bal - amt; s.reserveSol = Math.max(0, s.reserveSol - Number(amt) * 2.5e-16); }
+    return { ok: true, sig, link: '' };
+  }
+  const slot = BigInt(slotAt(Date.now()));
+  const cap = effectiveCap(capCfg(s), { lifted: false, raisedFloorBps: s.raisedFloorBps }, false, slot);
+  if (cap !== null && bal + amt > cap) {
+    return { ok: false, sig, link: '', err: '{"InstructionError":[2,{"Custom":6000}]}', hookError: 'WalletCapExceeded', hookCode: 6000,
+      capHit: { tokenAccount: fakeKey('FixtureTokenAccount'), owner: wallet, balance: (bal + amt).toString(), cap: cap.toString(), slot: slot.toString() } };
+  }
+  if (!dry) { s.balances[wallet] = bal + amt; s.reserveSol = Math.min(0.1999, s.reserveSol + Number(amt) * 2.5e-16); }
+  return { ok: true, sig, link: '' };
+}
+
 const fakeSig = () => Array.from({ length: 88 }, () => '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'[Math.trunc(Math.random() * 58)]).join('');
 
 export const fixtureApi: Api = {
@@ -85,28 +110,26 @@ export const fixtureApi: Api = {
       launches: SIMS.map((s) => ({ mint: s.mint, pool: s.pool, time: new Date(T0 - s.launchedMsAgo).toISOString() })),
     };
   },
-  async token(mint) { await latency(); return view(find(mint)); },
+  async token(mint, owner) { await latency(); return view(find(mint), owner); },
   async trade(mint, wallet, side: Side, amount): Promise<TradeResult> {
     await latency(); await latency();
+    return exec(find(mint), wallet, side, amount, false);
+  },
+  async walletBuild(mint, owner, side: Side, amount): Promise<BuiltSwap> {
+    await latency();
     const s = find(mint);
-    if (s.graduated) throw new Error('refusing: DBC pool has graduated (simulated)');
-    const amt = BigInt(Math.round(Number(amount) * 1e6)) * (UNIT / 1_000_000n);
-    if (amt <= 0n) throw new Error('amount must be > 0');
-    const bal = s.balances[wallet] ?? 0n;
-    const sig = fakeSig();
-    if (side === 'sell') {
-      if (amt > bal) return { ok: false, sig, link: '', err: 'insufficient funds (simulated)', hookError: null, hookCode: null };
-      s.balances[wallet] = bal - amt; s.reserveSol = Math.max(0, s.reserveSol - Number(amt) * 2.5e-16);
-      return { ok: true, sig, link: '' };
-    }
-    const slot = BigInt(slotAt(Date.now()));
-    const cap = effectiveCap(capCfg(s), { lifted: false, raisedFloorBps: s.raisedFloorBps }, false, slot);
-    if (cap !== null && bal + amt > cap) {
-      return { ok: false, sig, link: '', err: '{"InstructionError":[2,{"Custom":6000}]}', hookError: 'WalletCapExceeded', hookCode: 6000,
-        capHit: { tokenAccount: fakeKey('FixtureTokenAccount'), owner: wallet, balance: (bal + amt).toString(), cap: cap.toString(), slot: slot.toString() } };
-    }
-    s.balances[wallet] = bal + amt; s.reserveSol = Math.min(0.1999, s.reserveSol + Number(amt) * 2.5e-16);
-    return { ok: true, sig, link: '' };
+    const r = exec(s, owner, side, amount, true);   // simulate only
+    const tx = btoa(fakeSig());                       // stand-in bytes; the fixture wallet hands them back unchanged
+    PENDING.set(tx, { mint, owner, side, amount });
+    return { tx, owner, side, amount, lastValidBlockHeight: 0, expiresInMs: 90_000,
+      simulation: { ok: r.ok, err: r.err ?? null, hookError: r.hookError ?? null, hookCode: r.hookCode ?? null, capHit: r.capHit ?? null, unitsConsumed: 120_000 } };
+  },
+  async walletSubmit(tx): Promise<TradeResult> {
+    await latency(); await latency();
+    const p = PENDING.get(tx);
+    if (!p) throw new ApiError('refusing: this transaction was not built by this page, was changed after it was built, or has expired. Build it again.', 400);
+    PENDING.delete(tx);
+    return exec(find(p.mint), p.owner, p.side, p.amount, false);
   },
   async create(req: CreateRequest): Promise<CreateReply> {
     await latency(); await latency();
