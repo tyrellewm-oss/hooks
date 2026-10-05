@@ -82,9 +82,14 @@ export interface SwitchEvent {
   link: string;
 }
 
+/** Studio-entered token details (sdk/metadata.ts publicMetadata): image is a URL, never bytes */
+export interface TokenMetadata { description: string; website: string | null; x: string | null; telegram: string | null; image: string | null; updatedAt: string }
+export interface MetadataInput { description: string; website: string; x: string; telegram: string; image?: { data: string } | null }
+
 export interface TokenView {
   status: TokenStatus;
   launch: LaunchRecord | null;
+  metadata?: TokenMetadata | null;
   fee: FeeInfo | null;
   feeConfig: Record<string, unknown> | null;
   pool: { quoteReserveSol: number; isMigrated: boolean; curveComplete: boolean } | null;
@@ -145,5 +150,6 @@ export interface CreateRequest {
   uncappedAfter: string;
   thresholdSol: number;
   percentageSupplyOnMigration?: number;
+  metadata?: MetadataInput;
 }
 export interface CreateReply { mint: string; pool: string; registered: false; note: string }

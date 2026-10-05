@@ -3,7 +3,7 @@
 // The cap rule itself is the real one: buys over the cap fail with WalletCapExceeded via sdk/capMath.ts.
 import { effectiveCap, nextChange } from '../../../sdk/capMath';
 import { BALANCED } from '../../../sdk/schedules';
-import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent, BuiltSwap, FlywheelReply, PublicKeeper, TradesReply, IndexedTrade, Candle } from './types';
+import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent, BuiltSwap, FlywheelReply, PublicKeeper, TradesReply, IndexedTrade, Candle, MetadataInput, TokenMetadata } from './types';
 import type { Api } from './api';
 import { ApiError } from './errors';
 
@@ -58,6 +58,7 @@ function view(s: Sim, owner?: string | null): TokenView {
       nextChange: s.graduated || !nc ? null : { slot: nc.slot.toString(), bps: nc.bps },
       mintHook: { ok: true, phase: s.graduated ? 'post' : 'pre', problems: [] },
     },
+    metadata: META.get(s.mint) ?? null,
     launch: { name: s.name, symbol: s.symbol, mint: s.mint, pool: s.pool, config: s.config, time: new Date(T0 - s.launchedMsAgo).toISOString(), steps, uncappedAfter: BALANCED.uncappedAfter.toString(), migrationQuoteThresholdSol: 0.2, fee: FEE_CONFIG },
     fee: FEE,
     feeConfig: FEE_CONFIG,
@@ -74,6 +75,7 @@ const find = (mint: string) => {
   if (!s) throw new ApiError('unknown token', 404);
   return s;
 };
+const META = new Map<string, TokenMetadata>([[SIMS[1].mint, { description: 'Fixture token for UI work. Studio-entered details show here.', website: 'https://example.org', x: 'https://x.com/example', telegram: null, image: null, updatedAt: new Date(T0).toISOString() }]]);
 const PENDING = new Map<string, { mint: string; owner: string; side: Side; amount: string }>();
 
 /** The simulated swap: same cap rule as the program (sdk/capMath.ts). `dry` = simulate without changing balances. */
@@ -176,6 +178,20 @@ export const fixtureApi: Api = {
     if (!p) throw new ApiError('refusing: this transaction was not built by this page, was changed after it was built, or has expired. Build it again.', 400);
     PENDING.delete(hex);
     return exec(find(p.mint), p.owner, p.side, p.amount, false);
+  },
+  async saveMetadata(mint, m: MetadataInput): Promise<TokenMetadata> {
+    await latency(); find(mint);
+    for (const [k, host] of [['website', null], ['x', ['x.com', 'twitter.com']], ['telegram', ['t.me']]] as const) {
+      const v = (m as any)[k]; if (!v) continue;
+      let u: URL; try { u = new URL(v); } catch { throw new ApiError(`${k}: not a valid link`, 400); }
+      if (u.protocol !== 'https:') throw new ApiError(`${k}: must start with https://`, 400);
+      if (host && !(host as readonly string[]).includes(u.hostname.replace(/^www\./, ''))) throw new ApiError(`${k}: must be a ${host.join(' or ')} link`, 400);
+    }
+    if (m.description.length > 280) throw new ApiError('description: at most 280 characters', 400);
+    const prev = META.get(mint);
+    const image = m.image === null ? null : m.image ? `data:image/png;base64,${m.image.data}` : prev?.image ?? null;
+    const out: TokenMetadata = { description: m.description.trim(), website: m.website || null, x: m.x || null, telegram: m.telegram || null, image, updatedAt: new Date().toISOString() };
+    META.set(mint, out); return out;
   },
   async trades(mint, interval): Promise<TradesReply> {
     await latency();

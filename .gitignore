@@ -52,3 +52,6 @@ artifacts/
 
 # trade index (scripts/indexer.ts; local, rebuilt from chain)
 .index/
+
+# token details entered in the studio (sdk/metadata.ts); local like launches/
+/metadata/

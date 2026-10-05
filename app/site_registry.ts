@@ -7,7 +7,7 @@
 import { loadRegistry, REGISTRY_PATH } from '../sdk/registry.js';
 
 export const NOT_REGISTERED_NOTE = 'not registered: add to keeper/registry.json';
-export interface Reply { code: number; body: unknown }
+export interface Reply { code: number; body: unknown; /** non-JSON body (an image); sent as-is with this content type */ type?: string }
 export interface SiteRecord { mint: string }
 export interface SiteDeps<R extends SiteRecord = SiteRecord> {
   cluster: string;
@@ -28,6 +28,10 @@ export interface SiteDeps<R extends SiteRecord = SiteRecord> {
   flywheel?(registered: ReadonlySet<string>): unknown | Promise<unknown>;
   /** price chart and trades feed: the indexer's file for this mint (read-only, no chain call) */
   trades?(mint: string): unknown | Promise<unknown>;
+  /** token image bytes (Reply with type), or a 404 Reply */
+  image?(mint: string): Reply | Promise<Reply>;
+  /** studio edit of the token's details (image, description, links) */
+  metadata?(mint: string, body: any): Reply | Promise<Reply>;
 }
 
 const NOT_FOUND: Reply = { code: 404, body: { error: 'unknown token' } };
@@ -50,6 +54,8 @@ export async function siteRoute<R extends SiteRecord>(pathname: string, method: 
     if (!d.launches().find(l => l.mint === mint)) return NOT_FOUND;   // registered but no local launch record: no chain call
     const sub = pathname.split('/').slice(4).join('/');   // /api/token/<mint>/<sub>
     if (sub === 'trades' && method === 'GET' && d.trades) return { code: 200, body: await d.trades(mint) };
+    if (sub === 'image' && method === 'GET' && d.image) return d.image(mint);
+    if (sub === 'metadata' && method === 'POST' && d.metadata) return d.metadata(mint, await readBody());
     if (sub) return NOT_FOUND;
     return { code: 200, body: await d.token(mint) };
   }

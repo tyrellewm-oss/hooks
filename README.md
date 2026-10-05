@@ -209,6 +209,17 @@ pnpm dev                     # new UI against the real backend (proxies /api)  -
 - Fixture mode shows a "simulated" banner on every page; nothing in it is chain data and no transaction is sent.
 - `scripts/ci.sh` covers it: forbidden words and the mainnet grep include `web/src`, and `web/` is type-checked when `web/node_modules` exists. Pure page logic is tested in `tests/web_token_logic.test.ts`.
 
+### Backend pieces for the new UI
+| What | How | Notes |
+|---|---|---|
+| Host the new UI | `cd web && pnpm build`, then `pnpm page -- --cluster devnet --web` | `app/static.ts`: serves `web/dist`, client routes fall back to `index.html`; without `--web` the classic page is served (e2e target) |
+| Browser-wallet signing (AC-21) | `POST /api/wallet/build`, `POST /api/wallet/submit` | `sdk/wallet_tx.ts`: unsigned swap for the user's wallet, simulated first; the relay forwards only transactions this server built (one use, 90 s). The build reply is hex because `send()`'s redaction mangles base64 |
+| Transparency page | `GET /api/flywheel`, page `/transparency` | `app/flywheel_public.ts`: the keeper's public logs (`flywheel/`), registry mints only, every claim/payout/swap/burn linked |
+| Trade indexer | `node --import tsx scripts/indexer.ts loop --cluster devnet --every 30` | `sdk/indexer.ts`, read-only RPC, writes `.index/<cluster>/` (gitignored). Amounts from the pool side; cap-hit failures kept as blocked rows. `GET /api/token/:mint/trades` feeds the price chart and trades feed |
+| Token details | launch form, or "Edit details" on the token page (`POST /api/token/:mint/metadata`) | `sdk/metadata.ts`: image (PNG/JPEG/WebP/GIF by file bytes, 512 KB), description (280 chars, site forbidden words refused), https links (X on x.com/twitter.com, Telegram on t.me). Stored in `metadata/<cluster>/` (gitignored, like `launches/`). The on-chain URI stays the devnet placeholder until there is a public host |
+
+All `/api/token/<mint>/...` routes go through `app/site_registry.ts`: registry mints with a local launch record only. The studio edit and create routes are unauthenticated, which is acceptable only because the server binds 127.0.0.1; they need auth before any hosting.
+
 ## Admin powers (disclosed)
 - **Program upgrade authority:** a throwaway key on devnet. It can replace the program. This is the largest power, and mainnet would need a multisig plus timelock (**out of scope**).
 - **Lift-only switch** (`raise_mint_cap`, `lift_mint_cap`, `lift_global`): it can only raise or remove a cap, never lower it or re-enable it. Every use emits `RestrictionsLifted`, and the page lists those events.

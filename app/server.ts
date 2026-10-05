@@ -21,6 +21,7 @@ import { MintHookRefusal } from '../sdk/mint_hook.js';
 import { staticReply, uiModeFromArgs, assertUiBuilt } from './static.js';
 import { loadPublicKeepers } from './flywheel_public.js';
 import { readIndex, candles } from '../sdk/indexer.js';
+import { validateMetadata, saveMetadata, loadMetadata, loadImage, publicMetadata, MetadataRefusal } from '../sdk/metadata.js';
 
 const argv = process.argv.slice(2);
 const PORT = Number(process.env.PORT ?? 5175);
@@ -84,7 +85,7 @@ async function tokenView(mintStr: string, owner: PublicKey | null = null) {
     percentageSupplyOnMigration: (rec.fee as any)?.percentageSupplyOnMigration ?? DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION } : null;
   // the connected browser wallet, when the page passes ?owner=<pubkey>: its token balance and SOL (read only)
   const wallet = owner ? { owner: owner.toBase58(), tokens: (await lp.tokenBalance(mint, owner)).toString(), sol: (await c.connection.getBalance(owner, 'confirmed')) / LAMPORTS_PER_SOL } : null;
-  return { status: st, launch: rec, fee, feeConfig, pool, balances: bal, wallet, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
+  return { status: st, launch: rec, metadata: publicMetadata(loadMetadata(c.name, mintStr), mintStr), fee, feeConfig, pool, balances: bal, wallet, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
 }
 
 async function trade(b: any, rec: { mint: string; pool: string }): Promise<Reply> {
@@ -118,10 +119,11 @@ async function build(b: any, rec: { mint: string; pool: string }): Promise<Reply
   }
 }
 
-async function body(req: http.IncomingMessage): Promise<any> { let d = ''; for await (const ch of req) d += ch; return d ? JSON.parse(d) : {}; }
+const MAX_BODY = 1_000_000;   // the largest legitimate body is a token image (512 KB as base64)
+async function body(req: http.IncomingMessage): Promise<any> { let d = ''; for await (const ch of req) { d += ch; if (d.length > MAX_BODY) throw new Error('request body too large'); } return d ? JSON.parse(d) : {}; }
 const send = (res: http.ServerResponse, code: number, obj: any, type = 'application/json') => {
   if (type === 'application/json') obj = redactDeep(obj);   // FW-17: every JSON body is public; all strings (keys too) are redacted
-  res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }); res.end(type === 'application/json' ? JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) : obj); };
+  res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(type === 'application/json' ? JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) : obj); };
 
 http.createServer(async (req, res) => {
   try {
@@ -135,9 +137,12 @@ http.createServer(async (req, res) => {
       token: mint => tokenView(mint, walletKey(url.searchParams.get('owner'))),
       trade,
       build,
+      image: mint => { const im = loadImage(c.name, mint); return im ? { code: 200, body: im.data, type: im.type } : { code: 404, body: { error: 'no image' } }; },
+      metadata: (mint, b) => { try { return { code: 200, body: publicMetadata(saveMetadata(c.name, mint, validateMetadata(b ?? {})), mint) }; } catch (e: any) { if (e instanceof MetadataRefusal) return { code: 400, body: { error: e.message } }; throw e; } },
       trades: mint => tradesView(mint, Number(url.searchParams.get('interval') ?? 300)),
       flywheel: registered => ({ cluster: c.label, ...loadPublicKeepers(c.name, registered) }),
     });
+    if (routed?.type) return send(res, routed.code, routed.body, routed.type);   // the token image (binary)
     if (routed) return send(res, routed.code, routed.body);
     if (url.pathname === '/api/wallets') { const o: any = {}; for (const [k, w] of Object.entries(wallets)) o[k] = { pubkey: w.publicKey.toBase58(), sol: (await c.connection.getBalance(w.publicKey)) / LAMPORTS_PER_SOL }; return send(res, 200, o); }
     if (url.pathname === '/api/wallet/submit' && req.method === 'POST') {
@@ -164,9 +169,12 @@ http.createServer(async (req, res) => {
       let percentageSupplyOnMigration: number; // optional; default 20 (validated before any tx)
       try { percentageSupplyOnMigration = resolvePercentageSupplyOnMigration(b.percentageSupplyOnMigration); }
       catch (e: any) { return send(res, 400, { error: e.message }); }
+      let meta: ReturnType<typeof validateMetadata> | null = null;   // optional token details, validated before any tx
+      if (b.metadata !== undefined) { try { meta = validateMetadata(b.metadata); } catch (e: any) { return send(res, 400, { error: e.message }); } }
       await lp.ensureGlobal(deployer, deployer.publicKey);
       await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);   // 8.3: launches are signed by the launch key, never the admin
       const rec = await lp.launch(deployer, { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration }, launchKey);
+      if (meta) saveMetadata(c.name, rec.mint, meta);
       return send(res, 200, createReply(rec));   // ticket 8.5b: registered: false + note; the registry is never written
     }
     if (url.pathname === '/capMath.js') return send(res, 200, capMathJs, 'text/javascript');
