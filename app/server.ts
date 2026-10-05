@@ -3,9 +3,8 @@
 // Browser wallets (AC-21): /api/wallet/build returns an UNSIGNED swap for the user's wallet; /api/wallet/submit relays
 // only transactions this server built (sdk/wallet_tx.ts). The server never holds a user key.
 import http from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { join, extname } from 'node:path';
 import { buildSync } from 'esbuild';
 import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { resolveCluster, parseClusterArg, explorerAddr, explorerTx, assertNotMainnet } from '../sdk/cluster.js';
@@ -19,9 +18,12 @@ import { serverError } from './errors.js';
 import { siteRoute, createReply, type Reply } from './site_registry.js';
 import { WalletRelay, WalletTxRefusal, buildUserSwap, submitSigned } from '../sdk/wallet_tx.js';
 import { MintHookRefusal } from '../sdk/mint_hook.js';
+import { staticReply, uiModeFromArgs, assertUiBuilt } from './static.js';
 
 const argv = process.argv.slice(2);
 const PORT = Number(process.env.PORT ?? 5175);
+const UI = uiModeFromArgs(argv);   // --web: serve the new front end from web/dist (build it first)
+assertUiBuilt(UI);
 const content = JSON.parse(readFileSync('research/page_content.json', 'utf8'));
 // AC-30: refuse to start if anything mainnet-like is configured.
 for (const v of [process.env.DEVNET_RPC, process.env.LOCAL_RPC]) if (v) assertNotMainnet(v);
@@ -109,7 +111,6 @@ async function body(req: http.IncomingMessage): Promise<any> { let d = ''; for a
 const send = (res: http.ServerResponse, code: number, obj: any, type = 'application/json') => {
   if (type === 'application/json') obj = redactDeep(obj);   // FW-17: every JSON body is public; all strings (keys too) are redacted
   res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }); res.end(type === 'application/json' ? JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) : obj); };
-const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
 
 http.createServer(async (req, res) => {
   try {
@@ -156,9 +157,7 @@ http.createServer(async (req, res) => {
       return send(res, 200, createReply(rec));   // ticket 8.5b: registered: false + note; the registry is never written
     }
     if (url.pathname === '/capMath.js') return send(res, 200, capMathJs, 'text/javascript');
-    const file = url.pathname === '/' || url.pathname.startsWith('/token/') ? 'index.html' : url.pathname.slice(1);
-    const p = join('app/public', file);
-    if (!p.startsWith('app/public') || !existsSync(p)) return send(res, 404, { error: 'not found' });
-    return send(res, 200, readFileSync(p, 'utf8'), MIME[extname(p)] ?? 'text/plain');
+    const st = staticReply(url.pathname, UI);   // app/static.ts: classic page or, with --web, the new UI (web/dist)
+    return send(res, st.code, st.body, st.type);
   } catch (e: any) { return send(res, 500, serverError(e)); }   // FW-17: the console line is redacted too (app/errors.ts)
-}).listen(PORT, '127.0.0.1', () => console.log(`launch page [${c.label}] http://127.0.0.1:${PORT}  program ${lp.hook.programId.toBase58()}`));
+}).listen(PORT, '127.0.0.1', () => console.log(`launch page [${c.label}${UI === 'web' ? ', new UI' : ''}] http://127.0.0.1:${PORT}  program ${lp.hook.programId.toBase58()}`));
