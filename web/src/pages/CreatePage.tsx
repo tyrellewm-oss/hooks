@@ -86,7 +86,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
   }
 
   return (
-    <div className="stack" style={{ maxWidth: 980 }}>
+    <div className="stack">
       <section className="hero">
         <div>
         <h1>Studio launch tool</h1>

@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 
 // ---------- routing (4 routes; no router dependency)
 const NAV = 'trenches:navigate';
-export function navigate(to: string) {
+export function navigate(to: string, { replace = false }: { replace?: boolean } = {}) {
   if (to === location.pathname) return;
-  history.pushState(null, '', to);
+  if (replace) history.replaceState(null, '', to);
+  else history.pushState(null, '', to);
   window.dispatchEvent(new Event(NAV));
   window.scrollTo(0, 0);
 }
@@ -39,4 +40,3 @@ export function useNow(ms = 1000): number {
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), ms); return () => clearInterval(t); }, [ms]);
   return now;
 }
-
