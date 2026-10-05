@@ -6,6 +6,7 @@ import { CONTENT, fill, pageVars } from './lib/shared';
 import { Guard, Link, Skeleton } from './components/bits';
 import { IconCode, IconGrid, IconMenu, IconMoon, IconPlus, IconRamp, IconSearch, IconSun, LogoMark } from './components/Icons';
 import { TokensPage } from './pages/TokensPage';
+import { WalletButton } from './components/WalletButton';
 import { TokenPage } from './pages/TokenPage';
 import { HowItWorksPage } from './pages/HowItWorksPage';
 import { CreatePage } from './pages/CreatePage';
@@ -70,7 +71,8 @@ export function App() {
           </label>
           <div className="actions">
             <span className="badge hide-sm">{CONTENT.devnet_label}</span>
-            <button className="primary" onClick={() => navigate('/create')}>Launch</button>
+            <button className="primary hide-sm" onClick={() => navigate('/create')}>Launch</button>
+            <WalletButton />
           </div>
         </header>
         <main><Guard what="this page">{page}</Guard></main>

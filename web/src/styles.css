@@ -108,6 +108,12 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0; }
 .search input { width: 100%; border-radius: var(--pill); padding: 9px 14px 9px 36px; background: transparent; border: 1px solid var(--line); font-size: 13.5px; }
 .search svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-3); }
 .topbar .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.wallet { position: relative; }
+.wallet-btn { gap: 8px; }
+.wallet-btn img { border-radius: 4px; }
+.wallet-pop { position: absolute; right: 0; top: calc(100% + 8px); min-width: 250px; background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 8px; z-index: 40; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35); }
+.pop-item { display: flex; width: 100%; align-items: center; gap: 10px; justify-content: flex-start; border: 0; border-radius: 10px; padding: 9px 10px; font-size: 14px; color: var(--text); background: transparent; text-decoration: none; }
+.pop-item:hover { background: var(--hover); }
 .icon-btn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; padding: 0; background: transparent; border: 1px solid var(--line); color: var(--text-2); }
 .menu-btn { display: none; }
 .banner { margin: 0 24px; padding: 8px 14px; border-radius: var(--r-inner); background: var(--amber-soft); color: var(--amber-text); font-size: 12.5px; text-align: center; }

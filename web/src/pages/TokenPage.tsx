@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { Meta } from '../lib/types';
 import { api, ApiError } from '../lib/api';
 import { usePoll, useNow } from '../lib/hooks';
+import { useWallet } from '../lib/wallet';
 import { pageVars, pctOf, tok, BPS_DENOM, approxDuration } from '../lib/shared';
 import { curveFeePctAt, elapsedSlots, estimateSlot, isGraduated, liveCap, liveNextChange, phaseOf } from '../lib/token';
 import { CapRamp } from '../components/CapRamp';
@@ -14,7 +15,8 @@ import { IconBack } from '../components/Icons';
 const POLL_MS = 6000;
 
 export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
-  const live = usePoll(() => api.token(mint), POLL_MS, mint);
+  const { address } = useWallet();   // include the connected wallet's balances in the view
+  const live = usePoll(() => api.token(mint, address), POLL_MS, `${mint}:${address ?? ''}`);
   const now = useNow(1000);
   const view = live.data;
   const vars = useMemo(() => (view ? (pageVars(meta, view) as Record<string, string>) : null), [meta, view]);

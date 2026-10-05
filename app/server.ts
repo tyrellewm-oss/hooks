@@ -1,5 +1,7 @@
 // Minimal launch page backend. Binds 127.0.0.1 only. Cluster: LOCAL by default, DEVNET with `--cluster devnet`.
 // Signs ONLY with throwaway test keypairs from the gitignored key dir (no real wallet; King's devnet-only grant).
+// Browser wallets (AC-21): /api/wallet/build returns an UNSIGNED swap for the user's wallet; /api/wallet/submit relays
+// only transactions this server built (sdk/wallet_tx.ts). The server never holds a user key.
 import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -15,6 +17,8 @@ import { parseRestrictionsLifted } from '../sdk/hook.js';
 import { redactDeep } from '../sdk/redact.js';
 import { serverError } from './errors.js';
 import { siteRoute, createReply, type Reply } from './site_registry.js';
+import { WalletRelay, WalletTxRefusal, buildUserSwap, submitSigned } from '../sdk/wallet_tx.js';
+import { MintHookRefusal } from '../sdk/mint_hook.js';
 
 const argv = process.argv.slice(2);
 const PORT = Number(process.env.PORT ?? 5175);
@@ -56,7 +60,11 @@ async function feeInfo(config: PublicKey) {
   return { mode: mode === 0 ? 'linear fee scheduler' : mode === 1 ? 'exponential fee scheduler' : 'other', cliffPct: cliff, endPct: Math.round(end * 1000) / 1000, periods, periodSlots: freq, totalSlots: periods * freq, collectFeeMode: Number(cfg.collectFeeMode), migrationFeeOption: Number(cfg.migrationFeeOption), creatorTradingFeePercentage: Number(cfg.creatorTradingFeePercentage), migrationQuoteThresholdSol: Number(cfg.migrationQuoteThreshold.toString()) / LAMPORTS_PER_SOL };
 }
 
-async function tokenView(mintStr: string) {
+const relay = new WalletRelay();
+/** A wallet address from a query/body value, or null (never throws). */
+function walletKey(v: unknown): PublicKey | null { try { return typeof v === 'string' && v.length >= 32 && v.length <= 44 ? new PublicKey(v) : null; } catch { return null; } }
+
+async function tokenView(mintStr: string, owner: PublicKey | null = null) {
   const mint = new PublicKey(mintStr);
   const rec = listLaunches(c.name).find(l => l.mint === mintStr);
   const st = await lp.status(mint);
@@ -70,7 +78,9 @@ async function tokenView(mintStr: string) {
     migrationFeeOption: (rec.fee as any)?.migrationFeeOption ?? fee?.migrationFeeOption, creatorTradingFeePercentage: (rec.fee as any)?.creatorTradingFeePercentage ?? fee?.creatorTradingFeePercentage,
     // records made before this option existed were all built with the then hard-coded 20
     percentageSupplyOnMigration: (rec.fee as any)?.percentageSupplyOnMigration ?? DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION } : null;
-  return { status: st, launch: rec, fee, feeConfig, pool, balances: bal, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
+  // the connected browser wallet, when the page passes ?owner=<pubkey>: its token balance and SOL (read only)
+  const wallet = owner ? { owner: owner.toBase58(), tokens: (await lp.tokenBalance(mint, owner)).toString(), sol: (await c.connection.getBalance(owner, 'confirmed')) / LAMPORTS_PER_SOL } : null;
+  return { status: st, launch: rec, fee, feeConfig, pool, balances: bal, wallet, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
 }
 
 async function trade(b: any, rec: { mint: string; pool: string }): Promise<Reply> {
@@ -78,6 +88,21 @@ async function trade(b: any, rec: { mint: string; pool: string }): Promise<Reply
   const tokens = BigInt(Math.round(Number(b.amount) * 1e6));
   if (tokens <= 0n) return { code: 400, body: { error: 'amount must be > 0' } };
   return { code: 200, body: await lp.swap(w, new PublicKey(rec.pool), b.side === 'sell' ? 'sell' : 'buy', tokens, `page: wallet ${b.wallet} ${b.side} ${b.amount} ${rec.mint.slice(0, 6)}`) };
+}
+
+/** AC-21 build: an unsigned swap for the user's wallet, simulated first. Never signs or sends. */
+async function build(b: any, rec: { mint: string; pool: string }): Promise<Reply> {
+  const owner = walletKey(b.owner); if (!owner) return { code: 400, body: { error: 'owner must be a wallet address' } };
+  if (b.side !== 'buy' && b.side !== 'sell') return { code: 400, body: { error: 'side must be buy or sell' } };
+  const tokens = BigInt(Math.round(Number(b.amount) * 1e6));
+  if (!(tokens > 0n)) return { code: 400, body: { error: 'amount must be > 0' } };
+  try { return { code: 200, body: await buildUserSwap(lp, relay, owner, new PublicKey(rec.pool), rec.mint, b.side, tokens) }; }
+  catch (e: any) {
+    if (e instanceof WalletTxRefusal) return { code: 400, body: { error: e.message } };
+    // hook gate (blocker #7): e.g. the pool has graduated, so there is no curve to trade on
+    if (e instanceof MintHookRefusal) return { code: 409, body: { error: `this token can't be traded on the curve: ${e.message}` } };
+    throw e;
+  }
 }
 
 async function body(req: http.IncomingMessage): Promise<any> { let d = ''; for await (const ch of req) d += ch; return d ? JSON.parse(d) : {}; }
@@ -95,11 +120,18 @@ http.createServer(async (req, res) => {
       cluster: c.name,
       launches: () => listLaunches(c.name),
       meta: listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: c.url, programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: deployer.publicKey.toBase58(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listing.map(l => ({ mint: l.mint, pool: l.pool, time: l.time })) }),
-      token: mint => tokenView(mint),
+      token: mint => tokenView(mint, walletKey(url.searchParams.get('owner'))),
       trade,
+      build,
     });
     if (routed) return send(res, routed.code, routed.body);
     if (url.pathname === '/api/wallets') { const o: any = {}; for (const [k, w] of Object.entries(wallets)) o[k] = { pubkey: w.publicKey.toBase58(), sol: (await c.connection.getBalance(w.publicKey)) / LAMPORTS_PER_SOL }; return send(res, 200, o); }
+    if (url.pathname === '/api/wallet/submit' && req.method === 'POST') {
+      const b = await body(req);
+      if (typeof b.tx !== 'string' || b.tx.length > 2000) return send(res, 400, { error: 'tx must be a base64 signed transaction' });
+      try { return send(res, 200, await submitSigned(c, relay, Buffer.from(b.tx, 'base64'))); }
+      catch (e: any) { if (e instanceof WalletTxRefusal) return send(res, 400, { error: e.message }); throw e; }
+    }
     if (url.pathname === '/api/create' && req.method === 'POST') {
       const b = await body(req);
       const name = String(b.name ?? '').slice(0, 32), symbol = String(b.symbol ?? '').toUpperCase().slice(0, 10);
