@@ -138,7 +138,7 @@ async function build(b: any, rec: { mint: string; pool: string }): Promise<Reply
       const slippageBps = parseSlippageBps(b.slippageBps);
       return { code: 200, body: await buildUserPoolSwap(lp, relay, owner, new PublicKey(rec.pool), await dammPoolOf(rec.mint), rec.mint, b.side, tokens, slippageBps) };
     }
-    return { code: 200, body: await buildUserSwap(lp, relay, owner, new PublicKey(rec.pool), rec.mint, b.side, tokens) };
+    return { code: 200, body: await buildUserSwap(lp, relay, owner, new PublicKey(rec.pool), rec.mint, b.side, tokens, parseSlippageBps(b.slippageBps)) };
   } catch (e: any) {
     if (e instanceof WalletTxRefusal) return { code: 400, body: { error: e.message } };
     // hook gate (blocker #7): curve after graduation, or the pool before graduation
@@ -163,7 +163,8 @@ http.createServer(async (req, res) => {
       launches: () => listLaunches(c.name),
       meta: listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: c.url, programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: deployer.publicKey.toBase58(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listing.map(l => ({ mint: l.mint, pool: l.pool, time: l.time })), studio: studio.status() }),
       token: mint => tokenView(mint, walletKey(url.searchParams.get('owner'))),
-      trade,
+      // server-signed test-wallet trades: open on local, studio-only elsewhere (gate before hosting; flagged in the studio PR)
+      trade: (b, rec) => { if (c.name !== 'local') { const who = studioCheck(req); if ('code' in who) return Promise.resolve(who as Reply); } return trade(b, rec); },
       build,
       image: mint => { const im = loadImage(c.name, mint); return im ? { code: 200, body: im.data, type: im.type } : { code: 404, body: { error: 'no image' } }; },
       metadata: (mint, b) => { const who = studioCheck(req); if ('code' in who) return who; try { return { code: 200, body: publicMetadata(saveMetadata(c.name, mint, validateMetadata(b ?? {})), mint) }; } catch (e: any) { if (e instanceof MetadataRefusal) return { code: 400, body: { error: e.message } }; throw e; } },

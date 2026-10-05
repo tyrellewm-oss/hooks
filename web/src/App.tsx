@@ -71,11 +71,13 @@ export function App() {
             <input placeholder="Search name, ticker or mint" value={q} onChange={(e) => { setQuery(e.target.value); if (path !== '/') navigate('/'); }} />
           </label>
           <div className="actions">
-            <span className="badge hide-sm">{CONTENT.devnet_label}</span>
+            <span className="badge">{CONTENT.devnet_label}</span>
             <button className="primary hide-sm" onClick={() => navigate('/create')}>Launch</button>
             <WalletButton />
           </div>
         </header>
+        {/* AC-23: the banner string from page copy shows on every page (slim, under the top bar) */}
+        <div className="banner">{CONTENT.banner}</div>
         <main><Guard what="this page">{page}</Guard></main>
         <footer>{m ? <Guard what="the footer">{fill(CONTENT.footer, pageVars(m, null))}</Guard> : CONTENT.banner}</footer>
       </div>

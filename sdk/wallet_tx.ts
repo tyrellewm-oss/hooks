@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { ComputeBudgetProgram, PublicKey, SendTransactionError, Transaction, VersionedTransaction } from '@solana/web3.js';
-import { SwapMode } from '@meteora-ag/dynamic-bonding-curve-sdk';
+import { SwapMode, getCurrentPoint as dbcCurrentPoint } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { CpAmm, getCurrentPoint, SwapMode as CpSwapMode } from '@meteora-ag/cp-amm-sdk';
 import { NATIVE_MINT, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { capHitDetails, hookCodeFromLogs, hookErrorFromLogs, parseRestrictionsLifted, TOKEN_2022 } from './hook.js';
@@ -91,22 +91,46 @@ export function poolSides(pool: { tokenAMint: PublicKey; tokenBMint: PublicKey }
 export interface SwapBuilder { c: Cluster; dbc: any; hook: any; requestedHookProgram?: PublicKey }
 
 /** Build the unsigned swap for `owner`, simulate it, and register it with the relay. Same instruction set as
- *  Launchpad.swap(): buy = ExactOut `tokens` bounded by the wallet's SOL; sell = ExactIn `tokens`. */
-export async function buildUserSwap(lp: SwapBuilder, relay: WalletRelay, owner: PublicKey, pool: PublicKey, mint: string, side: 'buy' | 'sell', tokens: bigint): Promise<BuiltSwap> {
+ *  Launchpad.swap(): buy = ExactOut `tokens` bounded by the wallet's SOL; sell = ExactIn `tokens` with a minimum-out
+ *  limit of the quote minus `slippageBps` (a sell never rides with minimumAmountOut 0: the #27 review follow-up). */
+export async function buildUserSwap(lp: SwapBuilder, relay: WalletRelay, owner: PublicKey, pool: PublicKey, mint: string, side: 'buy' | 'sell', tokens: bigint, slippageBps = 100): Promise<BuiltSwap> {
   if (tokens <= 0n) throw new WalletTxRefusal('amount must be > 0');
+  parseSlippageBps(slippageBps);
   await assertPoolMintHook(lp as any, pool, 'pre', { wallet: owner.toBase58() });   // hook gate; blocker #7
   const conn = lp.c.connection;
   let params: any;
+  let quote: BuiltSwap['quote'];
   if (side === 'buy') {
     const bal = BigInt(await conn.getBalance(owner, 'confirmed'));
     let maxSolIn = bal > SOL_RESERVE ? bal - SOL_RESERVE : 1n; if (maxSolIn > MAX_SOL_IN) maxSolIn = MAX_SOL_IN;
     params = { owner, pool, swapBaseForQuote: false, referralTokenAccount: null, swapMode: SwapMode.ExactOut, amountOut: new BN(tokens.toString()), maximumAmountIn: new BN(maxSolIn.toString()) };
   } else {
-    params = { owner, pool, swapBaseForQuote: true, referralTokenAccount: null, swapMode: SwapMode.ExactIn, amountIn: new BN(tokens.toString()), minimumAmountOut: new BN(0) };
+    const minOut = await quoteCurveSellMinOut(lp, pool, tokens, slippageBps);
+    params = { owner, pool, swapBaseForQuote: true, referralTokenAccount: null, swapMode: SwapMode.ExactIn, amountIn: new BN(tokens.toString()), minimumAmountOut: new BN(minOut.limit.toString()) };
+    quote = { expectedLamports: minOut.expected.toString(), limitLamports: minOut.limit.toString(), slippageBps, priceImpactPct: '' };
   }
   const tx: Transaction = await lp.dbc.pool.swap2WithTransferHook(params);
   tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
-  return finishBuild(lp.c, relay, tx, owner, mint, side, tokens, { venue: 'curve' });
+  return finishBuild(lp.c, relay, tx, owner, mint, side, tokens, { venue: 'curve', quote });
+}
+
+/** Quote a curve (DBC) sell of `tokens` and return the expected SOL out and the slippage-bounded minimum. Exported for tests. */
+export async function quoteCurveSellMinOut(lp: SwapBuilder, pool: PublicKey, tokens: bigint, slippageBps: number): Promise<{ expected: bigint; limit: bigint }> {
+  let q: any;
+  try {
+    const vp = await lp.dbc.state.getPool(pool);
+    if (!vp) throw new Error('no curve pool state');
+    const config = await lp.dbc.state.getPoolConfig(vp.config);
+    const currentPoint = await dbcCurrentPoint(lp.c.connection, config.activationType);
+    q = lp.dbc.pool.swapQuote2({
+      virtualPool: vp, config, swapBaseForQuote: true, hasReferral: false, eligibleForFirstSwapWithMinFee: false,
+      currentPoint, slippageBps, swapMode: SwapMode.ExactIn, amountIn: new BN(tokens.toString()),
+    });
+  } catch (e: any) { throw new WalletTxRefusal(`refusing: cannot quote this sell (${e.message})`); }
+  const limit = BigInt((q.minimumAmountOut ?? 0).toString());
+  if (limit <= 0n) throw new WalletTxRefusal('refusing: the quote gives no usable minimum for this amount');
+  const expected = BigInt((q.outputAmount ?? q.minimumAmountOut).toString());
+  return { expected, limit };
 }
 
 /** After graduation (AC-21, same relay rules): swap on the token's DAMM v2 pool. `pool` comes from the server (derived
