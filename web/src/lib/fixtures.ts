@@ -3,7 +3,7 @@
 // The cap rule itself is the real one: buys over the cap fail with WalletCapExceeded via sdk/capMath.ts.
 import { effectiveCap, nextChange } from '../../../sdk/capMath';
 import { BALANCED } from '../../../sdk/schedules';
-import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent, BuiltSwap, FlywheelReply, PublicKeeper } from './types';
+import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent, BuiltSwap, FlywheelReply, PublicKeeper, TradesReply, IndexedTrade, Candle } from './types';
 import type { Api } from './api';
 import { ApiError } from './errors';
 
@@ -98,6 +98,37 @@ function exec(s: Sim, wallet: string, side: Side, amount: string, dry: boolean):
   return { ok: true, sig, link: '' };
 }
 
+/** Simulated trade history (fixture mode only): a random walk from launch, plus one cap-blocked buy. */
+const TRADES = new Map<string, IndexedTrade[]>();
+function fixtureTrades(s: Sim): IndexedTrade[] {
+  let t = TRADES.get(s.mint);
+  if (t) return t;
+  const start = Math.trunc((T0 - s.launchedMsAgo) / 1000), end = Math.trunc(T0 / 1000);
+  const n = Math.min(80, Math.max(6, Math.trunc((end - start) / 45)));
+  let seed = s.mint.length * 7919; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  let price = 2.8e-10; t = [];
+  for (let i = 0; i < n; i++) {
+    const time = start + Math.trunc(((i + 1) / (n + 1)) * (end - start));
+    const buy = rnd() < 0.68; price *= buy ? 1 + rnd() * 0.06 : 1 - rnd() * 0.04;
+    const tokens = BigInt(Math.trunc(200_000 + rnd() * 6_000_000)) * 1_000_000n;
+    t.push({ sig: fakeSig(), slot: SLOT0 + i, time, pool: s.pool, venue: s.graduated && i > n * 0.7 ? 'pool' : 'curve', side: buy ? 'buy' : 'sell', trader: fakeKey(`FixtureTrader${i % 7}`),
+      baseRaw: tokens.toString(), quoteLamports: String(Math.trunc((Number(tokens) / 1e6) * price * 1e9)), price });
+    if (i === 2) t.push({ sig: fakeSig(), slot: SLOT0 + i, time: time + 1, pool: s.pool, venue: 'curve', side: 'blocked', trader: fakeKey('FixtureTrader1'), baseRaw: '0', quoteLamports: '0', price: null, error: 'WalletCapExceeded' });
+  }
+  t.reverse(); TRADES.set(s.mint, t);
+  return t;
+}
+function candlesOf(trades: IndexedTrade[], iv: number): Candle[] {
+  const out: Candle[] = [];
+  for (const x of [...trades].reverse()) {
+    if (x.price === null || x.time === null) continue;
+    const t = Math.trunc(x.time / iv) * iv; const last = out[out.length - 1];
+    if (last && last.t === t) { last.h = Math.max(last.h, x.price); last.l = Math.min(last.l, x.price); last.c = x.price; last.n++; }
+    else out.push({ t, o: x.price, h: x.price, l: x.price, c: x.price, n: 1 });
+  }
+  return out;
+}
+
 /** Simulated keeper log in the shape of app/flywheel_public.ts (fixture mode only). */
 function fixtureKeeper(s: Sim, state: string, nBurns: number): PublicKeeper {
   const burns = Array.from({ length: nBurns }, (_, i) => ({ at: new Date(T0 - (i + 1) * 5 * 60_000).toISOString(), tokens: (190_000 - i * 1_300).toFixed(6), sol: '0.001000000', sig: fakeSig(), link: '' }));
@@ -145,6 +176,12 @@ export const fixtureApi: Api = {
     if (!p) throw new ApiError('refusing: this transaction was not built by this page, was changed after it was built, or has expired. Build it again.', 400);
     PENDING.delete(hex);
     return exec(find(p.mint), p.owner, p.side, p.amount, false);
+  },
+  async trades(mint, interval): Promise<TradesReply> {
+    await latency();
+    const s = find(mint);
+    const trades = fixtureTrades(s);
+    return { indexed: true, updatedAt: new Date().toISOString(), decimals: DECIMALS, interval, trades: trades.slice(0, 100), candles: candlesOf(trades, interval) };
   },
   async flywheel(): Promise<FlywheelReply> {
     await latency();

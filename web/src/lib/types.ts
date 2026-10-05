@@ -133,6 +133,11 @@ export interface PublicKeeper {
 }
 export interface FlywheelReply { cluster: string; keepers: PublicKeeper[]; skipped: string[] }
 
+/** GET /api/token/:mint/trades (sdk/indexer.ts via app/server.ts) */
+export interface IndexedTrade { sig: string; slot: number; time: number | null; pool: string; venue: 'curve' | 'pool'; side: 'buy' | 'sell' | 'blocked'; trader: string; baseRaw: string; quoteLamports: string; price: number | null; error?: string }
+export interface Candle { t: number; o: number; h: number; l: number; c: number; n: number }
+export interface TradesReply { indexed: boolean; updatedAt: string | null; decimals: number | null; interval: number; trades: IndexedTrade[]; candles: Candle[] }
+
 export interface CreateRequest {
   name: string;
   symbol: string;

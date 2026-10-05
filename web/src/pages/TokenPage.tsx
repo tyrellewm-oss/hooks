@@ -10,6 +10,7 @@ import { TradePanel } from '../components/TradePanel';
 import { RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
 import { Addr, CurveProgress, Guard, Link, PhasePill, PhaseStepper, Skeleton, Stat } from '../components/bits';
 import { TokenArt } from '../components/TokenArt';
+import { PriceCard, TradesFeed } from '../components/Market';
 import { IconBack } from '../components/Icons';
 
 const POLL_MS = 6000;
@@ -103,6 +104,8 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
               : <p className="faint">No cap config found for this mint.</p>}
           </div>
 
+          <Guard what="the price chart"><PriceCard mint={mint} /></Guard>
+          <Guard what="the trades feed"><TradesFeed mint={mint} meta={meta} decimals={st.decimals ?? 6} /></Guard>
           <Guard what="the rules and risks"><RulesAndRisks vars={vars!} /></Guard>
           <SwitchHistory view={view} />
           <TokenDetails view={view} />

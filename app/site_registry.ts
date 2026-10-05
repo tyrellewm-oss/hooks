@@ -26,6 +26,8 @@ export interface SiteDeps<R extends SiteRecord = SiteRecord> {
   build?(body: any, rec: R): Promise<Reply>;
   /** transparency page: the keeper's public logs, filtered to the registry read for this request */
   flywheel?(registered: ReadonlySet<string>): unknown | Promise<unknown>;
+  /** price chart and trades feed: the indexer's file for this mint (read-only, no chain call) */
+  trades?(mint: string): unknown | Promise<unknown>;
 }
 
 const NOT_FOUND: Reply = { code: 404, body: { error: 'unknown token' } };
@@ -46,6 +48,9 @@ export async function siteRoute<R extends SiteRecord>(pathname: string, method: 
     try { mint = decodeURIComponent(pathname.split('/')[3] ?? ''); } catch { return NOT_FOUND; }
     if (!reg.has(mint)) return NOT_FOUND;
     if (!d.launches().find(l => l.mint === mint)) return NOT_FOUND;   // registered but no local launch record: no chain call
+    const sub = pathname.split('/').slice(4).join('/');   // /api/token/<mint>/<sub>
+    if (sub === 'trades' && method === 'GET' && d.trades) return { code: 200, body: await d.trades(mint) };
+    if (sub) return NOT_FOUND;
     return { code: 200, body: await d.token(mint) };
   }
   const b = await readBody();

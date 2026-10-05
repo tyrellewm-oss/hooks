@@ -20,6 +20,7 @@ import { WalletRelay, WalletTxRefusal, buildUserSwap, submitSigned } from '../sd
 import { MintHookRefusal } from '../sdk/mint_hook.js';
 import { staticReply, uiModeFromArgs, assertUiBuilt } from './static.js';
 import { loadPublicKeepers } from './flywheel_public.js';
+import { readIndex, candles } from '../sdk/indexer.js';
 
 const argv = process.argv.slice(2);
 const PORT = Number(process.env.PORT ?? 5175);
@@ -93,6 +94,15 @@ async function trade(b: any, rec: { mint: string; pool: string }): Promise<Reply
   return { code: 200, body: await lp.swap(w, new PublicKey(rec.pool), b.side === 'sell' ? 'sell' : 'buy', tokens, `page: wallet ${b.wallet} ${b.side} ${b.amount} ${rec.mint.slice(0, 6)}`) };
 }
 
+/** Price chart + trades feed from the indexer's file (scripts/indexer.ts keeps it fresh). No chain call. */
+const INTERVALS = new Set([60, 300, 900, 3600]);
+function tradesView(mint: string, interval: number) {
+  const ix = readIndex(c.name, mint);
+  const iv = INTERVALS.has(interval) ? interval : 300;
+  if (!ix) return { indexed: false, updatedAt: null, decimals: null, interval: iv, trades: [], candles: [] };
+  return { indexed: true, updatedAt: ix.updatedAt, decimals: ix.decimals, interval: iv, trades: ix.trades.slice(0, 100), candles: candles(ix.trades, iv).slice(-300) };
+}
+
 /** AC-21 build: an unsigned swap for the user's wallet, simulated first. Never signs or sends. */
 async function build(b: any, rec: { mint: string; pool: string }): Promise<Reply> {
   const owner = walletKey(b.owner); if (!owner) return { code: 400, body: { error: 'owner must be a wallet address' } };
@@ -125,6 +135,7 @@ http.createServer(async (req, res) => {
       token: mint => tokenView(mint, walletKey(url.searchParams.get('owner'))),
       trade,
       build,
+      trades: mint => tradesView(mint, Number(url.searchParams.get('interval') ?? 300)),
       flywheel: registered => ({ cluster: c.label, ...loadPublicKeepers(c.name, registered) }),
     });
     if (routed) return send(res, routed.code, routed.body);
