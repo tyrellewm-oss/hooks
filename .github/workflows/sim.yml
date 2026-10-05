@@ -12,6 +12,19 @@ permissions:
   contents: read
 
 jobs:
+  sim:     simulated launches + trades against the DEPLOYED devnet DBC + Hookd hook bytecode (read-only RPC fetch)
+#   program: builds the hook program from source and runs the full test suite (litesvm tests included)
+# Devnet/local only: no keys, no secrets, nothing is sent to any cluster. Runs on feature-branch pushes and by hand.
+name: sim
+on:
+  push:
+    branches: ['feat/**', 'codex/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
   litesvm-probe:
     # which runner/node combination litesvm's Linux build works on (it aborts with std::bad_alloc on some)
     strategy:
@@ -39,10 +52,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: litesvm setup probe
+        run: node --import tsx scripts/sim/probe.ts
       - name: Simulated launch (baseline, deployed devnet programs)
         run: node --import tsx scripts/sim/verify_baseline.ts
 
   program:
+    needs: sim
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
