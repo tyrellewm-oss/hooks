@@ -141,7 +141,7 @@ footer { overflow-wrap: anywhere; color: var(--text-4); font-size: 11.5px; paddi
 .stack > * { min-width: 0; }
 .card-head { display: flex; align-items: center; gap: 4px 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .card-head .right { margin-left: auto; }
-.grid-token { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(330px, 1fr); gap: 16px; align-items: start; }
+.grid-token { display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, 380px); gap: 16px; align-items: start; }
 @media (max-width: 1080px) { .grid-token { grid-template-columns: minmax(0, 1fr); } .sticky { position: static !important; } }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .row { display: flex; align-items: center; gap: 8px; }
@@ -323,6 +323,19 @@ details.dd[open] .dd-chev { transform: rotate(-135deg); margin-top: 3px; }
 .signer-line { display: block; font-size: 12px; color: var(--text-3); margin-top: 6px; line-height: 1.5; }
 .signer-line.warn { color: var(--amber-text); }
 .rules-line { padding: 0 6px; line-height: 1.6; }
+
+/* ---------- GMGN-style token page */
+.gm-head { display: flex; align-items: center; gap: 18px 28px; flex-wrap: wrap; padding: 14px 18px; }
+.gm-head .thumb { width: 52px; height: 52px; border-radius: 13px; overflow: hidden; flex: none; }
+.gm-head .thumb svg, .gm-head .thumb img { width: 100%; height: 100%; display: block; }
+.gm-stats { display: flex; gap: 26px; align-items: flex-end; flex-wrap: wrap; margin-left: auto; }
+.gm-stat { min-width: 0; }
+.gm-stat .big-num { font-size: 22px; }
+.clamp-1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 560px; }
+.feed-scroll { max-height: 480px; overflow: auto; }
+.feed-scroll thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }
+.sticky .phases { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 760px) { .gm-stats { margin-left: 0; width: 100%; justify-content: space-between; gap: 14px; } .clamp-1 { max-width: 100%; } }
 .skeleton { background: var(--panel-2); border-radius: var(--r-inner); min-height: 14px; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.5; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } .tcard, .sidebar { transition: none; } }

@@ -25,10 +25,10 @@ export function RulesAndRisks({ vars }: { vars: Record<string, string> }) {
   );
 }
 
-/** Collapsed-by-default card: a summary row that opens into the full content (switch history, on-chain details). */
-function Dropdown({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+/** Collapsible card: a summary row that opens into the full content (cap ramp, switch history, on-chain details). */
+export function Dropdown({ title, aside, defaultOpen, children }: { title: string; aside?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
   return (
-    <details className="card dd">
+    <details className="card dd" open={defaultOpen}>
       <summary>
         <h2>{title}</h2>
         <span className="right row" style={{ gap: 8 }}>{aside}<span className="dd-chev" aria-hidden="true" /></span>

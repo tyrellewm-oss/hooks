@@ -80,7 +80,7 @@ export function TradesFeed({ mint, meta, decimals = 6 }: { mint: string; meta: M
   const live = useTrades(mint, 300);
   const { address } = useWallet();
   const [all, setAll] = useState(false);
-  const rows: IndexedTrade[] = useMemo(() => (live.data?.trades ?? []).slice(0, all ? 100 : 12), [live.data, all]);
+  const rows: IndexedTrade[] = useMemo(() => (live.data?.trades ?? []).slice(0, all ? 500 : 100), [live.data, all]);
   const tok = (raw: string) => (Number(raw) / 10 ** decimals).toLocaleString('en-US', { maximumFractionDigits: 0 });
   return (
     <div className="card">
@@ -88,7 +88,7 @@ export function TradesFeed({ mint, meta, decimals = 6 }: { mint: string; meta: M
       {!live.data ? <div className="skeleton" style={{ height: 120 }} />
         : rows.length === 0 ? <p className="small faint" style={{ margin: 0 }}>{live.data.indexed ? 'No trades yet.' : 'Not indexed yet.'}</p>
         : (
-          <div style={{ overflowX: 'auto' }}>
+          <div className="feed-scroll">
             <table className="small">
               <thead><tr><th>Age</th><th>Type</th><th>Wallet</th><th style={{ textAlign: 'right' }}>Tokens</th><th style={{ textAlign: 'right' }}>SOL</th><th>Where</th><th>Tx</th></tr></thead>
               <tbody>{rows.map((t) => {
@@ -106,7 +106,7 @@ export function TradesFeed({ mint, meta, decimals = 6 }: { mint: string; meta: M
                 );
               })}</tbody>
             </table>
-            {(live.data.trades.length > 12) && <button className="ghost small" onClick={() => setAll((v) => !v)}>{all ? 'Show fewer' : `Show ${Math.min(100, live.data.trades.length)}`}</button>}
+            {(live.data.trades.length > 100) && <button className="ghost small" onClick={() => setAll((v) => !v)}>{all ? 'Show fewer' : `Show ${Math.min(500, live.data.trades.length)}`}</button>}
           </div>
         )}
     </div>
