@@ -1,6 +1,6 @@
 # Linux verification for hook work (litesvm has no Windows build; the program needs the Solana SBF toolchain).
-#   sim:     simulated launches + trades against the DEPLOYED devnet DBC + Hookd hook bytecode (read-only RPC fetch)
-#   program: builds the hook program from source and runs the full test suite (litesvm tests included)
+#   sim     - simulated launches + trades against the DEPLOYED devnet DBC + Hookd hook bytecode (read-only RPC fetch)
+#   program - builds the hook program from source, runs the full test suite and the rule simulations on that build
 # Devnet/local only: no keys, no secrets, nothing is sent to any cluster. Runs on feature-branch pushes and by hand.
 name: sim
 on:
@@ -12,36 +12,6 @@ permissions:
   contents: read
 
 jobs:
-  sim:     simulated launches + trades against the DEPLOYED devnet DBC + Hookd hook bytecode (read-only RPC fetch)
-#   program: builds the hook program from source and runs the full test suite (litesvm tests included)
-# Devnet/local only: no keys, no secrets, nothing is sent to any cluster. Runs on feature-branch pushes and by hand.
-name: sim
-on:
-  push:
-    branches: ['feat/**', 'codex/**']
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  litesvm-probe:
-    # which runner/node combination litesvm's Linux build works on (it aborts with std::bad_alloc on some)
-    strategy:
-      fail-fast: false
-      matrix: { os: [ubuntu-22.04, ubuntu-24.04], node: [20, 22] }
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 8
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: { version: 10 }
-      - uses: actions/setup-node@v4
-        with: { node-version: '${{ matrix.node }}', cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: node -e "const {LiteSVM}=require('litesvm'); const s=new LiteSVM(); console.log('litesvm ok, slot', s.getClock().slot)"
-      - run: ldd --version | head -1; free -m; node -p "process.versions.node + ' ' + process.arch"
-
   sim:
     runs-on: ubuntu-latest
     timeout-minutes: 20
