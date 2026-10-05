@@ -1,0 +1,14 @@
+/* Smooth open AND close for every native <details> dropdown on the site (hooks page, launch tool, ...).
+   Animates the details content box; browsers without ::details-content / interpolate-size just open instantly. */
+:root { interpolate-size: allow-keywords; }
+details::details-content {
+  block-size: 0;
+  overflow: clip;
+  opacity: 0;
+  transition: block-size 0.3s ease, opacity 0.22s ease, content-visibility 0.3s allow-discrete;
+}
+details[open]::details-content { block-size: auto; opacity: 1; }
+details > summary .dd-chev { transition: transform 0.3s ease, margin-top 0.3s ease; }
+@media (prefers-reduced-motion: reduce) {
+  details::details-content, details > summary .dd-chev { transition: none; }
+}
