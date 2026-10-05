@@ -10,7 +10,7 @@ import { DEFAULT_LAUNCH_FEES } from '../../sdk/launch.js';
 
 const log = (...a: unknown[]) => console.log('[baseline]', ...a);
 const sim = await simEnv();
-const keys = hookAdmin(sim);
+log('sim ready'); const keys = hookAdmin(sim); log('hook global ready');
 const o: any = { name: 'Sim Baseline', symbol: 'SIMB', steps: BALANCED.steps, uncappedAfter: BALANCED.uncappedAfter, migrationQuoteThresholdSol: 50 };
 const l = await launchToken(sim, keys, o);
 log('launched', l.mint.toBase58(), 'at slot', l.launchSlot);

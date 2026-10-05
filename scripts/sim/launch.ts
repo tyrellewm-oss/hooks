@@ -21,7 +21,7 @@ export function hookAdmin(sim: Sim) {
   const g = sim.env.hook.globalPda();
   const v1 = sim.env.accountData(g)!;
   if (v1.length !== 42) throw new Error(`unexpected Global length ${v1.length}`);
-  sim.env.setAccountData(g, Buffer.concat([v1, launch.publicKey.toBuffer()]));
+  console.log('[sim] writing Global v2'); sim.env.setAccountData(g, Buffer.concat([v1, launch.publicKey.toBuffer()])); console.log('[sim] Global v2 written');
   return { admin, launch };
 }
 
@@ -34,12 +34,12 @@ export async function launchToken(sim: Sim, keys: { admin: Keypair; launch: Keyp
     config: configKp.publicKey, feeClaimer: payer.publicKey, leftoverReceiver: payer.publicKey, payer: payer.publicKey,
     quoteMint: NATIVE_MINT, transferHookProgram: HOOK_PROGRAM, ...configOverride(curveConfigParams(o)),
   } as any);
-  const r1 = sim.send(cfgTx, [payer, configKp]);
+  console.log('[sim] sending config tx'); const r1 = sim.send(cfgTx, [payer, configKp]); console.log('[sim] config tx ok=' + r1.ok);
   if (!r1.ok) throw new Error('create config failed:\n' + r1.logs.slice(-12).join('\n'));
   const auth = { upgradeAuthority: sim.env.upgradeAuth.publicKey.toBase58(), liftAuthority: keys.admin.publicKey.toBase58(), launchAuthority: keys.launch.publicKey.toBase58() };
   const poolTx = await buildCreatePoolTx({ dbc: sim.dbc, hook: sim.env.hook }, o, { payer: payer.publicKey, config: configKp.publicKey, mint: mintKp.publicKey, launchAuthority: keys.launch.publicKey }, auth);
   const launchSlot = sim.slot;
-  const r2 = sim.send(poolTx, [payer, mintKp, keys.launch]);
+  console.log('[sim] sending pool tx'); const r2 = sim.send(poolTx, [payer, mintKp, keys.launch]); console.log('[sim] pool tx ok=' + r2.ok);
   if (!r2.ok) throw new Error('create pool failed:\n' + r2.logs.slice(-15).join('\n'));
   return { mint: mintKp.publicKey, config: configKp.publicKey, pool: deriveDbcPoolAddress(NATIVE_MINT, mintKp.publicKey, configKp.publicKey), launchSlot };
 }

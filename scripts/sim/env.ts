@@ -27,7 +27,9 @@ export async function simEnv() {
   // wrapped SOL's mint (the curve's quote token) is not in a fresh litesvm: write the canonical native mint
   const nm = Buffer.alloc(MINT_SIZE);
   MintLayout.encode({ mintAuthorityOption: 0, mintAuthority: PublicKey.default, supply: 0n, decimals: 9, isInitialized: true, freezeAuthorityOption: 0, freezeAuthority: PublicKey.default }, nm);
-  env.setAccountData(NATIVE_MINT, nm, TOKEN_PROGRAM_ID, 1_000_000_000n);
+  console.log('[sim] writing native mint', nm.length, 'bytes');
+  env.svm.setAccount(NATIVE_MINT, { lamports: 1_000_000_000, data: new Uint8Array(nm), owner: TOKEN_PROGRAM_ID, executable: false, rentEpoch: 0 } as any);
+  console.log('[sim] native mint written');
   return new Sim(env);
 }
 
