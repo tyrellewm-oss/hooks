@@ -72,7 +72,7 @@ export class Env {
   /** Overwrite an account (tests only: load recorded devnet bytes, or forge a state the program must refuse). */
   setAccountData(k: PublicKey, data: Buffer, owner: PublicKey = this.hook.programId, lamports?: bigint) {
     const rent = this.svm.minimumBalanceForRentExemption(BigInt(data.length));
-    this.svm.setAccount(k, { lamports: Number(lamports ?? rent), data, owner, executable: false });
+    this.svm.setAccount(k, { lamports: Number(lamports ?? rent), data, owner, executable: false, rentEpoch: 0 } as any);   // rentEpoch: litesvm's Linux build aborts (std::bad_alloc) without it
   }
 
   /** Token-2022 mint with TransferHook -> our program, full supply minted to `holderOwner`'s ATA, mint authority then set to None. */
