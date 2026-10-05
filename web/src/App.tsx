@@ -45,10 +45,10 @@ export function App() {
         <Link to="/" className="logo"><span className="logo-mark"><LogoMark /></span>Trenches</Link>
         <nav className="side-nav" aria-label="Main">
           {nav('/', 'Tokens', <IconGrid />)}
+          {nav('/create', 'Studio launch', <IconPlus />)}
           {nav('/hooks', 'Hooks', <IconHook />)}
           {nav('/how-it-works', 'How the cap works', <IconRamp />)}
           {nav('/transparency', 'Transparency', <IconEye />)}
-          {nav('/create', 'Studio launch', <IconPlus />)}
         </nav>
         <div className="side-foot">
           <div className="side-card" title={m ? `program ${m.programId}` : undefined}>
