@@ -13,6 +13,8 @@ export interface Meta {
   liftAuthority: string;
   wallets: Record<string, string>;
   launches: { mint: string; pool: string; time: string }[];
+  /** studio sign-in (sdk/studio_auth.ts): required = sign in to create or edit details; configured = an allowlist exists */
+  studio?: { required: boolean; configured: boolean };
   /** the server also sends page_content.json; the UI imports it directly instead */
   content?: unknown;
 }

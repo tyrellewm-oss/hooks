@@ -11,6 +11,7 @@ import { RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclo
 import { Addr, CurveProgress, Guard, Link, PhasePill, PhaseStepper, Skeleton, Stat } from '../components/bits';
 import { TokenImage, TokenLinks, DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
 import { PriceCard, TradesFeed } from '../components/Market';
+import { StudioGate } from '../components/StudioGate';
 import { IconBack } from '../components/Icons';
 
 const POLL_MS = 6000;
@@ -96,7 +97,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
       ) : (
         <div className="row small faint" style={{ justifyContent: 'flex-end', marginTop: 8 }}>No image or description yet. <button className="ghost small" onClick={() => setEditing(true)}>Add details (studio)</button></div>
       )}
-      {editing && <EditDetails mint={st.mint} ticker={view.launch?.symbol} metadata={view.metadata ?? null} onClose={() => setEditing(false)} onSaved={live.refresh} />}
+      {editing && <EditDetails meta={meta} mint={st.mint} ticker={view.launch?.symbol} metadata={view.metadata ?? null} onClose={() => setEditing(false)} onSaved={live.refresh} />}
 
       <PhaseStepper phase={phase} />
 
@@ -135,7 +136,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
 }
 
 /** Studio: edit a token's image, description and links (POST /api/token/:mint/metadata, registry-gated). */
-function EditDetails({ mint, ticker, metadata, onClose, onSaved }: { mint: string; ticker?: string; metadata: import('../lib/types').TokenMetadata | null; onClose: () => void; onSaved: () => Promise<void> }) {
+function EditDetails({ meta, mint, ticker, metadata, onClose, onSaved }: { meta: Meta; mint: string; ticker?: string; metadata: import('../lib/types').TokenMetadata | null; onClose: () => void; onSaved: () => Promise<void> }) {
   const [d, setD] = useState<DetailsState>(() => emptyDetails(metadata));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -152,12 +153,14 @@ function EditDetails({ mint, ticker, metadata, onClose, onSaved }: { mint: strin
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="ed-title">
         <div className="spread" style={{ marginBottom: 12 }}><h1 id="ed-title" style={{ fontSize: 18 }}>Token details</h1><button className="ghost" onClick={onClose} aria-label="Close">✕</button></div>
         <p className="small faint">Studio tool. Shown on the token card and page. Descriptions follow the same wording rules as the site.</p>
+        <StudioGate meta={meta}>
         <DetailsForm value={d} onChange={setD} currentImage={metadata?.image} mint={mint} ticker={ticker} />
         {(local || err) && <div className="notice red small" role="alert" style={{ marginBottom: 12 }}>{local ?? err}</div>}
         <div className="row" style={{ justifyContent: 'flex-end' }}>
           <button className="ghost" onClick={onClose}>Cancel</button>
           <button className="primary" disabled={busy || !!local} onClick={save}>{busy ? 'Saving…' : 'Save details'}</button>
         </div>
+        </StudioGate>
       </div>
     </div>
   );

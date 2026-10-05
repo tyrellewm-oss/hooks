@@ -86,6 +86,7 @@ Environment variables (names only; all optional):
 | `REPLAY_FIXTURES_DIR` | `scripts/replay_report.ts` | Research replay fixtures directory |
 | `CI_SKIP_CARGO`, `CI_PROGRAM_HOST`, `PROPTEST_CASES` | `scripts/ci.sh`, `crates/cap-math` | CI switches (skip cargo tests / run program host tests / proptest case count) |
 | `CLONE_URL` | `scripts/local_validator.sh` | devnet RPC to clone Meteora programs from |
+| `STUDIO_WALLETS` | `app/server.ts`, `sdk/studio_auth.ts` | comma-separated wallet addresses allowed into the studio (create a launch, edit token details); they sign in by signing a challenge message. Unset: studio **closed** on devnet, open on a local validator. A malformed entry stops the server at start |
 | `FW_JUPITER_API_KEY` | `sdk/flywheel/price_source.ts` | optional Jupiter Price API key for the keeper's independent price check; sent only as the `x-api-key` header and redacted everywhere. Unset: keyless |
 
 ## Tests
@@ -218,7 +219,7 @@ pnpm dev                     # new UI against the real backend (proxies /api)  -
 | Trade indexer | `node --import tsx scripts/indexer.ts loop --cluster devnet --every 30` | `sdk/indexer.ts`, read-only RPC, writes `.index/<cluster>/` (gitignored). Amounts from the pool side; cap-hit failures kept as blocked rows. `GET /api/token/:mint/trades` feeds the price chart and trades feed |
 | Token details | launch form, or "Edit details" on the token page (`POST /api/token/:mint/metadata`) | `sdk/metadata.ts`: image (PNG/JPEG/WebP/GIF by file bytes, 512 KB), description (280 chars, site forbidden words refused), https links (X on x.com/twitter.com, Telegram on t.me). Stored in `metadata/<cluster>/` (gitignored, like `launches/`). The on-chain URI stays the devnet placeholder until there is a public host |
 
-All `/api/token/<mint>/...` routes go through `app/site_registry.ts`: registry mints with a local launch record only. The studio edit and create routes are unauthenticated, which is acceptable only because the server binds 127.0.0.1; they need auth before any hosting.
+All `/api/token/<mint>/...` routes go through `app/site_registry.ts`: registry mints with a local launch record only. The studio routes (`/api/create`, `POST /api/token/<mint>/metadata`) need a studio sign-in (`STUDIO_WALLETS`, `sdk/studio_auth.ts`). Still unauthenticated: `/api/trade` with the server's throwaway test wallets (devnet demo); gate or remove it before any hosting.
 
 ## Admin powers (disclosed)
 - **Program upgrade authority:** a throwaway key on devnet. It can replace the program. This is the largest power, and mainnet would need a multisig plus timelock (**out of scope**).
