@@ -304,6 +304,25 @@ ul.rules li b { color: var(--text); font-weight: 600; }
 .ramp .fee-lbl { fill: var(--amber-text); }
 
 details > summary::-webkit-details-marker { display: none; }
+
+/* ---------- token page tabs + dropdown cards */
+.page-tabs { background: transparent; border: 0; padding: 0; gap: 6px; }
+.page-tabs button { font-size: 14px; font-weight: 500; padding: 7px 16px; border: 1px solid transparent; color: var(--text-3); }
+.page-tabs button:hover:not(.on) { color: var(--text); background: var(--hover); }
+.page-tabs button.on { background: var(--card); color: var(--text); border-color: var(--card-border); }
+details.dd { padding: 0; }
+details.dd > summary { display: flex; align-items: center; gap: 10px; padding: 15px 20px; cursor: pointer; list-style: none; border-radius: var(--r-card); }
+details.dd > summary:hover { background: var(--hover); }
+details.dd[open] > summary { border-radius: var(--r-card) var(--r-card) 0 0; }
+details.dd > summary .right { margin-left: auto; }
+details.dd .dd-body { padding: 2px 20px 18px; }
+.dd-chev { width: 8px; height: 8px; border-right: 1.5px solid var(--text-3); border-bottom: 1.5px solid var(--text-3); transform: rotate(45deg); transition: transform 0.15s ease; flex: none; margin-top: -3px; }
+details.dd[open] .dd-chev { transform: rotate(-135deg); margin-top: 3px; }
+
+/* trade panel helper lines */
+.signer-line { display: block; font-size: 12px; color: var(--text-3); margin-top: 6px; line-height: 1.5; }
+.signer-line.warn { color: var(--amber-text); }
+.rules-line { padding: 0 6px; line-height: 1.6; }
 .skeleton { background: var(--panel-2); border-radius: var(--r-inner); min-height: 14px; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.5; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } .tcard, .sidebar { transition: none; } }

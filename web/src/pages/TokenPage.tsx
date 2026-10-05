@@ -22,6 +22,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
   const now = useNow(1000);
   const view = live.data;
   const [editing, setEditing] = useState(false);
+  const [tab, setTab] = useState<'overview' | 'rules'>('overview');
   const vars = useMemo(() => (view ? (pageVars(meta, view) as Record<string, string>) : null), [meta, view]);
 
   if (!view) {
@@ -103,32 +104,46 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
 
       <div className="grid-token">
         <div className="stack">
-          <div className="card">
-            <div className="card-head">
-              <h2>Cap per token account</h2>
-              <span className="right small faint">% of supply · per token account, not per wallet</span>
-            </div>
-            <div className="stats" style={{ marginBottom: 12 }}>
-              <Stat label="Cap now" value={graduated ? 'none' : capPct ?? 'no cap'} sub={cap === null ? (graduated ? 'hook removed' : 'ramp over or lifted') : `${tok(cap)} tokens`} />
-              <Stat label="Next change" value={next ? (next.bps === null ? 'no cap' : pctOf(next.bps)) : '–'} sub={next ? `in ${approxDuration(next.slot - slot)}` : 'no further steps'} />
-              <Stat label="Curve fee now" value={graduated ? '–' : feeNow === null ? 'n/a' : `~${feeNow}%`} sub={graduated ? 'pool fee only' : 'approx., anti-sniper schedule'} />
-            </div>
-            {st.steps && st.uncappedAfter
-              ? <CapRamp steps={st.steps} uncappedAfter={st.uncappedAfter} nowElapsed={elapsed} fee={view.fee} raisedFloorBps={st.raisedFloorBps ?? 0} lifted={!!(st.mintLifted || st.globalLifted)} graduated={graduated} />
-              : <p className="faint">No cap config found for this mint.</p>}
+          <div className="tabs page-tabs" role="tablist" aria-label="Token page sections">
+            <button role="tab" aria-selected={tab === 'overview'} className={tab === 'overview' ? 'on' : ''} onClick={() => setTab('overview')}>Overview</button>
+            <button role="tab" aria-selected={tab === 'rules'} className={tab === 'rules' ? 'on' : ''} onClick={() => setTab('rules')}>Rules &amp; risks</button>
           </div>
 
-          <Guard what="the price chart"><PriceCard mint={mint} /></Guard>
-          <Guard what="the trades feed"><TradesFeed mint={mint} meta={meta} decimals={st.decimals ?? 6} /></Guard>
-          <Guard what="the rules and risks"><RulesAndRisks vars={vars!} /></Guard>
-          <SwitchHistory view={view} />
-          <TokenDetails view={view} />
+          {tab === 'overview' ? (
+            <>
+              <Guard what="the price chart"><PriceCard mint={mint} /></Guard>
+              <div className="card">
+                <div className="card-head">
+                  <h2>Cap per token account</h2>
+                  <span className="right small faint">% of supply · per token account, not per wallet</span>
+                </div>
+                <div className="stats" style={{ marginBottom: 12 }}>
+                  <Stat label="Cap now" value={graduated ? 'none' : capPct ?? 'no cap'} sub={cap === null ? (graduated ? 'hook removed' : 'ramp over or lifted') : `${tok(cap)} tokens`} />
+                  <Stat label="Next change" value={next ? (next.bps === null ? 'no cap' : pctOf(next.bps)) : '–'} sub={next ? `in ${approxDuration(next.slot - slot)}` : 'no further steps'} />
+                  <Stat label="Curve fee now" value={graduated ? '–' : feeNow === null ? 'n/a' : `~${feeNow}%`} sub={graduated ? 'pool fee only' : 'approx., anti-sniper schedule'} />
+                </div>
+                {st.steps && st.uncappedAfter
+                  ? <CapRamp steps={st.steps} uncappedAfter={st.uncappedAfter} nowElapsed={elapsed} fee={view.fee} raisedFloorBps={st.raisedFloorBps ?? 0} lifted={!!(st.mintLifted || st.globalLifted)} graduated={graduated} />
+                  : <p className="faint">No cap config found for this mint.</p>}
+              </div>
+              <Guard what="the trades feed"><TradesFeed mint={mint} meta={meta} decimals={st.decimals ?? 6} /></Guard>
+              <SwitchHistory view={view} />
+              <TokenDetails view={view} />
+            </>
+          ) : (
+            <Guard what="the rules and risks"><RulesAndRisks vars={vars!} /></Guard>
+          )}
         </div>
 
-        <div className="sticky">
+        <div className="sticky stack" style={{ marginTop: 0 }}>
           <Guard what="the trade panel">
             <TradePanel view={view} meta={meta} slot={slot} vars={vars!} onTraded={live.refresh} />
           </Guard>
+          {/* AC-25 anchor while the full block lives in its tab: one line, always visible on the page */}
+          <div className="small faint rules-line">
+            Capped per token account, not per wallet · the admin switch can only raise or remove the cap ·{' '}
+            <button className="link-inline" style={{ all: 'unset', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }} onClick={() => setTab('rules')}>all rules &amp; risks</button>
+          </div>
         </div>
       </div>
     </div>

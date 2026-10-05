@@ -6,8 +6,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { BuiltSwap, Meta, Side, TokenView, TradeResult } from '../lib/types';
 import { api, FIXTURE_MODE } from '../lib/api';
-import { CONTENT, fill, tok, pctOf, explainerKey, explainerTemplate, allowRetry, explainVars, approxDuration } from '../lib/shared';
-import { buyPreview, curveFeePctAt, elapsedSlots, formatTokenAmount, isGraduated, liveCap, liveNextChange, parseTokenAmount } from '../lib/token';
+import { CONTENT, fill, tok, explainerKey, explainerTemplate, allowRetry, explainVars, approxDuration } from '../lib/shared';
+import { buyPreview, curveFeePctAt, elapsedSlots, formatTokenAmount, isGraduated, liveCap, parseTokenAmount } from '../lib/token';
 import { useChecklist } from '../lib/hooks';
 import { bytesToB64, hexToBytes, signTransaction, useWallet } from '../lib/wallet';
 import { Addr } from './bits';
@@ -42,7 +42,6 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
   const who = usingWallet ? 'your wallet' : `test wallet ${wallet}`;
   const balance = BigInt((usingWallet ? view.wallet?.tokens : view.balances[wallet]) ?? '0');
   const cap = liveCap(view, slot);
-  const next = liveNextChange(view, slot);
   const feeNow = curveFeePctAt(view.fee, elapsedSlots(st, slot));
 
   const parsed = useMemo(() => { try { const v = parseTokenAmount(amount, dec); return v > 0n ? { v } : { err: 'Enter an amount above 0' }; } catch (e) { return { err: (e as Error).message }; } }, [amount, dec]);
@@ -102,20 +101,14 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
           {bw.address && <option value={YOU}>Your wallet · {bw.address.slice(0, 4)}…{bw.address.slice(-4)}</option>}
           {Object.entries(meta.wallets).map(([k, pk]) => <option key={k} value={k} disabled={onPool}>Test wallet {k} (server-signed{onPool ? ', curve only' : ''}) · {pk.slice(0, 4)}…{pk.slice(-4)}</option>)}
         </select>
+        <span className={`signer-line ${poolNeedsWallet ? 'warn' : ''}`}>
+          {usingWallet
+            ? <>You sign in {bw.wallet?.name ?? 'your wallet'}; the page never sees your key. Devnet SOL only{view.wallet ? <>: you have <span className="num">{view.wallet.sol.toFixed(3)}</span></> : null}.</>
+            : poolNeedsWallet
+            ? <>Graduated: pool trades need your own wallet. {bw.address ? 'Pick "Your wallet" above.' : 'Connect one (top right).'}</>
+            : <>Throwaway test wallet, signed on the server. {bw.address ? 'Pick "Your wallet" to sign yourself.' : 'Connect a wallet (top right) to sign yourself.'}</>}
+        </span>
       </label>
-      {usingWallet ? (
-        <div className="notice green small" style={{ marginTop: -4, marginBottom: 14 }}>
-          You sign in {bw.wallet?.name ?? 'your wallet'}; the page never sees your key. Devnet only: use devnet SOL{view.wallet ? <> (you have <span className="num">{view.wallet.sol.toFixed(3)}</span>)</> : null}.
-        </div>
-      ) : poolNeedsWallet ? (
-        <div className="notice amber small" style={{ marginTop: -4, marginBottom: 14 }}>
-          This token has graduated and trades on its pool. That needs your own wallet: {bw.address ? 'pick "Your wallet" above.' : 'connect one (top right).'}
-        </div>
-      ) : (
-        <div className="notice amber small" style={{ marginTop: -4, marginBottom: 14 }}>
-          Throwaway test wallet: this trade is signed on the server. {bw.address ? 'Pick "Your wallet" to sign yourself.' : 'Connect a wallet (top right) to sign yourself.'}
-        </div>
-      )}
 
       <label className="field">
         <span className="spread"><span>Amount</span><span className="faint">balance <span className="num">{tok(balance)}</span></span></span>
@@ -134,17 +127,16 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
       {/* preview */}
       {onPool ? (
         <div>
-          <div className="notice green small">
-            <b>Graduated: no cap.</b> This trade goes to the token's DAMM v2 pool. The pool's trading fee applies (base {vars.POOL_FEE}), no anti-sniper fee.
-            {sellTooMuch && <><br /><span className="fail">That's more than {who} holds.</span></>}
-          </div>
-          <div className="spread small" style={{ marginTop: 12, alignItems: 'center' }}>
+          <div className="spread small" style={{ alignItems: 'center' }}>
             <span className="muted">Slippage limit</span>
             <div className="tabs" role="radiogroup" aria-label="Slippage limit" style={{ padding: 3 }}>
               {[50, 100, 200, 500].map((b) => <button key={b} role="radio" aria-checked={slippageBps === b} className={slippageBps === b ? 'on' : ''} style={{ padding: '3px 10px', fontSize: 12.5 }} onClick={() => setSlippageBps(b)}>{b / 100}%</button>)}
             </div>
           </div>
-          <div className="small faint" style={{ marginTop: 6 }}>{side === 'buy' ? 'The buy fails rather than pay more than' : 'The sell fails rather than receive less than'} the quote {side === 'buy' ? 'plus' : 'minus'} {slippageBps / 100}%. Your wallet shows the exact amounts before you sign.</div>
+          <div className="small faint" style={{ marginTop: 8 }}>
+            Graduated: no cap. Trades go to the token's DAMM v2 pool (base fee {vars.POOL_FEE}, no anti-sniper fee). The trade fails rather than {side === 'buy' ? 'pay more' : 'receive less'} than the quote {side === 'buy' ? 'plus' : 'minus'} {slippageBps / 100}%; your wallet shows the exact amounts before you sign.
+            {sellTooMuch && <><br /><span className="fail">That's more than {who} holds.</span></>}
+          </div>
         </div>
       ) : side === 'buy' ? (
         cap === null ? (
@@ -173,15 +165,6 @@ export function TradePanel({ view, meta, slot, vars, onTraded }: Props) {
           {approxDuration(BigInt(view.fee.totalSlots) - elapsedSlots(st, slot))}. Waiting costs less.
         </div>
       )}
-
-      {!onPool && <dl className="kv small" style={{ marginTop: 12 }}>
-        <dt>Curve fee now</dt>
-        <dd className="num">{feeNow === null ? 'n/a' : `~${feeNow}%`} <span className="faint">(approx.{view.fee && feeNow !== null && feeNow > view.fee.endPct ? `, falls to ${view.fee.endPct}%` : ''})</span></dd>
-        <dt>Cap now</dt>
-        <dd className="num">{cap === null ? 'no cap' : `${tok(cap)} ${sym}`}</dd>
-        <dt>Next cap change</dt>
-        <dd>{next ? <>{next.bps === null ? 'no cap' : pctOf(next.bps)} in <span className="num">{approxDuration(next.slot - slot)}</span></> : <span className="faint">none</span>}</dd>
-      </dl>}
 
       <div style={{ marginTop: 14 }}>
         {!ck.valid ? (
