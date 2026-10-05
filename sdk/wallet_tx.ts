@@ -85,7 +85,7 @@ export async function buildUserSwap(lp: SwapBuilder, relay: WalletRelay, owner: 
   if (tx.signatures.some((s) => s.publicKey.toBase58() !== owner.toBase58())) throw new WalletTxRefusal('refusing: the swap needs a signer other than the wallet');
 
   const message = tx.serializeMessage();
-  const simulation = await simulate(lp.c, tx);
+  const simulation = await simulateSwap(lp.c, tx);
   relay.issue(message, { owner: owner.toBase58(), mint, side, amount: tokens.toString(), blockhash, lastValidBlockHeight });
   return {
     tx: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('hex'), encoding: 'hex',
@@ -93,7 +93,8 @@ export async function buildUserSwap(lp: SwapBuilder, relay: WalletRelay, owner: 
   };
 }
 
-async function simulate(c: Cluster, tx: Transaction): Promise<Simulation> {
+/** Pre-sign simulation (exported for tests): sigVerify off, same blockhash; parses our hook's error and cap hit. */
+export async function simulateSwap(c: Pick<Cluster, 'connection' | 'hookProgram'>, tx: Transaction): Promise<Simulation> {
   try {
     const r = await c.connection.simulateTransaction(new VersionedTransaction(tx.compileMessage()), { sigVerify: false, replaceRecentBlockhash: false, commitment: 'confirmed' });
     const logs = r.value.logs ?? [];
