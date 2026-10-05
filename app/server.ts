@@ -10,17 +10,17 @@ import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { resolveCluster, parseClusterArg, explorerAddr, explorerTx, assertNotMainnet } from '../sdk/cluster.js';
 import { defaultSchedule, scheduleJson, resolveSchedule } from '../sdk/schedules.js';
 import { loadOrCreate, deployerName } from '../sdk/keys.js';
-import { Launchpad, listLaunches, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration } from '../sdk/launch.js';
+import { Launchpad, listLaunches, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration, dammV2MigrationConfigFor } from '../sdk/launch.js';
 import { validate, RELEASE_LIMITS, type Step } from '../sdk/capMath.js';
 import { parseRestrictionsLifted } from '../sdk/hook.js';
 import { redactDeep } from '../sdk/redact.js';
 import { serverError } from './errors.js';
 import { siteRoute, createReply, type Reply } from './site_registry.js';
-import { WalletRelay, WalletTxRefusal, buildUserSwap, submitSigned } from '../sdk/wallet_tx.js';
+import { WalletRelay, WalletTxRefusal, buildUserSwap, buildUserPoolSwap, parseSlippageBps, submitSigned } from '../sdk/wallet_tx.js';
 import { MintHookRefusal } from '../sdk/mint_hook.js';
 import { staticReply, uiModeFromArgs, assertUiBuilt } from './static.js';
 import { loadPublicKeepers } from './flywheel_public.js';
-import { readIndex, candles } from '../sdk/indexer.js';
+import { readIndex, candles, dammPoolFor } from '../sdk/indexer.js';
 import { validateMetadata, saveMetadata, loadMetadata, loadImage, publicMetadata, MetadataRefusal } from '../sdk/metadata.js';
 
 const argv = process.argv.slice(2);
@@ -105,16 +105,33 @@ function tradesView(mint: string, interval: number) {
 }
 
 /** AC-21 build: an unsigned swap for the user's wallet, simulated first. Never signs or sends. */
+/** The DAMM v2 pool a launch migrates into: derived here from the mint and the cluster's pinned migration config.
+ *  The browser never names the pool. Resolved once (the config check reads the chain). */
+let dammConfig: Promise<string> | null = null;
+async function dammPoolOf(mint: string): Promise<PublicKey> {
+  dammConfig ??= dammV2MigrationConfigFor(c).then(r => r.config.toBase58()).catch(e => { dammConfig = null; throw e; });
+  return new PublicKey(dammPoolFor(mint, await dammConfig));
+}
+
+/** AC-21 build: an unsigned swap for the user's wallet, simulated first. Never signs or sends.
+ *  venue 'curve' (default): the DBC bonding curve, cap applies. venue 'pool': the DAMM v2 pool after graduation. */
 async function build(b: any, rec: { mint: string; pool: string }): Promise<Reply> {
   const owner = walletKey(b.owner); if (!owner) return { code: 400, body: { error: 'owner must be a wallet address' } };
   if (b.side !== 'buy' && b.side !== 'sell') return { code: 400, body: { error: 'side must be buy or sell' } };
   const tokens = BigInt(Math.round(Number(b.amount) * 1e6));
   if (!(tokens > 0n)) return { code: 400, body: { error: 'amount must be > 0' } };
-  try { return { code: 200, body: await buildUserSwap(lp, relay, owner, new PublicKey(rec.pool), rec.mint, b.side, tokens) }; }
-  catch (e: any) {
+  const venue = b.venue === undefined || b.venue === 'curve' ? 'curve' : b.venue === 'pool' ? 'pool' : null;
+  if (!venue) return { code: 400, body: { error: 'venue must be curve or pool' } };
+  try {
+    if (venue === 'pool') {
+      const slippageBps = parseSlippageBps(b.slippageBps);
+      return { code: 200, body: await buildUserPoolSwap(lp, relay, owner, new PublicKey(rec.pool), await dammPoolOf(rec.mint), rec.mint, b.side, tokens, slippageBps) };
+    }
+    return { code: 200, body: await buildUserSwap(lp, relay, owner, new PublicKey(rec.pool), rec.mint, b.side, tokens) };
+  } catch (e: any) {
     if (e instanceof WalletTxRefusal) return { code: 400, body: { error: e.message } };
-    // hook gate (blocker #7): e.g. the pool has graduated, so there is no curve to trade on
-    if (e instanceof MintHookRefusal) return { code: 409, body: { error: `this token can't be traded on the curve: ${e.message}` } };
+    // hook gate (blocker #7): curve after graduation, or the pool before graduation
+    if (e instanceof MintHookRefusal) return { code: 409, body: { error: venue === 'curve' ? `this token can't be traded on the curve: ${e.message}` : `this token hasn't graduated yet, so it has no pool: ${e.message}` } };
     throw e;
   }
 }

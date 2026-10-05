@@ -124,6 +124,10 @@ export interface BuiltSwap {
   lastValidBlockHeight: number;
   expiresInMs: number;
   simulation: { ok: boolean; err: string | null; hookError: string | null; hookCode: number | null; capHit: TradeResult['capHit'] | null; unitsConsumed: number | null };
+  /** 'curve' before graduation (cap applies), 'pool' after (DAMM v2, quoted with a slippage limit) */
+  venue: 'curve' | 'pool';
+  /** pool only, lamports: buy = expected / most SOL in; sell = expected / least SOL out */
+  quote?: { expectedLamports: string; limitLamports: string; slippageBps: number; priceImpactPct: string };
 }
 
 /** GET /api/flywheel (app/flywheel_public.ts): the keeper's public logs, registry mints only */

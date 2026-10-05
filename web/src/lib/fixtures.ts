@@ -80,7 +80,6 @@ const PENDING = new Map<string, { mint: string; owner: string; side: Side; amoun
 
 /** The simulated swap: same cap rule as the program (sdk/capMath.ts). `dry` = simulate without changing balances. */
 function exec(s: Sim, wallet: string, side: Side, amount: string, dry: boolean): TradeResult {
-  if (s.graduated) throw new ApiError('refusing: DBC pool has graduated (simulated)', 400);
   const amt = BigInt(Math.round(Number(amount) * 1e6)) * (UNIT / 1_000_000n);
   if (amt <= 0n) throw new ApiError('amount must be > 0', 400);
   const bal = s.balances[wallet] ?? 0n;
@@ -91,7 +90,7 @@ function exec(s: Sim, wallet: string, side: Side, amount: string, dry: boolean):
     return { ok: true, sig, link: '' };
   }
   const slot = BigInt(slotAt(Date.now()));
-  const cap = effectiveCap(capCfg(s), { lifted: false, raisedFloorBps: s.raisedFloorBps }, false, slot);
+  const cap = s.graduated ? null : effectiveCap(capCfg(s), { lifted: false, raisedFloorBps: s.raisedFloorBps }, false, slot);   // no cap after graduation
   if (cap !== null && bal + amt > cap) {
     return { ok: false, sig, link: '', err: '{"InstructionError":[2,{"Custom":6000}]}', hookError: 'WalletCapExceeded', hookCode: 6000,
       capHit: { tokenAccount: fakeKey('FixtureTokenAccount'), owner: wallet, balance: (bal + amt).toString(), cap: cap.toString(), slot: slot.toString() } };
@@ -162,13 +161,19 @@ export const fixtureApi: Api = {
     await latency(); await latency();
     return exec(find(mint), wallet, side, amount, false);
   },
-  async walletBuild(mint, owner, side: Side, amount): Promise<BuiltSwap> {
+  async walletBuild(mint, owner, side: Side, amount, opts): Promise<BuiltSwap> {
     await latency();
     const s = find(mint);
+    const venue = opts?.venue ?? 'curve';
+    if (venue === 'curve' && s.graduated) throw new ApiError("this token can't be traded on the curve: it has graduated (simulated)", 409);
+    if (venue === 'pool' && !s.graduated) throw new ApiError("this token hasn't graduated yet, so it has no pool (simulated)", 409);
+    const slippageBps = opts?.slippageBps ?? 100;
     const r = exec(s, owner, side, amount, true);   // simulate only
     const tx = Array.from(fakeSig(), (ch) => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('');   // stand-in hex
     PENDING.set(tx, { mint, owner, side, amount });
-    return { tx, encoding: 'hex', owner, side, amount, lastValidBlockHeight: 0, expiresInMs: 90_000,
+    const lamports = Math.round(Number(amount) * 5.3);   // ~5.3 lamports per token, like the devnet TDT pool
+    const quote = venue === 'pool' ? { expectedLamports: String(lamports), limitLamports: String(Math.round(side === 'buy' ? lamports * (1 + slippageBps / 1e4) : lamports * (1 - slippageBps / 1e4))), slippageBps, priceImpactPct: '0.27' } : undefined;
+    return { tx, encoding: 'hex', owner, side, amount, lastValidBlockHeight: 0, expiresInMs: 90_000, venue, quote,
       simulation: { ok: r.ok, err: r.err ?? null, hookError: r.hookError ?? null, hookCode: r.hookCode ?? null, capHit: r.capHit ?? null, unitsConsumed: 120_000 } };
   },
   async walletSubmit(tx): Promise<TradeResult> {

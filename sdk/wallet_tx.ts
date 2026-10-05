@@ -13,7 +13,9 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { ComputeBudgetProgram, PublicKey, SendTransactionError, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { SwapMode } from '@meteora-ag/dynamic-bonding-curve-sdk';
-import { capHitDetails, hookCodeFromLogs, hookErrorFromLogs, parseRestrictionsLifted } from './hook.js';
+import { CpAmm, getCurrentPoint, SwapMode as CpSwapMode } from '@meteora-ag/cp-amm-sdk';
+import { NATIVE_MINT, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { capHitDetails, hookCodeFromLogs, hookErrorFromLogs, parseRestrictionsLifted, TOKEN_2022 } from './hook.js';
 import { explorerTx, nowIct, type Cluster } from './cluster.js';
 import { assertPoolMintHook, txlogFile, type TxRecord } from './launch.js';
 
@@ -59,7 +61,31 @@ export class WalletRelay {
 export interface Simulation { ok: boolean; err: string | null; hookError: string | null; hookCode: number | null; capHit: ReturnType<typeof capHitDetails> | null; unitsConsumed: number | null }
 /** `tx` is HEX on purpose: every JSON body goes through redactDeep (FW-17), whose path rules corrupt base64 ('+/x'
  *  reads as a POSIX path). Hex has no separators, so it passes unchanged (tests/wallet_tx.test.ts). */
-export interface BuiltSwap { tx: string; encoding: 'hex'; owner: string; side: 'buy' | 'sell'; amount: string; lastValidBlockHeight: number; expiresInMs: number; simulation: Simulation }
+export interface BuiltSwap {
+  tx: string; encoding: 'hex'; owner: string; side: 'buy' | 'sell'; amount: string; lastValidBlockHeight: number; expiresInMs: number; simulation: Simulation;
+  /** 'curve' = DBC bonding curve (cap applies); 'pool' = DAMM v2 after graduation (no cap, quoted with a slippage limit) */
+  venue: 'curve' | 'pool';
+  /** pool only: the quote and the limit written into the swap (buy: most SOL in; sell: least SOL out), lamports */
+  quote?: { expectedLamports: string; limitLamports: string; slippageBps: number; priceImpactPct: string };
+}
+
+/** Pool trades: slippage limit in bps (cp-amm getQuote2 takes bps), default 1%, allowed 0.1% to 10%. */
+export const POOL_SLIPPAGE_DEFAULT_BPS = 100, POOL_SLIPPAGE_MIN_BPS = 10, POOL_SLIPPAGE_MAX_BPS = 1000;
+export function parseSlippageBps(v: unknown): number {
+  if (v === undefined || v === null || v === '') return POOL_SLIPPAGE_DEFAULT_BPS;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < POOL_SLIPPAGE_MIN_BPS || n > POOL_SLIPPAGE_MAX_BPS) throw new WalletTxRefusal(`slippage must be a whole number of bps from ${POOL_SLIPPAGE_MIN_BPS} to ${POOL_SLIPPAGE_MAX_BPS}`);
+  return n;
+}
+
+/** Which side of a (token, wSOL) DAMM v2 pool is which, for a trade of `mint`. Refuses any other pair. Pure. */
+export function poolSides(pool: { tokenAMint: PublicKey; tokenBMint: PublicKey }, mint: string, side: 'buy' | 'sell') {
+  const a = pool.tokenAMint.toBase58(), b = pool.tokenBMint.toBase58(), wsol = NATIVE_MINT.toBase58();
+  if (!((a === mint && b === wsol) || (a === wsol && b === mint))) throw new WalletTxRefusal(`refusing: the pool is not ${mint.slice(0, 6)}…/wSOL (it holds ${a.slice(0, 6)}… and ${b.slice(0, 6)}…)`);
+  const prog = (m: string) => (m === wsol ? TOKEN_PROGRAM_ID : TOKEN_2022);
+  const [input, output] = side === 'buy' ? [wsol, mint] : [mint, wsol];
+  return { inputTokenMint: new PublicKey(input), outputTokenMint: new PublicKey(output), tokenAProgram: prog(a), tokenBProgram: prog(b) };
+}
 
 /** Minimal view of Launchpad that the build needs (tests can stub it). */
 export interface SwapBuilder { c: Cluster; dbc: any; hook: any; requestedHookProgram?: PublicKey }
@@ -80,16 +106,56 @@ export async function buildUserSwap(lp: SwapBuilder, relay: WalletRelay, owner: 
   }
   const tx: Transaction = await lp.dbc.pool.swap2WithTransferHook(params);
   tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
-  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed');
+  return finishBuild(lp.c, relay, tx, owner, mint, side, tokens, { venue: 'curve' });
+}
+
+/** After graduation (AC-21, same relay rules): swap on the token's DAMM v2 pool. `pool` comes from the server (derived
+ *  from the mint), never from the browser. The mint must be past graduation (hook removed) and the pool must be exactly
+ *  (mint, wSOL). Buy = ExactOut `tokens`, sell = ExactIn `tokens`, both quoted with a slippage limit. */
+export async function buildUserPoolSwap(lp: SwapBuilder, relay: WalletRelay, owner: PublicKey, dbcPool: PublicKey, pool: PublicKey, mint: string, side: 'buy' | 'sell', tokens: bigint, slippageBps: number): Promise<BuiltSwap> {
+  if (tokens <= 0n) throw new WalletTxRefusal('amount must be > 0');
+  parseSlippageBps(slippageBps);
+  await assertPoolMintHook(lp as any, dbcPool, 'post', { wallet: owner.toBase58() });   // hook gate: graduated, hook removed
+  const conn = lp.c.connection;
+  const cp = new CpAmm(conn);
+  let poolState: any;
+  try { poolState = await cp.fetchPoolState(pool); } catch { throw new WalletTxRefusal(`refusing: no DAMM v2 pool at ${pool.toBase58()} on this cluster`); }
+  const ps = poolSides(poolState, mint, side);
+  const currentPoint = await getCurrentPoint(conn, poolState.activationType);
+  const decimals = (m: PublicKey) => (m.equals(NATIVE_MINT) ? 9 : 6);
+  const common = { inputTokenMint: ps.inputTokenMint, slippage: slippageBps, currentPoint, poolState, tokenADecimal: decimals(poolState.tokenAMint), tokenBDecimal: decimals(poolState.tokenBMint), hasReferral: false };
+  let swapAmounts: any, expected: bigint, limit: bigint;
+  const q: any = side === 'buy'
+    ? cp.getQuote2({ ...common, swapMode: CpSwapMode.ExactOut, amountOut: new BN(tokens.toString()) } as any)
+    : cp.getQuote2({ ...common, swapMode: CpSwapMode.ExactIn, amountIn: new BN(tokens.toString()) } as any);
+  if (side === 'buy') {
+    expected = BigInt((q.includedFeeInputAmount ?? q.inputAmount ?? 0).toString()); limit = BigInt(q.maximumAmountIn.toString());
+    swapAmounts = { swapMode: CpSwapMode.ExactOut, amountOut: new BN(tokens.toString()), maximumAmountIn: q.maximumAmountIn };
+  } else {
+    expected = BigInt(q.outputAmount.toString()); limit = BigInt(q.minimumAmountOut.toString());
+    swapAmounts = { swapMode: CpSwapMode.ExactIn, amountIn: new BN(tokens.toString()), minimumAmountOut: q.minimumAmountOut };
+  }
+  if (limit <= 0n) throw new WalletTxRefusal('refusing: the quote gives no usable limit for this amount');
+  const tx: Transaction = await cp.swap2({
+    payer: owner, pool, inputTokenMint: ps.inputTokenMint, outputTokenMint: ps.outputTokenMint,
+    tokenAMint: poolState.tokenAMint, tokenBMint: poolState.tokenBMint, tokenAVault: poolState.tokenAVault, tokenBVault: poolState.tokenBVault,
+    tokenAProgram: ps.tokenAProgram, tokenBProgram: ps.tokenBProgram, referralTokenAccount: null, poolState, ...swapAmounts,
+  } as any);
+  tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }));
+  return finishBuild(lp.c, relay, tx, owner, mint, side, tokens, { venue: 'pool', quote: { expectedLamports: expected.toString(), limitLamports: limit.toString(), slippageBps, priceImpactPct: String(q.priceImpact ?? '') } });
+}
+
+/** Shared tail of every build: blockhash, the wallet as sole signer and fee payer, simulation, then the relay entry. */
+async function finishBuild(c: Cluster, relay: WalletRelay, tx: Transaction, owner: PublicKey, mint: string, side: 'buy' | 'sell', tokens: bigint, extra: Pick<BuiltSwap, 'venue' | 'quote'>): Promise<BuiltSwap> {
+  const { blockhash, lastValidBlockHeight } = await c.connection.getLatestBlockhash('confirmed');
   tx.recentBlockhash = blockhash; tx.feePayer = owner;
   if (tx.signatures.some((s) => s.publicKey.toBase58() !== owner.toBase58())) throw new WalletTxRefusal('refusing: the swap needs a signer other than the wallet');
-
   const message = tx.serializeMessage();
-  const simulation = await simulateSwap(lp.c, tx);
+  const simulation = await simulateSwap(c, tx);
   relay.issue(message, { owner: owner.toBase58(), mint, side, amount: tokens.toString(), blockhash, lastValidBlockHeight });
   return {
     tx: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('hex'), encoding: 'hex',
-    owner: owner.toBase58(), side, amount: tokens.toString(), lastValidBlockHeight, expiresInMs: BUILD_TTL_MS, simulation,
+    owner: owner.toBase58(), side, amount: tokens.toString(), lastValidBlockHeight, expiresInMs: BUILD_TTL_MS, simulation, ...extra,
   };
 }
 

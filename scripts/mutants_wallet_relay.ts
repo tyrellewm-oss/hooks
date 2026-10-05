@@ -1,4 +1,5 @@
-// Mutation check for AC-21 browser-wallet signing (sdk/wallet_tx.ts, its registry gate and server route). LOCAL, offline.
+// Mutation check for AC-21 browser-wallet signing (sdk/wallet_tx.ts: curve and post-graduation pool paths, the relay,
+// the registry gate and the server route). LOCAL, offline.
 // Each mutant replaces one exact snippet in one source file, runs the wallet/registry tests and must make at least one
 // test fail ("killed"). The file is restored after every mutant (also on error or Ctrl-C); a dirty tree at the end fails.
 // Usage: node --import tsx scripts/mutants_wallet_relay.ts [name-filter]
@@ -33,7 +34,21 @@ const M: Mutant[] = [
   { name: 'gate: build accepted on GET', file: REG, from: "const isBuild = pathname === '/api/wallet/build' && method === 'POST' && !!d.build;", to: "const isBuild = pathname === '/api/wallet/build' && !!d.build;" },
   // server: the swap is built for the requesting wallet, never a server key
   { name: 'server: build for a server test wallet instead of the user', file: SRV, from: 'buildUserSwap(lp, relay, owner, ', to: 'buildUserSwap(lp, relay, wallets.A.publicKey, ' },
-  { name: 'server: build also sends a server-signed swap', file: SRV, from: '  try { return { code: 200, body: await buildUserSwap(', to: '  await lp.swap(wallets.A, new PublicKey(rec.pool), b.side, tokens);\n  try { return { code: 200, body: await buildUserSwap(' },
+  { name: 'server: build also sends a server-signed swap', file: SRV, from: "  try {\n    if (venue === 'pool') {", to: "  await lp.swap(wallets.A, new PublicKey(rec.pool), b.side, tokens);\n  try {\n    if (venue === 'pool') {" },
+  // after graduation: the DAMM v2 pool path
+  { name: 'pool: any pair accepted (token/wSOL check removed)', file: W, from: 'if (!((a === mint && b === wsol) || (a === wsol && b === mint))) throw', to: 'if (false) throw' },
+  { name: 'pool: buy and sell directions swapped', file: W, from: "const [input, output] = side === 'buy' ? [wsol, mint] : [mint, wsol];", to: "const [input, output] = side === 'sell' ? [wsol, mint] : [mint, wsol];" },
+  { name: 'pool: token programs swapped', file: W, from: '(m === wsol ? TOKEN_PROGRAM_ID : TOKEN_2022)', to: '(m === wsol ? TOKEN_2022 : TOKEN_PROGRAM_ID)' },
+  { name: 'pool: slippage up to 100% accepted', file: W, from: 'export const POOL_SLIPPAGE_DEFAULT_BPS = 100, POOL_SLIPPAGE_MIN_BPS = 10, POOL_SLIPPAGE_MAX_BPS = 1000;', to: 'export const POOL_SLIPPAGE_DEFAULT_BPS = 100, POOL_SLIPPAGE_MIN_BPS = 10, POOL_SLIPPAGE_MAX_BPS = 10000;' },
+  { name: 'pool: zero slippage accepted', file: W, from: 'export const POOL_SLIPPAGE_DEFAULT_BPS = 100, POOL_SLIPPAGE_MIN_BPS = 10, POOL_SLIPPAGE_MAX_BPS = 1000;', to: 'export const POOL_SLIPPAGE_DEFAULT_BPS = 100, POOL_SLIPPAGE_MIN_BPS = 0, POOL_SLIPPAGE_MAX_BPS = 1000;' },
+  { name: 'pool: default slippage 10%', file: W, from: 'export const POOL_SLIPPAGE_DEFAULT_BPS = 100, POOL_SLIPPAGE_MIN_BPS = 10, POOL_SLIPPAGE_MAX_BPS = 1000;', to: 'export const POOL_SLIPPAGE_DEFAULT_BPS = 1000, POOL_SLIPPAGE_MIN_BPS = 10, POOL_SLIPPAGE_MAX_BPS = 1000;' },
+  { name: 'pool: fractional bps accepted', file: W, from: 'if (!Number.isInteger(n) || n < POOL_SLIPPAGE_MIN_BPS', to: 'if (!Number.isFinite(n) || n < POOL_SLIPPAGE_MIN_BPS' },
+  { name: 'pool: graduation gate removed', file: W, from: "  await assertPoolMintHook(lp as any, dbcPool, 'post', { wallet: owner.toBase58() });", to: '' },
+  { name: 'pool: sell with no minimum out', file: W, from: 'minimumAmountOut: q.minimumAmountOut };', to: 'minimumAmountOut: new BN(0) };' },
+  { name: 'pool: buy with no maximum in', file: W, from: 'maximumAmountIn: q.maximumAmountIn };', to: 'maximumAmountIn: new BN(2_000_000_000) };' },
+  { name: 'pool: quote ignores the requested slippage', file: W, from: 'slippage: slippageBps,', to: 'slippage: 1000,' },
+  { name: 'server: pool taken from the request body', file: SRV, from: 'await dammPoolOf(rec.mint), rec.mint, ', to: 'new PublicKey(b.pool), rec.mint, ' },
+  { name: 'server: unknown venue treated as the curve', file: SRV, from: "if (!venue) return { code: 400, body: { error: 'venue must be curve or pool' } };", to: '' },
 ];
 
 const filter = process.argv[2];
