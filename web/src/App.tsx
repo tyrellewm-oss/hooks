@@ -4,7 +4,7 @@ import { navigate, usePath, usePoll } from './lib/hooks';
 import { setQuery, setTheme, useQuery, useTheme } from './lib/ui';
 import { CONTENT, fill, pageVars } from './lib/shared';
 import { Guard, Link, Skeleton } from './components/bits';
-import { IconEye, IconGrid, IconHome, IconHook, IconMenu, IconMoon, IconPlus, IconSearch, IconSun, LogoMark } from './components/Icons';
+import { IconBook, IconEye, IconGrid, IconHome, IconHook, IconMenu, IconMoon, IconPlus, IconSearch, IconSun, LogoMark } from './components/Icons';
 import { TokensPage } from './pages/TokensPage';
 import { HomePage } from './pages/HomePage';
 import { WalletButton } from './components/WalletButton';
@@ -12,6 +12,7 @@ import { TokenPage } from './pages/TokenPage';
 import { HooksPage } from './pages/HooksPage';
 import { CreatePage } from './pages/CreatePage';
 import { TransparencyPage } from './pages/TransparencyPage';
+import { DocsPage } from './pages/DocsPage';
 
 
 function CapPageRedirect() {
@@ -37,6 +38,7 @@ export function App() {
   else if (tokenMatch) page = <TokenPage key={tokenMatch[1]} mint={decodeURIComponent(tokenMatch[1])} meta={m} />;
   else if (path === '/hooks') page = <HooksPage meta={m} />;
   else if (path === '/create') page = <CreatePage meta={m} />;
+  else if (path === '/docs') page = <DocsPage meta={m} />;
   else if (path === '/transparency') page = <TransparencyPage meta={m} />;
   else if (path === '/tokens') page = <TokensPage meta={m} />;
   else if (path === '/') page = <HomePage meta={m} />;
@@ -55,6 +57,7 @@ export function App() {
           {nav('/create', 'Studio launch', <IconPlus />)}
           {nav('/hooks', 'Hooks', <IconHook />)}
           {nav('/transparency', 'Transparency', <IconEye />)}
+          {nav('/docs', 'Docs', <IconBook />)}
         </nav>
         <div className="side-foot">
           <div className="side-card" title={m ? `program ${m.programId}` : undefined}>

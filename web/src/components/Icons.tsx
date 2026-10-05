@@ -28,3 +28,4 @@ export const IconSwitch = (p: { size?: number }) => <I {...p}><rect x="3" y="7" 
 export const IconLock = (p: { size?: number }) => <I {...p}><rect x="5" y="10.5" width="14" height="10" rx="2.5" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></I>;
 export const IconInfo = (p: { size?: number }) => <I {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 7.8v.2" /></I>;
 export const IconHome = (p: { size?: number }) => <I {...p}><path d="M4 11l8-6.5 8 6.5" /><path d="M6 9.5V19a1 1 0 0 0 1 1h3.5v-5.5h3V20H17a1 1 0 0 0 1-1V9.5" /></I>;
+export const IconBook = (p: { size?: number }) => <I {...p}><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v15H5.5A1.5 1.5 0 0 0 4 20.5z" /><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v15h5.5a1.5 1.5 0 0 1 1.5 1.5z" /></I>;

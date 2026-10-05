@@ -6,6 +6,7 @@ import './styles.css';
 import './hooks.css';
 import './home.css';
 import './launch.css';
+import './docs.css';
 
 startWallets();
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
