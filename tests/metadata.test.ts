@@ -78,8 +78,16 @@ test('server: image bytes go through send() with their type; nosniff on every re
   const src = readFileSync('app/server.ts', 'utf8');
   assert.match(src, /if \(routed\?\.type\) return send\(res, routed\.code, routed\.body, routed\.type\);/);
   assert.match(src, /'x-content-type-options': 'nosniff'/);
+  // metadata is validated in parseLaunchBody (shared by both launch routes) before anything is built or sent
+  const start = src.indexOf('function parseLaunchBody');
+  const parse = src.slice(start, src.indexOf('\n}\n', start));
+  assert.ok(parse.includes("meta = validateMetadata(b.metadata)"), "parseLaunchBody validates the metadata");
   const create = src.slice(src.indexOf("if (url.pathname === '/api/create'"));
-  assert.ok(create.indexOf('meta = validateMetadata(b.metadata)') < create.indexOf('await lp.launch('), 'validated before any launch tx');
-  assert.ok(create.indexOf('saveMetadata(c.name, rec.mint, meta)') > create.indexOf('await lp.launch('), 'saved only after the launch');
+  assert.ok(create.indexOf('parseLaunchBody(') < create.indexOf('await lp.launch('), 'validated before any launch tx');
+  assert.ok(create.indexOf('saveMetadata(c.name, rec.mint, p.meta)') > create.indexOf('await lp.launch('), 'saved only after the launch');
+  const wallet = src.slice(src.indexOf("if (url.pathname === '/api/studio/launch/build'"));
+  assert.ok(wallet.indexOf('parseLaunchBody(') < wallet.indexOf('buildUserLaunch('), 'wallet launch: validated before the build');
+  const submit = src.slice(src.indexOf("if (url.pathname === '/api/studio/launch/submit'"));
+  assert.ok(submit.indexOf('saveMetadata(') > submit.indexOf('submitUserLaunch('), 'wallet launch: saved only after the launch confirms');
   assert.match(src, /if \(d\.length > MAX_BODY\) throw/);
 });
