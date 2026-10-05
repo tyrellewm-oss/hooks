@@ -12,6 +12,23 @@ permissions:
   contents: read
 
 jobs:
+  litesvm-probe:
+    # which runner/node combination litesvm's Linux build works on (it aborts with std::bad_alloc on some)
+    strategy:
+      fail-fast: false
+      matrix: { os: [ubuntu-22.04, ubuntu-24.04], node: [20, 22] }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ matrix.node }}', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: node -e "const {LiteSVM}=require('litesvm'); const s=new LiteSVM(); console.log('litesvm ok, slot', s.getClock().slot)"
+      - run: ldd --version | head -1; free -m; node -p "process.versions.node + ' ' + process.arch"
+
   sim:
     runs-on: ubuntu-latest
     timeout-minutes: 20
