@@ -1,8 +1,34 @@
 /* Studio launch wizard: step bar (done = green, current = accent, needs attention = amber), step body, draft panel. */
+.launch-page { width: 100%; }
+.launch-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.launch-heading-row .wiz-head { min-width: 0; }
+.launch-heading-row .studio-session { flex: none; margin: 8px 0 0; }
 .wiz-head { padding: 6px 0 2px; }
 .wiz-kicker { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; font-size: 11.5px; margin-bottom: 8px; }
 .wiz-head h1 { font-size: 30px; }
-.wiz-head p { margin: 8px 0 0; font-size: 14px; }
+.wiz-head p { margin: 10px 0 0; font-size: 16px; line-height: 1.65; }
+
+/* The entry screen has one centred action; the launch steps keep their working layout. */
+.launch-entry { padding-block: clamp(24px, 5vh, 64px) 24px; }
+.launch-entry .wiz-head { max-width: 560px; margin-inline: auto; text-align: center; }
+.launch-entry .wiz-head h1 { font-size: clamp(30px, 3vw, 36px); }
+.launch-entry .wiz-head p { margin-top: 12px; text-wrap: pretty; }
+.launch-entry .studio-gate-entry { margin: 28px auto 0; }
+.studio-gate-entry { width: 100%; max-width: 460px; padding: 28px 32px; text-align: center; }
+.studio-gate-icon { display: grid; place-items: center; width: 48px; height: 48px; margin: 0 auto 18px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--panel); color: var(--text-2); }
+.studio-gate-entry h2 { font-size: 20px; }
+.studio-gate-entry > p.muted { font-size: 14px; }
+.studio-gate-action { margin-top: 22px; }
+.studio-gate-action > .primary, .studio-gate-action .wallet-btn { width: 100%; min-height: 44px; }
+.studio-gate-action .wallet-btn { background: var(--pill-bg); border-color: var(--pill-bg); color: var(--pill-fg); }
+.studio-gate-action .wallet-btn:hover:not(:disabled) { background: var(--pill-bg); opacity: 0.88; }
+.studio-gate-action .wallet-btn:disabled { background: var(--panel-2); border-color: transparent; color: var(--text-4); }
+.studio-gate-action .wallet-pop { left: 0; right: 0; min-width: 0; text-align: left; }
+.studio-gate-entry > .studio-gate-note { margin: 20px 0 0; padding-top: 18px; border-top: 1px solid var(--card-border); font-size: 12px; }
+.launch-entry > .notice { max-width: 560px; margin: 28px auto 0; }
+.launch-entry-link { text-align: center; }
+.launch-entry-link a { display: inline-flex; align-items: center; gap: 7px; padding: 6px; color: var(--text-2); font-size: 12.5px; }
+.launch-entry-link a:hover { color: var(--text); }
 
 .wiz-bar { display: flex; align-items: flex-start; gap: 14px; }
 .wiz-steps { list-style: none; margin: 0; padding: 0; flex: 1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
@@ -11,9 +37,9 @@ button.wiz-step { all: unset; box-sizing: border-box; cursor: pointer; display: 
 button.wiz-step:disabled { cursor: not-allowed; }
 button.wiz-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 .wiz-line { height: 3px; border-radius: var(--pill); background: var(--panel-2); transition: background 0.25s ease; }
-.wiz-label { font-size: 13.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.2s ease; }
+.wiz-label { padding-inline: 8px; font-size: 13.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.2s ease; }
 .wiz-label .num { color: inherit; margin-right: 2px; }
-.wiz-mark { display: flex; align-items: center; color: var(--text-3); height: 18px; }
+.wiz-mark { display: flex; align-items: center; padding-inline: 8px; color: var(--text-3); height: 18px; }
 .wiz-step:hover:not(:disabled) .wiz-label { color: var(--text); }
 .wiz-step.done .wiz-line { background: var(--green); }
 .wiz-step.done .wiz-label { color: var(--text-2); }
@@ -52,10 +78,14 @@ button.wiz-step:focus-visible { outline: 2px solid var(--accent); outline-offset
 .wiz-v { font-size: 13.5px; }
 
 @media (max-width: 900px) {
+  .launch-heading-row { flex-wrap: wrap; gap: 14px; }
+  .launch-heading-row .studio-session { margin: 0; }
   .wiz-grid { grid-template-columns: minmax(0, 1fr); }
   .wiz-side { display: none; }
 }
 @media (max-width: 640px) {
+  .launch-entry { padding-block: 20px 8px; }
+  .studio-gate-entry { padding: 24px 20px; }
   .wiz-bar { flex-wrap: wrap; gap: 10px; }
   .wiz-steps { flex: 1 1 100%; order: 2; }
   .wiz-reset { order: 1; margin: 0 0 0 auto; }

@@ -1,21 +1,24 @@
+import { useState } from 'react';
 import type { Meta } from '../lib/types';
 import { CONTENT, fill, pageVars } from '../lib/shared';
 import { CapRamp } from './CapRamp';
 import { Link } from './bits';
+import { IconArrow, IconGrid, IconInfo, IconRamp, IconShield, IconSwitch } from './Icons';
 
 /** Full cap explanation, kept with its hook. Required copy stays in page_content.json. */
 export function CapExplanation({ meta }: { meta: Meta }) {
+  const [topic, setTopic] = useState('rule');
   const s = meta.defaultSchedule;
   const pseudoView = { status: { steps: s.steps, uncappedAfter: s.uncappedAfter }, switchHistory: [] };
   const vars = { ...(pageVars(meta, pseudoView) as Record<string, string>), POOL_FEE: 'shown on each token page', TICKER: 'each token' };
   const ck = CONTENT.checklist, rr = CONTENT.rules_and_risks.items;
   const sections = [
-    { h: 'The rule', text: ck[2] },
-    { h: 'Selling is never blocked', text: ck[3] },
-    { h: 'At graduation', text: rr[5] },
-    { h: 'What the cap does not stop', text: rr[2] },
-    { h: 'Admin power', text: ck[4] },
-    { h: 'Which tokens', text: rr[7] },
+    { id: 'rule', label: 'The rule', h: 'The rule', text: ck[2], icon: IconShield },
+    { id: 'selling', label: 'Selling', h: 'Selling is never blocked', text: ck[3], icon: IconArrow },
+    { id: 'graduation', label: 'Graduation', h: 'At graduation', text: rr[5], icon: IconRamp },
+    { id: 'limits', label: 'Limits & exceptions', h: 'What the cap does not stop', text: rr[2], icon: IconInfo },
+    { id: 'admin', label: 'Admin power', h: 'Admin power', text: ck[4], icon: IconSwitch },
+    { id: 'tokens', label: 'Which tokens', h: 'Which tokens', text: rr[7], icon: IconGrid },
   ];
 
   return (
@@ -30,10 +33,27 @@ export function CapExplanation({ meta }: { meta: Meta }) {
       </details>
       <details className="hook-lifecycle">
         <summary><span><b>Full rule &amp; exceptions</b><span className="small faint">Selling, graduation and admin powers</span></span><span className="dd-chev" aria-hidden="true" /></summary>
-        <div className="hook-lifecycle-body">
-          <p className="small muted">One rule, enforced by a transfer hook while a token is on its bonding curve. Nothing else is restricted.</p>
-          <div className="hook-cap-rules">{sections.map((section) => <section key={section.h}><h3>{section.h}</h3><p className="small muted">{fill(section.text, vars)}</p></section>)}</div>
-          <p className="small"><Link to="/" className="link">See the test tokens</Link></p>
+        <div className="hook-lifecycle-body cap-rule-body">
+          <p className="cap-rule-intro small muted"><IconInfo size={16} /><span>One rule, enforced by a transfer hook while a token is on its bonding curve. Nothing else is restricted.</span></p>
+          <div className="hook-cap-rules">
+            <div className="cap-rule-topics" role="group" aria-label="Cap rule topics">
+              {sections.map(({ id, label, icon: Icon }) => (
+                <button key={id} type="button" className="cap-rule-choice" aria-pressed={topic === id} aria-controls={`cap-rule-${id}`} onClick={() => setTopic(id)}>
+                  <Icon size={17} /><span>{label}</span><span className="cap-rule-indicator" aria-hidden="true"><IconArrow size={14} /></span>
+                </button>
+              ))}
+            </div>
+            <div className="cap-rule-panels">
+              {sections.map((section, i) => (
+                <section key={section.id} id={`cap-rule-${section.id}`} className="cap-rule-panel" aria-labelledby={`cap-rule-title-${section.id}`} aria-hidden={topic !== section.id}>
+                  <div className="cap-rule-count mono">{String(i + 1).padStart(2, '0')} <span>/ {String(sections.length).padStart(2, '0')}</span></div>
+                  <h3 id={`cap-rule-title-${section.id}`}>{section.h}</h3>
+                  <p className="small muted">{fill(section.text, vars)}</p>
+                </section>
+              ))}
+              <div className="cap-rule-footer"><Link to="/tokens">See the test tokens <IconArrow size={14} /></Link></div>
+            </div>
+          </div>
         </div>
       </details>
     </div>

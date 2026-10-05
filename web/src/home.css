@@ -3,7 +3,7 @@
 .home-hero { text-align: center; padding: 34px 0 30px; }
 .home-hero h1 { font-size: clamp(32px, 5vw, 52px); line-height: 1.06; letter-spacing: -0.035em; font-weight: 500; }
 .home-hero h1 span { color: var(--text-3); }
-.home-hero p { color: var(--text-3); max-width: 540px; margin: 18px auto 0; font-size: 15px; line-height: 1.6; }
+.home-hero p { color: var(--text-3); max-width: 540px; margin: 18px auto 0; font-size: 16px; line-height: 1.65; }
 .home-cta { justify-content: center; gap: 10px; margin-top: 24px; }
 .home-cta button { padding: 10px 22px; font-size: 14px; }
 

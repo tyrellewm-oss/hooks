@@ -6,13 +6,14 @@ import { api } from '../lib/api';
 import { useWallet, signTransaction, hexToBytes, bytesToHex } from '../lib/wallet';
 import { validate, RELEASE_LIMITS, STRICT, BALANCED, LOOSE, LOCAL_DEMO, pctOf, approxDuration, type NamedSchedule, type ScheduleError } from '../lib/shared';
 import { CapRamp } from '../components/CapRamp';
-import { Addr } from '../components/bits';
-import { StudioGate } from '../components/StudioGate';
+import { Addr, Link } from '../components/bits';
+import { StudioGate, StudioSessionControls } from '../components/StudioGate';
+import { useStudioAccess } from '../lib/studio';
 import { DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
 import { CapDiagram } from '../components/HookArt';
 import { hookList, type HookId } from '../lib/hookInfo';
 import { HooksLink } from './HooksPage';
-import { IconCheck } from '../components/Icons';
+import { IconArrow, IconCheck } from '../components/Icons';
 
 const SCHEDULE_ERRORS: Record<ScheduleError, string> = {
   BadLength: 'Use 1 to 8 steps.',
@@ -28,6 +29,7 @@ interface Row { offset: string; pct: string }
 const rowsOf = (s: NamedSchedule): Row[] => s.steps.map((x) => ({ offset: x.slotOffset.toString(), pct: String(x.maxBps / 100) }));
 
 export function CreatePage({ meta }: { meta: Meta }) {
+  const { ok: studioAccess, required: studioRequired, session: studioSession } = useStudioAccess(meta.studio?.required ?? false);
   const presets = meta.cluster === 'LOCAL' ? [LOCAL_DEMO, BALANCED, STRICT, LOOSE] : [BALANCED, STRICT, LOOSE];
   const [preset, setPreset] = useState(presets[0].id);
   const [rows, setRows] = useState<Row[]>(rowsOf(presets[0]));
@@ -108,13 +110,16 @@ export function CreatePage({ meta }: { meta: Meta }) {
   const blocking = STEPS.findIndex((s) => s.err);
   const capRange = 'err' in check ? null : `${pctOf(check.steps![0].maxBps)} → ${pctOf(check.steps![check.steps!.length - 1].maxBps)}`;
   return (
-    <div className="stack" style={{ maxWidth: 1040 }}>
+    <div className={`stack launch-page${studioAccess ? '' : ' launch-entry'}`}>
+      <div className="launch-heading-row">
       <section className="wiz-head">
         <div className="small faint wiz-kicker">Studio launch · {meta.cluster.toLowerCase()}</div>
         <h1>Launch a token</h1>
         <p className="muted">Five short steps. Everything is fixed at launch, except the cap, which can only be lifted later.</p>
       </section>
-      <StudioGate meta={meta}>
+      {studioAccess && studioRequired && studioSession && <StudioSessionControls wallet={studioSession.wallet} />}
+      </div>
+      <StudioGate meta={meta} variant="launch" showSession={false}>
       <div className="wiz-bar">
         <ol className="wiz-steps" aria-label="Launch steps">
           {STEPS.map((s, i) => {
@@ -246,6 +251,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
         </aside>
       </div>
       </StudioGate>
+      {!studioAccess && <div className="launch-entry-link"><Link to="/hooks">Explore the hooks <IconArrow size={14} /></Link></div>}
     </div>
   );
 }

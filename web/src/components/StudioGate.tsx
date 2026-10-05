@@ -5,8 +5,19 @@ import type { Meta } from '../lib/types';
 import { useWallet } from '../lib/wallet';
 import { studioSignIn, studioSignOut, useStudioAccess } from '../lib/studio';
 import { short } from './bits';
+import { IconLock } from './Icons';
+import { WalletButton } from './WalletButton';
 
-export function StudioGate({ meta, children }: { meta: Meta; children: ReactNode }) {
+export function StudioSessionControls({ wallet }: { wallet: string }) {
+  return (
+    <div className="studio-session row small faint">
+      <span className="pill green">Studio: {short(wallet, 4)}</span>
+      <button className="ghost small" onClick={() => void studioSignOut()}>Sign out</button>
+    </div>
+  );
+}
+
+export function StudioGate({ meta, children, variant = 'default', showSession = true }: { meta: Meta; children: ReactNode; variant?: 'default' | 'launch'; showSession?: boolean }) {
   const required = meta.studio?.required ?? false;
   const configured = meta.studio?.configured ?? false;
   const { ok, session } = useStudioAccess(required);
@@ -17,12 +28,7 @@ export function StudioGate({ meta, children }: { meta: Meta; children: ReactNode
   if (ok) {
     return (
       <>
-        {required && session && (
-          <div className="row small faint" style={{ justifyContent: 'flex-end', marginBottom: 10, gap: 8 }}>
-            <span className="pill green">Studio: {short(session.wallet, 4)}</span>
-            <button className="ghost small" onClick={() => void studioSignOut()}>Sign out</button>
-          </div>
-        )}
+        {showSession && required && session && <StudioSessionControls wallet={session.wallet} />}
         {children}
       </>
     );
@@ -39,14 +45,18 @@ export function StudioGate({ meta, children }: { meta: Meta; children: ReactNode
     finally { setBusy(false); }
   }
   return (
-    <div className="card" style={{ maxWidth: 560 }}>
+    <div className={`card${variant === 'launch' ? ' studio-gate-entry' : ''}`} style={variant === 'default' ? { maxWidth: 560 } : undefined}>
+      {variant === 'launch' && <div className="studio-gate-icon"><IconLock size={22} /></div>}
       <h2 style={{ marginBottom: 8 }}>Studio sign-in</h2>
-      <p className="muted small">Launching tokens and editing token details are for studio wallets only. Your wallet signs a short message to prove it's yours. It isn't a transaction and costs nothing.</p>
+      <p className="muted small">{variant === 'launch' ? 'Use your studio wallet to access the launch tool.' : "Launching tokens and editing token details are for studio wallets only. Your wallet signs a short message to prove it's yours. It isn't a transaction and costs nothing."}</p>
       {mismatch && <div className="notice amber small" style={{ marginBottom: 10 }}>You're signed in as {short(session!.wallet, 4)}, but the connected wallet is {short(w.address!, 4)}. Sign in again with this wallet.</div>}
+      <div className={variant === 'launch' ? 'studio-gate-action' : undefined}>
       {!w.address
-        ? <div className="notice small">Connect a wallet first (top right).</div>
+        ? variant === 'launch' ? <WalletButton /> : <div className="notice small">Connect a wallet first (top right).</div>
         : <button className="primary" disabled={busy} onClick={go}>{busy ? 'Check your wallet…' : `Sign in with ${short(w.address, 4)}`}</button>}
+      </div>
       {err && <div className="notice red small" role="alert" style={{ marginTop: 10 }}>{err}</div>}
+      {variant === 'launch' && <p className="studio-gate-note small muted">Sign a message to verify your wallet.<br />No transaction or fee.</p>}
     </div>
   );
 }
