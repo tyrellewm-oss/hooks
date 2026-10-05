@@ -52,12 +52,11 @@ export async function buy(sim: Sim, l: Launched, who: Keypair, lamports: bigint)
     owner: who.publicKey, pool: l.pool, swapBaseForQuote: false, referralTokenAccount: null,
     amountIn: new BN(lamports.toString()), minimumAmountOut: new BN(0), swapMode: 0,
   });
-  const reserveBefore = await quoteReserve(sim, l.pool);
+  const feesBefore = await totalQuoteFees(sim, l.pool);
   const tokensBefore = tokenBalance(sim, l.mint, who.publicKey);
   const r = sim.send(tx, [who]);
   const tokens = tokenBalance(sim, l.mint, who.publicKey) - tokensBefore;
-  const intoReserve = (await quoteReserve(sim, l.pool)) - reserveBefore;
-  const fee = r.ok ? lamports - intoReserve : 0n;   // the fee is the part of the SOL in that does not enter the curve
+  const fee = r.ok ? (await totalQuoteFees(sim, l.pool)) - feesBefore : 0n;
   return { ...r, tokens, fee, feePct: r.ok ? Number((fee * 1_000_000n) / lamports) / 10_000 : 0, virtualPool };
 }
 
@@ -65,8 +64,8 @@ export function tokenBalance(sim: Sim, mint: PublicKey, owner: PublicKey) {
   return sim.env.tokenBalance(mint, owner);
 }
 
-/** SOL (lamports) held by the curve for trading: fees are tracked separately from this reserve. */
-export async function quoteReserve(sim: Sim, pool: PublicKey): Promise<bigint> {
-  const p: any = await sim.dbc.state.getPool(pool);
-  return BigInt(p.quoteReserve.toString());
+/** Lifetime trading fees the curve has charged in SOL (lamports), all shares included. */
+export async function totalQuoteFees(sim: Sim, pool: PublicKey): Promise<bigint> {
+  const m: any = await sim.dbc.state.getPoolFeeMetrics(pool);
+  return BigInt(m.total.totalTradingQuoteFee.toString());
 }
