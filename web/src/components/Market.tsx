@@ -43,13 +43,29 @@ export function PriceCard({ mint }: { mint: string }) {
   );
 }
 
+/** Quiet intervals get a flat candle at the previous close (no trades, price unchanged), up to now, so the
+ *  chart reads as a continuous series instead of only the minutes that happened to trade. */
+function fillGaps(candles: Candle[], interval: number): Candle[] {
+  const out: Candle[] = [];
+  const flat = (t: number, p: number): Candle => ({ t, o: p, h: p, l: p, c: p, n: 0 });
+  for (const c of candles) {
+    let prev = out[out.length - 1];
+    while (prev && c.t - prev.t > interval) out.push(prev = flat(prev.t + interval, prev.c));
+    out.push(c);
+  }
+  let prev = out[out.length - 1];
+  const now = Math.trunc(Date.now() / 1000 / interval) * interval;
+  while (prev && now - prev.t > interval && out.length < 2000) out.push(prev = flat(prev.t + interval, prev.c));
+  return out;
+}
+
 function Candles({ candles, interval }: { candles: Candle[]; interval: number }) {
   const W = 640, H = 220, L = 8, R = 62, T = 10, B = 24;
-  const cs = candles.slice(-80);
+  const cs = fillGaps(candles, interval).slice(-120);
   const lo = Math.min(...cs.map((c) => c.l)), hi = Math.max(...cs.map((c) => c.h));
   const pad = (hi - lo) * 0.08 || hi * 0.05;
   const y = (p: number) => T + (H - T - B) * (1 - (p - (lo - pad)) / (hi + pad - (lo - pad)));
-  const slot = (W - L - R) / Math.max(cs.length, 12), bw = Math.max(2, Math.min(12, slot * 0.6));
+  const slot = (W - L - R) / Math.max(cs.length, 12), bw = Math.max(1.5, Math.min(12, slot * 0.72));
   const x = (i: number) => L + slot * i + slot / 2;
   const ticks = [lo, (lo + hi) / 2, hi];
   const timeLbl = (t: number) => new Date(t * 1000).toLocaleTimeString([], interval >= 3600 ? { month: 'short', day: 'numeric', hour: '2-digit' } : { hour: '2-digit', minute: '2-digit' });
@@ -63,10 +79,10 @@ function Candles({ candles, interval }: { candles: Candle[]; interval: number })
         const up = c.c >= c.o, col = up ? 'var(--green)' : 'var(--red)';
         const top = y(Math.max(c.o, c.c)), h = Math.max(1, Math.abs(y(c.o) - y(c.c)));
         return (
-          <g key={c.t}>
-            <title>{`${timeLbl(c.t)}  O ${fmtPrice(c.o)}  H ${fmtPrice(c.h)}  L ${fmtPrice(c.l)}  C ${fmtPrice(c.c)}  (${c.n} trade${c.n > 1 ? 's' : ''})`}</title>
+          <g key={c.t} opacity={c.n === 0 ? 0.45 : 1}>
+            <title>{c.n === 0 ? `${timeLbl(c.t)}  no trades  C ${fmtPrice(c.c)}` : `${timeLbl(c.t)}  O ${fmtPrice(c.o)}  H ${fmtPrice(c.h)}  L ${fmtPrice(c.l)}  C ${fmtPrice(c.c)}  (${c.n} trade${c.n > 1 ? 's' : ''})`}</title>
             <line x1={x(i)} x2={x(i)} y1={y(c.h)} y2={y(c.l)} stroke={col} strokeWidth="1" />
-            <rect x={x(i) - bw / 2} y={top} width={bw} height={h} fill={col} rx="1" />
+            <rect x={x(i) - bw / 2} y={top} width={bw} height={h} fill={col} rx="0.5" />
           </g>
         );
       })}

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { TokenView } from '../lib/types';
 import { CONTENT, fill, tok, pctOf, supplySoldText, approxDuration } from '../lib/shared';
 import { Addr } from './bits';
@@ -25,16 +25,20 @@ export function RulesAndRisks({ vars }: { vars: Record<string, string> }) {
   );
 }
 
-/** Collapsible card: a summary row that opens into the full content (cap ramp, switch history, on-chain details). */
+/** Collapsible card: a summary row that opens into the full content (switch history, on-chain details).
+ *  Not a <details>: the content sits in a grid row animated 0fr <-> 1fr, so opening AND closing are smooth. */
 export function Dropdown({ title, aside, defaultOpen, children }: { title: string; aside?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(!!defaultOpen);
   return (
-    <details className="card dd" open={defaultOpen}>
-      <summary>
+    <section className={`card dd ${open ? 'open' : ''}`}>
+      <button type="button" className="dd-sum" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <h2>{title}</h2>
         <span className="right row" style={{ gap: 8 }}>{aside}<span className="dd-chev" aria-hidden="true" /></span>
-      </summary>
-      <div className="dd-body">{children}</div>
-    </details>
+      </button>
+      <div className="dd-wrap" aria-hidden={!open}>
+        <div className="dd-body">{children}</div>
+      </div>
+    </section>
   );
 }
 
