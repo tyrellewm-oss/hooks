@@ -6,7 +6,7 @@ import { useQuery } from '../lib/ui';
 import { pctOf, BPS_DENOM, approxDuration } from '../lib/shared';
 import { estimateSlot, isGraduated, liveCap, liveNextChange, phaseOf, PHASES, type Phase } from '../lib/token';
 import { Addr, Skeleton } from '../components/bits';
-import { TokenArt } from '../components/TokenArt';
+import { TokenImage } from '../components/TokenDetails';
 import { IconArrow } from '../components/Icons';
 
 const STAGE_DOT: Record<Phase, string> = { early: 'var(--amber)', capped: 'var(--accent)', uncapped: 'var(--text-3)', graduated: 'var(--green)', unknown: 'var(--text-4)' };
@@ -77,7 +77,7 @@ export function TokensPage({ meta }: { meta: Meta }) {
           <div className="strip">
             {closest.map((r) => (
               <div key={r.mint} className="strip-item" onClick={() => navigate(`/token/${r.mint}`)} role="link" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && navigate(`/token/${r.mint}`)}>
-                <div className="thumb"><TokenArt seed={r.mint} ticker={r.view?.launch?.symbol} showTicker={false} /></div>
+                <div className="thumb"><TokenImage mint={r.mint} ticker={r.view?.launch?.symbol} metadata={r.view?.metadata} showTicker={false} /></div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="spread"><b style={{ fontSize: 14, fontWeight: 600 }}>{r.view?.launch?.symbol ?? 'TOKEN'}</b><span className="num small">{Math.round(r.progress)}%</span></div>
                   <div className="meter" style={{ marginTop: 6 }}><span className="fill" style={{ width: `${r.progress}%` }} /></div>
@@ -125,7 +125,7 @@ function TokenCard({ r }: { r: Derived }) {
   return (
     <div className="tcard" onClick={go} role="link" tabIndex={0} aria-label={`${v?.launch?.symbol ?? r.mint} token`} onKeyDown={(e) => e.key === 'Enter' && go()}>
       <div className="art">
-        <TokenArt seed={r.mint} ticker={v?.launch?.symbol} />
+        <TokenImage mint={r.mint} ticker={v?.launch?.symbol} metadata={v?.metadata} />
         <span className="chip tl"><span className="d" style={{ background: STAGE_DOT[r.phase] }} />{stage ? stageShort(stage.label) : 'Unavailable'}</span>
         {r.launchedMs > 0 && <span className="chip tr">{ago(r.launchedMs)}</span>}
         {v && r.phase !== 'graduated' && <span className="chip bl">{r.capPct ? `Cap ${r.capPct}${r.nextText ? ` · ${r.nextText}` : ''}` : 'No cap'}</span>}

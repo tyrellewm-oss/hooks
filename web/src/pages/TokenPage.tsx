@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Meta } from '../lib/types';
 import { api, ApiError } from '../lib/api';
 import { usePoll, useNow } from '../lib/hooks';
@@ -9,7 +9,8 @@ import { CapRamp } from '../components/CapRamp';
 import { TradePanel } from '../components/TradePanel';
 import { RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
 import { Addr, CurveProgress, Guard, Link, PhasePill, PhaseStepper, Skeleton, Stat } from '../components/bits';
-import { TokenArt } from '../components/TokenArt';
+import { TokenImage, TokenLinks, DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
+import { PriceCard, TradesFeed } from '../components/Market';
 import { IconBack } from '../components/Icons';
 
 const POLL_MS = 6000;
@@ -19,6 +20,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
   const live = usePoll(() => api.token(mint, address), POLL_MS, `${mint}:${address ?? ''}`);
   const now = useNow(1000);
   const view = live.data;
+  const [editing, setEditing] = useState(false);
   const vars = useMemo(() => (view ? (pageVars(meta, view) as Record<string, string>) : null), [meta, view]);
 
   if (!view) {
@@ -59,7 +61,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
       <div className="top-cards">
         <div className="card">
           <div className="id-card">
-            <div className="thumb"><TokenArt seed={st.mint} ticker={view.launch?.symbol} showTicker={false} /></div>
+            <div className="thumb"><TokenImage mint={st.mint} ticker={view.launch?.symbol} metadata={view.metadata} showTicker={false} /></div>
             <div style={{ minWidth: 0 }}>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <h1 style={{ fontSize: 20 }}>{view.launch?.symbol ?? 'TOKEN'}</h1>
@@ -84,6 +86,18 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
         </div>
       </div>
 
+      {(view.metadata?.description || view.metadata?.website || view.metadata?.x || view.metadata?.telegram) ? (
+        <div className="card" style={{ padding: '14px 18px' }}>
+          <div className="spread" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <p className="muted" style={{ margin: 0, flex: 1, minWidth: 220 }}>{view.metadata.description}</p>
+            <div className="row" style={{ gap: 8 }}><TokenLinks m={view.metadata} /><button className="ghost small" onClick={() => setEditing(true)}>Edit details</button></div>
+          </div>
+        </div>
+      ) : (
+        <div className="row small faint" style={{ justifyContent: 'flex-end', marginTop: 8 }}>No image or description yet. <button className="ghost small" onClick={() => setEditing(true)}>Add details (studio)</button></div>
+      )}
+      {editing && <EditDetails mint={st.mint} ticker={view.launch?.symbol} metadata={view.metadata ?? null} onClose={() => setEditing(false)} onSaved={live.refresh} />}
+
       <PhaseStepper phase={phase} />
 
       <div className="grid-token">
@@ -103,6 +117,8 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
               : <p className="faint">No cap config found for this mint.</p>}
           </div>
 
+          <Guard what="the price chart"><PriceCard mint={mint} /></Guard>
+          <Guard what="the trades feed"><TradesFeed mint={mint} meta={meta} decimals={st.decimals ?? 6} /></Guard>
           <Guard what="the rules and risks"><RulesAndRisks vars={vars!} /></Guard>
           <SwitchHistory view={view} />
           <TokenDetails view={view} />
@@ -112,6 +128,35 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
           <Guard what="the trade panel">
             <TradePanel view={view} meta={meta} slot={slot} vars={vars!} onTraded={live.refresh} />
           </Guard>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Studio: edit a token's image, description and links (POST /api/token/:mint/metadata, registry-gated). */
+function EditDetails({ mint, ticker, metadata, onClose, onSaved }: { mint: string; ticker?: string; metadata: import('../lib/types').TokenMetadata | null; onClose: () => void; onSaved: () => Promise<void> }) {
+  const [d, setD] = useState<DetailsState>(() => emptyDetails(metadata));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const local = detailsError(d);
+  async function save() {
+    if (local) return;
+    setBusy(true); setErr(null);
+    try { await api.saveMetadata(mint, toInput(d)); await onSaved(); onClose(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="ed-title">
+        <div className="spread" style={{ marginBottom: 12 }}><h1 id="ed-title" style={{ fontSize: 18 }}>Token details</h1><button className="ghost" onClick={onClose} aria-label="Close">✕</button></div>
+        <p className="small faint">Studio tool. Shown on the token card and page. Descriptions follow the same wording rules as the site.</p>
+        <DetailsForm value={d} onChange={setD} currentImage={metadata?.image} mint={mint} ticker={ticker} />
+        {(local || err) && <div className="notice red small" role="alert" style={{ marginBottom: 12 }}>{local ?? err}</div>}
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
+          <button className="ghost" onClick={onClose}>Cancel</button>
+          <button className="primary" disabled={busy || !!local} onClick={save}>{busy ? 'Saving…' : 'Save details'}</button>
         </div>
       </div>
     </div>

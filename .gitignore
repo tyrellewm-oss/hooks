@@ -49,3 +49,9 @@ artifacts/
 
 # flywheel keeper journals/state (local; public log lives in flywheel/)
 .flywheel/
+
+# trade index (scripts/indexer.ts; local, rebuilt from chain)
+.index/
+
+# token details entered in the studio (sdk/metadata.ts); local like launches/
+/metadata/

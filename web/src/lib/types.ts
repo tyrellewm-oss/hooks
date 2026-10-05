@@ -82,9 +82,14 @@ export interface SwitchEvent {
   link: string;
 }
 
+/** Studio-entered token details (sdk/metadata.ts publicMetadata): image is a URL, never bytes */
+export interface TokenMetadata { description: string; website: string | null; x: string | null; telegram: string | null; image: string | null; updatedAt: string }
+export interface MetadataInput { description: string; website: string; x: string; telegram: string; image?: { data: string } | null }
+
 export interface TokenView {
   status: TokenStatus;
   launch: LaunchRecord | null;
+  metadata?: TokenMetadata | null;
   fee: FeeInfo | null;
   feeConfig: Record<string, unknown> | null;
   pool: { quoteReserveSol: number; isMigrated: boolean; curveComplete: boolean } | null;
@@ -121,6 +126,23 @@ export interface BuiltSwap {
   simulation: { ok: boolean; err: string | null; hookError: string | null; hookCode: number | null; capHit: TradeResult['capHit'] | null; unitsConsumed: number | null };
 }
 
+/** GET /api/flywheel (app/flywheel_public.ts): the keeper's public logs, registry mints only */
+export interface PublicRun { runId: string; startedAt: string; status: string; reason: string; claimedLamports: string; links: { what: string; sig: string; link: string }[] }
+export interface PublicKeeper {
+  name: string; mint: string; state: string; paused: boolean; pauseReason: string;
+  claimedSol: string; devSol: string; spentSol: string; reserveSol: string;
+  burnedTokens: string; supplyTokens: string; pctOfSupply: string;
+  burns: { at: string; tokens: string; sol: string; sig: string; link: string }[];
+  runs: PublicRun[];
+  pools: { dbc: string | null; route: string | null };
+}
+export interface FlywheelReply { cluster: string; keepers: PublicKeeper[]; skipped: string[] }
+
+/** GET /api/token/:mint/trades (sdk/indexer.ts via app/server.ts) */
+export interface IndexedTrade { sig: string; slot: number; time: number | null; pool: string; venue: 'curve' | 'pool'; side: 'buy' | 'sell' | 'blocked'; trader: string; baseRaw: string; quoteLamports: string; price: number | null; error?: string }
+export interface Candle { t: number; o: number; h: number; l: number; c: number; n: number }
+export interface TradesReply { indexed: boolean; updatedAt: string | null; decimals: number | null; interval: number; trades: IndexedTrade[]; candles: Candle[] }
+
 export interface CreateRequest {
   name: string;
   symbol: string;
@@ -128,5 +150,6 @@ export interface CreateRequest {
   uncappedAfter: string;
   thresholdSol: number;
   percentageSupplyOnMigration?: number;
+  metadata?: MetadataInput;
 }
 export interface CreateReply { mint: string; pool: string; registered: false; note: string }

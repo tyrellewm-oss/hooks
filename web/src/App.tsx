@@ -4,14 +4,14 @@ import { navigate, usePath, usePoll } from './lib/hooks';
 import { setQuery, setTheme, useQuery, useTheme } from './lib/ui';
 import { CONTENT, fill, pageVars } from './lib/shared';
 import { Guard, Link, Skeleton } from './components/bits';
-import { IconCode, IconGrid, IconMenu, IconMoon, IconPlus, IconRamp, IconSearch, IconSun, LogoMark } from './components/Icons';
+import { IconEye, IconGrid, IconMenu, IconMoon, IconPlus, IconRamp, IconSearch, IconSun, LogoMark } from './components/Icons';
 import { TokensPage } from './pages/TokensPage';
 import { WalletButton } from './components/WalletButton';
 import { TokenPage } from './pages/TokenPage';
 import { HowItWorksPage } from './pages/HowItWorksPage';
 import { CreatePage } from './pages/CreatePage';
+import { TransparencyPage } from './pages/TransparencyPage';
 
-const REPO_URL = 'https://github.com/tyrellewm-oss/hooks';
 
 export function App() {
   const path = usePath();
@@ -30,6 +30,7 @@ export function App() {
   else if (tokenMatch) page = <TokenPage key={tokenMatch[1]} mint={decodeURIComponent(tokenMatch[1])} meta={m} />;
   else if (path === '/how-it-works') page = <HowItWorksPage meta={m} />;
   else if (path === '/create') page = <CreatePage meta={m} />;
+  else if (path === '/transparency') page = <TransparencyPage meta={m} />;
   else if (path === '/') page = <TokensPage meta={m} />;
   else page = <div className="card"><h2>Page not found</h2><p style={{ marginTop: 8 }}><Link to="/" className="link">Back to tokens</Link></p></div>;
 
@@ -43,8 +44,8 @@ export function App() {
         <nav className="side-nav" aria-label="Main">
           {nav('/', 'Tokens', <IconGrid />)}
           {nav('/how-it-works', 'How the cap works', <IconRamp />)}
+          {nav('/transparency', 'Transparency', <IconEye />)}
           {nav('/create', 'Studio launch', <IconPlus />)}
-          <a href={REPO_URL} target="_blank" rel="noreferrer"><IconCode />Source code</a>
         </nav>
         <div className="side-foot">
           <div className="side-card" title={m ? `program ${m.programId}` : undefined}>

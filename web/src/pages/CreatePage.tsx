@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { validate, RELEASE_LIMITS, STRICT, BALANCED, LOOSE, LOCAL_DEMO, pctOf, approxDuration, type NamedSchedule, type ScheduleError } from '../lib/shared';
 import { CapRamp } from '../components/CapRamp';
 import { Addr } from '../components/bits';
+import { DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
 
 const SCHEDULE_ERRORS: Record<ScheduleError, string> = {
   BadLength: 'Use 1 to 8 steps.',
@@ -29,6 +30,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
   const [symbol, setSymbol] = useState('TTEST');
   const [threshold, setThreshold] = useState('1');
   const [onMigration, setOnMigration] = useState('20');
+  const [details, setDetails] = useState<DetailsState>(emptyDetails());
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CreateReply | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +59,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
   async function create() {
     if (!('steps' in check) || formErr) return;
     setBusy(true); setError(null); setResult(null);
-    try { setResult(await api.create({ name: name.trim(), symbol, steps: check.steps!, uncappedAfter: unc.trim(), thresholdSol: Number(threshold), percentageSupplyOnMigration: Number(onMigration) })); }
+    try { setResult(await api.create({ name: name.trim(), symbol, steps: check.steps!, uncappedAfter: unc.trim(), thresholdSol: Number(threshold), percentageSupplyOnMigration: Number(onMigration), metadata: toInput(details) })); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -114,8 +116,11 @@ export function CreatePage({ meta }: { meta: Meta }) {
           <label className="field"><span>Migration threshold (SOL, curve size)</span><input value={threshold} inputMode="decimal" onChange={(e) => setThreshold(e.target.value)} /></label>
           <label className="field"><span>Supply to the DAMM v2 pool at graduation (%)</span><input value={onMigration} inputMode="numeric" onChange={(e) => setOnMigration(e.target.value)} /></label>
           <p className="small faint">Fees use the current devnet defaults (sdk/launch.ts), pending a decision.</p>
-          {formErr && <p className="small fail">{formErr}</p>}
-          <button className="primary block" disabled={busy || !!formErr || 'err' in check} onClick={create}>{busy ? 'Creating… (2 transactions)' : `Create on ${meta.cluster.toLowerCase()}`}</button>
+          <div style={{ borderTop: '1px solid var(--card-border)', margin: '6px 0 14px' }} />
+          <div className="small faint" style={{ marginBottom: 10 }}>Token details (optional, can be edited later)</div>
+          <DetailsForm value={details} onChange={setDetails} mint={symbol || 'new'} ticker={symbol} />
+          {(formErr || detailsError(details)) && <p className="small fail">{formErr ?? detailsError(details)}</p>}
+          <button className="primary block" disabled={busy || !!formErr || !!detailsError(details) || 'err' in check} onClick={create}>{busy ? 'Creating… (2 transactions)' : `Create on ${meta.cluster.toLowerCase()}`}</button>
           {error && <div className="notice red small" style={{ marginTop: 12 }}>{error}</div>}
           {result && (
             <div className="notice green small" style={{ marginTop: 12 }}>

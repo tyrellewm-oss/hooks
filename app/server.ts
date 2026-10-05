@@ -3,9 +3,8 @@
 // Browser wallets (AC-21): /api/wallet/build returns an UNSIGNED swap for the user's wallet; /api/wallet/submit relays
 // only transactions this server built (sdk/wallet_tx.ts). The server never holds a user key.
 import http from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { join, extname } from 'node:path';
 import { buildSync } from 'esbuild';
 import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { resolveCluster, parseClusterArg, explorerAddr, explorerTx, assertNotMainnet } from '../sdk/cluster.js';
@@ -19,9 +18,15 @@ import { serverError } from './errors.js';
 import { siteRoute, createReply, type Reply } from './site_registry.js';
 import { WalletRelay, WalletTxRefusal, buildUserSwap, submitSigned } from '../sdk/wallet_tx.js';
 import { MintHookRefusal } from '../sdk/mint_hook.js';
+import { staticReply, uiModeFromArgs, assertUiBuilt } from './static.js';
+import { loadPublicKeepers } from './flywheel_public.js';
+import { readIndex, candles } from '../sdk/indexer.js';
+import { validateMetadata, saveMetadata, loadMetadata, loadImage, publicMetadata, MetadataRefusal } from '../sdk/metadata.js';
 
 const argv = process.argv.slice(2);
 const PORT = Number(process.env.PORT ?? 5175);
+const UI = uiModeFromArgs(argv);   // --web: serve the new front end from web/dist (build it first)
+assertUiBuilt(UI);
 const content = JSON.parse(readFileSync('research/page_content.json', 'utf8'));
 // AC-30: refuse to start if anything mainnet-like is configured.
 for (const v of [process.env.DEVNET_RPC, process.env.LOCAL_RPC]) if (v) assertNotMainnet(v);
@@ -80,7 +85,7 @@ async function tokenView(mintStr: string, owner: PublicKey | null = null) {
     percentageSupplyOnMigration: (rec.fee as any)?.percentageSupplyOnMigration ?? DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION } : null;
   // the connected browser wallet, when the page passes ?owner=<pubkey>: its token balance and SOL (read only)
   const wallet = owner ? { owner: owner.toBase58(), tokens: (await lp.tokenBalance(mint, owner)).toString(), sol: (await c.connection.getBalance(owner, 'confirmed')) / LAMPORTS_PER_SOL } : null;
-  return { status: st, launch: rec, fee, feeConfig, pool, balances: bal, wallet, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
+  return { status: st, launch: rec, metadata: publicMetadata(loadMetadata(c.name, mintStr), mintStr), fee, feeConfig, pool, balances: bal, wallet, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
 }
 
 async function trade(b: any, rec: { mint: string; pool: string }): Promise<Reply> {
@@ -88,6 +93,15 @@ async function trade(b: any, rec: { mint: string; pool: string }): Promise<Reply
   const tokens = BigInt(Math.round(Number(b.amount) * 1e6));
   if (tokens <= 0n) return { code: 400, body: { error: 'amount must be > 0' } };
   return { code: 200, body: await lp.swap(w, new PublicKey(rec.pool), b.side === 'sell' ? 'sell' : 'buy', tokens, `page: wallet ${b.wallet} ${b.side} ${b.amount} ${rec.mint.slice(0, 6)}`) };
+}
+
+/** Price chart + trades feed from the indexer's file (scripts/indexer.ts keeps it fresh). No chain call. */
+const INTERVALS = new Set([60, 300, 900, 3600]);
+function tradesView(mint: string, interval: number) {
+  const ix = readIndex(c.name, mint);
+  const iv = INTERVALS.has(interval) ? interval : 300;
+  if (!ix) return { indexed: false, updatedAt: null, decimals: null, interval: iv, trades: [], candles: [] };
+  return { indexed: true, updatedAt: ix.updatedAt, decimals: ix.decimals, interval: iv, trades: ix.trades.slice(0, 100), candles: candles(ix.trades, iv).slice(-300) };
 }
 
 /** AC-21 build: an unsigned swap for the user's wallet, simulated first. Never signs or sends. */
@@ -105,11 +119,11 @@ async function build(b: any, rec: { mint: string; pool: string }): Promise<Reply
   }
 }
 
-async function body(req: http.IncomingMessage): Promise<any> { let d = ''; for await (const ch of req) d += ch; return d ? JSON.parse(d) : {}; }
+const MAX_BODY = 1_000_000;   // the largest legitimate body is a token image (512 KB as base64)
+async function body(req: http.IncomingMessage): Promise<any> { let d = ''; for await (const ch of req) { d += ch; if (d.length > MAX_BODY) throw new Error('request body too large'); } return d ? JSON.parse(d) : {}; }
 const send = (res: http.ServerResponse, code: number, obj: any, type = 'application/json') => {
   if (type === 'application/json') obj = redactDeep(obj);   // FW-17: every JSON body is public; all strings (keys too) are redacted
-  res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }); res.end(type === 'application/json' ? JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) : obj); };
-const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
+  res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(type === 'application/json' ? JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) : obj); };
 
 http.createServer(async (req, res) => {
   try {
@@ -123,7 +137,12 @@ http.createServer(async (req, res) => {
       token: mint => tokenView(mint, walletKey(url.searchParams.get('owner'))),
       trade,
       build,
+      image: mint => { const im = loadImage(c.name, mint); return im ? { code: 200, body: im.data, type: im.type } : { code: 404, body: { error: 'no image' } }; },
+      metadata: (mint, b) => { try { return { code: 200, body: publicMetadata(saveMetadata(c.name, mint, validateMetadata(b ?? {})), mint) }; } catch (e: any) { if (e instanceof MetadataRefusal) return { code: 400, body: { error: e.message } }; throw e; } },
+      trades: mint => tradesView(mint, Number(url.searchParams.get('interval') ?? 300)),
+      flywheel: registered => ({ cluster: c.label, ...loadPublicKeepers(c.name, registered) }),
     });
+    if (routed?.type) return send(res, routed.code, routed.body, routed.type);   // the token image (binary)
     if (routed) return send(res, routed.code, routed.body);
     if (url.pathname === '/api/wallets') { const o: any = {}; for (const [k, w] of Object.entries(wallets)) o[k] = { pubkey: w.publicKey.toBase58(), sol: (await c.connection.getBalance(w.publicKey)) / LAMPORTS_PER_SOL }; return send(res, 200, o); }
     if (url.pathname === '/api/wallet/submit' && req.method === 'POST') {
@@ -150,15 +169,16 @@ http.createServer(async (req, res) => {
       let percentageSupplyOnMigration: number; // optional; default 20 (validated before any tx)
       try { percentageSupplyOnMigration = resolvePercentageSupplyOnMigration(b.percentageSupplyOnMigration); }
       catch (e: any) { return send(res, 400, { error: e.message }); }
+      let meta: ReturnType<typeof validateMetadata> | null = null;   // optional token details, validated before any tx
+      if (b.metadata !== undefined) { try { meta = validateMetadata(b.metadata); } catch (e: any) { return send(res, 400, { error: e.message }); } }
       await lp.ensureGlobal(deployer, deployer.publicKey);
       await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);   // 8.3: launches are signed by the launch key, never the admin
       const rec = await lp.launch(deployer, { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration }, launchKey);
+      if (meta) saveMetadata(c.name, rec.mint, meta);
       return send(res, 200, createReply(rec));   // ticket 8.5b: registered: false + note; the registry is never written
     }
     if (url.pathname === '/capMath.js') return send(res, 200, capMathJs, 'text/javascript');
-    const file = url.pathname === '/' || url.pathname.startsWith('/token/') ? 'index.html' : url.pathname.slice(1);
-    const p = join('app/public', file);
-    if (!p.startsWith('app/public') || !existsSync(p)) return send(res, 404, { error: 'not found' });
-    return send(res, 200, readFileSync(p, 'utf8'), MIME[extname(p)] ?? 'text/plain');
+    const st = staticReply(url.pathname, UI);   // app/static.ts: classic page or, with --web, the new UI (web/dist)
+    return send(res, st.code, st.body, st.type);
   } catch (e: any) { return send(res, 500, serverError(e)); }   // FW-17: the console line is redacted too (app/errors.ts)
-}).listen(PORT, '127.0.0.1', () => console.log(`launch page [${c.label}] http://127.0.0.1:${PORT}  program ${lp.hook.programId.toBase58()}`));
+}).listen(PORT, '127.0.0.1', () => console.log(`launch page [${c.label}${UI === 'web' ? ', new UI' : ''}] http://127.0.0.1:${PORT}  program ${lp.hook.programId.toBase58()}`));
