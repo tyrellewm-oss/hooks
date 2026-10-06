@@ -274,17 +274,18 @@ export async function buildCreatePoolTx(lp: { dbc: any; hook: HookClient }, o: L
  *  replaces the blockhash) and require the post-simulation mint's TransferHook = gated hook program + pinned DBC signer.
  *  The mint address is the one the tx itself names (DBC create-pool ix, base_mint); it must equal `expectedMint`.
  *  Returns the simulated message bytes, so the signing step can prove it signs the same bytes apart from the blockhash. */
-export async function preSendMintHookCheck(conn: any, tx: Transaction, payer: PublicKey, expectedMint: PublicKey, exp: MintHookExpectation): Promise<{ messageBytes: Buffer; mint: PublicKey; hook: MintTransferHook }> {
+export async function preSendMintHookCheck(conn: any, tx: Transaction, payer: PublicKey, expectedMint: PublicKey, exp: MintHookExpectation): Promise<{ messageBytes: Buffer; mint: PublicKey; hook: MintTransferHook; lastValidBlockHeight: number }> {
   const mint = poolTxBaseMint(tx, DBC_PROGRAM_ID);
   if (!mint.equals(expectedMint)) throw new MintHookRefusal(`refusing: the built create-pool tx names base mint ${mint.toBase58()}, not the launch mint ${expectedMint.toBase58()}`);
-  let blockhash: string;
-  try { blockhash = (await conn.getLatestBlockhash('confirmed')).blockhash; }
+  let blockhash: string, lastValidBlockHeight: number;
+  try { ({ blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed')); }
   catch (e: any) { throw new MintHookRefusal(`refusing: RPC error fetching a blockhash for the create-pool simulation: ${String(e?.message ?? e).slice(0, 200)}`); }
-  tx.feePayer = payer; tx.recentBlockhash = blockhash;   // placeholder only: replaceRecentBlockhash swaps it
+  tx.feePayer = payer; tx.recentBlockhash = blockhash;   // the simulation swaps it (replaceRecentBlockhash); a user-signed tx keeps this one
   const sim = await simulateMintTransferHook(conn, tx.serializeMessage(), mint);
   const p = mintHookProblems(sim.hook, 'pre', exp);
   if (p.length) throw new MintHookRefusal(`refusing before signing: simulated mint ${mint.toBase58()} (create-pool tx): ${p.join('; ')}`);
-  return { messageBytes: sim.messageBytes, mint, hook: sim.hook };
+  // lastValidBlockHeight belongs to the blockhash now in the tx, so a confirmation of the user-signed tx checks the right one
+  return { messageBytes: sim.messageBytes, mint, hook: sim.hook, lastValidBlockHeight };
 }
 const hookStr = (h: MintTransferHook) => `program_id=${h.programId?.toBase58() ?? 'unset'} authority=${h.authority?.toBase58() ?? 'unset'}`;
 

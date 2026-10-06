@@ -119,7 +119,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
       if (bw.address) {
         // AC-21: the launch tx is signed in the connected wallet; the server co-signs with the launch key (8.3)
         setStep('Preparing the launch…');
-        const built = await api.launchBuild(req);
+        const built = await api.launchBuild({ ...req, owner: bw.address });
         setStep('Approve the launch in your wallet…');
         let signed: Uint8Array;
         try { signed = await signTransaction(hexToBytes(built.tx)); }

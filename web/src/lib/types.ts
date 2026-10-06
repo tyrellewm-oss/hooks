@@ -167,6 +167,8 @@ export interface CreateRequest {
   metadata?: MetadataInput;
   /** optional hooks; omitted = none */
   rules?: BuyRulesInput;
+  /** AC-21 studio launch only: the connected wallet that pays and signs (needed where the studio is open without sign-in) */
+  owner?: string;
 }
 export interface CreateReply { mint: string; pool: string; registered: false; note: string }
 /** AC-21 studio launch: the server-built, co-signed launch tx the connected wallet signs (hex), plus what it creates */

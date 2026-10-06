@@ -246,10 +246,13 @@ http.createServer(async (req, res) => {
     // and relays only what it built (sdk/launch_user.ts: one use, 90 s, every signature verified).
     if (url.pathname === '/api/studio/launch/build' && req.method === 'POST') {
       const who = studioCheck(req); if ('code' in who) return send(res, who.code, who.body);   // studio only
-      const p = parseLaunchBody(await body(req));
+      const b = await body(req);
+      const p = parseLaunchBody(b);
       if ('error' in p) return send(res, 400, p);
-      const owner = walletKey(who.wallet);
-      if (!owner) return send(res, 400, { error: 'the studio session wallet is not a valid key' });
+      // the wallet that pays and signs: the signed-in studio wallet, or on an open studio (LOCAL, no allowlist, so
+      // there is no session wallet) the connected wallet the page names in the request
+      const owner = studio.open ? walletKey(b.owner) : walletKey(who.wallet);
+      if (!owner) return send(res, 400, { error: studio.open ? 'owner must be the connected wallet address (open studio)' : 'the studio session wallet is not a valid key' });
       await lp.ensureGlobal(deployer, deployer.publicKey);
       await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);
       try {

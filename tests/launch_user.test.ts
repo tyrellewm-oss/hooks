@@ -79,5 +79,23 @@ test('build/submit wiring: 8.3 checks before any build, simulation before co-sig
     const r = srv.slice(srv.indexOf(`url.pathname === '${route}'`));
     assert.match(r.slice(0, 300), /studioCheck\(req\)/, `${route} is studio-gated`);
   }
-  assert.match(srv, /const owner = walletKey\(who\.wallet\)/, 'the launch is built for the signed-in studio wallet, not a body field');
+  assert.match(srv, /const owner = studio\.open \? walletKey\(b\.owner\) : walletKey\(who\.wallet\);/, 'with sign-in required the launch is built for the signed-in studio wallet, never a body field; only an open studio (LOCAL, no allowlist, no session wallet) takes the connected wallet from the request');
+});
+
+test('confirmation uses the lastValidBlockHeight of the blockhash in the tx (from the pre-send check), not a second fetch', () => {
+  const build = readFileSync(new URL('../sdk/launch_user.ts', import.meta.url), 'utf8');
+  const launch = readFileSync(new URL('../sdk/launch.ts', import.meta.url), 'utf8');
+  assert.ok(build.includes('const { lastValidBlockHeight } = sim;'), 'launch_user takes lastValidBlockHeight from the check result');
+  assert.equal(build.includes("getLatestBlockhash("), false, 'launch_user never fetches a second blockhash (it would not match tx.recentBlockhash)');
+  const pre = launch.slice(launch.indexOf('export async function preSendMintHookCheck'));
+  assert.ok(pre.includes("({ blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed'))"), 'one fetch gives both values');
+  assert.ok(pre.includes('return { messageBytes: sim.messageBytes, mint, hook: sim.hook, lastValidBlockHeight }'), 'and the height is returned with the hash that was set');
+});
+
+test('open studio (LOCAL): the launch owner is the connected wallet from the request; signed-in studio: the session wallet', () => {
+  const server = readFileSync(new URL('../app/server.ts', import.meta.url), 'utf8');
+  const route = server.slice(server.indexOf("'/api/studio/launch/build'"), server.indexOf("'/api/studio/launch/submit'"));
+  assert.ok(route.includes('const owner = studio.open ? walletKey(b.owner) : walletKey(who.wallet);'), 'owner source depends on whether the studio is open');
+  const page = readFileSync(new URL('../web/src/pages/CreatePage.tsx', import.meta.url), 'utf8');
+  assert.ok(page.includes('api.launchBuild({ ...req, owner: bw.address })'), 'the page names the connected wallet');
 });

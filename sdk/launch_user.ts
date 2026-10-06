@@ -109,7 +109,7 @@ export async function buildUserLaunch(lp: Launchpad, relay: StudioLaunchRelay, d
   const pool = deriveDbcPoolAddress(NATIVE_MINT, mintKp.publicKey, configKp.publicKey);
   // blocker #7 pre-send check on the exact unsigned bytes (also sets the fee payer and a fresh blockhash)
   const sim = await preSendMintHookCheck(lp.c.connection, poolTx, owner, mintKp.publicKey, exp);
-  const { lastValidBlockHeight } = await lp.c.connection.getLatestBlockhash('confirmed');
+  const { lastValidBlockHeight } = sim;   // of the blockhash the check put in the tx: the one the wallet signs over
   // co-sign with the keys the server must hold; partial signing never changes the message bytes
   poolTx.partialSign(mintKp, ...(launchKey.publicKey.equals(deployer.publicKey) ? [] : [launchKey]));
   const message = poolTx.serializeMessage();
