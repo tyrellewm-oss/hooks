@@ -115,7 +115,6 @@ a.link:hover, .link-inline:hover { text-decoration-color: var(--brand); }
   --cf: var(--card);
   --cb: var(--card-border);
   position: relative;
-  border-color: transparent;
   box-shadow: none;
   background:
     linear-gradient(135deg, transparent calc(50% - 0.6px), var(--cb) calc(50% - 0.6px), var(--cb) calc(50% + 0.6px), transparent calc(50% + 0.6px)) 0 0 / var(--cut) var(--cut) no-repeat border-box,

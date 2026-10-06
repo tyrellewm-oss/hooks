@@ -83,7 +83,6 @@
 @media (max-width: 760px) { .hk-grid { grid-template-columns: minmax(0, 1fr); } }
 .hk-list { display: grid; gap: 6px; align-content: start; }
 button.hk-item { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left; width: 100%; padding: 9px 10px; border: 1px solid transparent; justify-content: stretch; }
-button.hk-item.on { border-color: var(--tone); }
 .hk-item .hook-tile { width: 36px; height: 36px; }
 .hk-item .hook-tile svg { width: 18px; height: 18px; }
 .hk-item .nm { font-size: 13.5px; font-weight: 600; display: block; }
@@ -111,9 +110,7 @@ button.hk-item.on { border-color: var(--tone); }
 .hooks-explorer .hooks-explorer-hero { margin-bottom: 0; padding-block: 24px; }
 .hooks-explorer-hero p { max-width: 620px; }
 .hook-selector { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.hook-selector .hook-choice { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 8px; padding: 14px; min-width: 0; text-align: left; white-space: normal; border: 1px solid var(--card-border); transition: background .15s ease, border-color .15s ease; }
-.hook-selector .hook-choice:hover { border-color: var(--line-strong); }
-.hook-selector .hook-choice[aria-pressed='true'] { border-color: var(--tone); }
+.hook-selector .hook-choice { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 8px; padding: 14px; min-width: 0; text-align: left; white-space: normal; border: 1px solid transparent; transition: background .15s ease, border-color .15s ease; }
 .hook-choice-top { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
 .hook-choice .hook-tile { width: 30px; height: 30px; }
 .hook-choice .hook-tile svg { width: 17px; height: 17px; }

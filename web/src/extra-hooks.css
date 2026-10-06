@@ -14,8 +14,7 @@
 .hk-state.optional { color: var(--text-2); background: var(--panel-2); }
 .hk-state.optional.on { color: var(--amber-text); background: var(--amber-soft); }
 .opt-list { display: grid; gap: 12px; }
-.opt-hook { border: 1px solid var(--card-border); transition: border-color 0.2s ease, background 0.2s ease; }
-.opt-hook.on { border-color: var(--tone); }
+.opt-hook { border: 1px solid transparent; }
 .opt-hook-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 14px 16px; }
 .opt-hook-head .hook-tile { width: 34px; height: 34px; }
 .opt-hook-head .nm { display: block; font-weight: 600; font-size: 14px; color: var(--text); }
