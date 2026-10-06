@@ -6,7 +6,7 @@ import { allHooks, HOOK_IDS, SNIPER_DEFAULT, type HookId, type HookInfo } from '
 import { LifecycleDiagram, CapGauge } from '../components/HookArt';
 import { CapExplanation } from '../components/CapExplanation';
 import { Guard, Link } from '../components/bits';
-import { IconArrow, IconHook, IconInfo } from '../components/Icons';
+import { IconArrow, IconEye, IconHook, IconInfo } from '../components/Icons';
 
 function hookFromHash(): HookId {
   const id = location.hash.replace('#hook-', '') as HookId;
@@ -38,9 +38,8 @@ export function HooksPage({ meta }: { meta: Meta }) {
     <div className="stack hooks-explorer">
       <section className="hero hooks-explorer-hero">
         <div>
-          <span className="eyebrow"><IconHook size={14} />Hooks</span>
           <h1>The rules every token runs</h1>
-          <p>Four rules every token runs, plus five a launch can add. All fixed at launch. Explore what each does, when it runs and where its limits are.</p>
+          <p>Four rules every token runs, plus {hooks.length - 4} a launch can add. All fixed at launch. Explore what each does, when it runs and where its limits are.</p>
         </div>
         <span className="hero-line" />
       </section>
@@ -61,26 +60,34 @@ export function HooksPage({ meta }: { meta: Meta }) {
       ))}
 
       <div id="hook-explorer-panel">
-        <HookPanel key={selected.id} hook={selected} capStartPct={capStartPct} meta={meta} />
+        <HookPanel key={selected.id} hook={selected} capStartPct={capStartPct} />
       </div>
 
-      <details className="card hook-lifecycle">
-        <summary><span><b>When each hook is on</b><span className="small faint">Launch → bonding curve → graduation → pool</span></span><span className="dd-chev" aria-hidden="true" /></summary>
-        <div className="hook-lifecycle-body">
-          <p className="small muted">Two rules run inside the token, one is the curve's fee schedule and one is a public bot.</p>
-          <div className="hd-scroll"><LifecycleDiagram feeText={`first ${approxDuration(String(SNIPER_DEFAULT.durationSlots))}`} rampText={approxDuration(meta.defaultSchedule.uncappedAfter)} /></div>
-        </div>
-      </details>
-
-      <div className="notice hooks-foot">
-        <IconInfo size={18} />
-        <div><b>Selling back into the curve is never blocked.</b> The pool vault and graduation path are exempt from the cap. The <a href="#hook-cap" className="link">cap section</a> includes the full rule and exceptions. See every keeper claim, buyback and burn in <Link to="/transparency" className="link">Transparency</Link>.</div>
-      </div>
+      <section className="card hook-reference" aria-labelledby="hook-reference-title">
+        <div className="hook-reference-head"><h2 id="hook-reference-title">Details &amp; activity</h2><p className="muted">Explore the rules in depth and see them in action.</p></div>
+        {active === 'cap' && <Guard what="the cap explanation"><CapExplanation meta={meta} /></Guard>}
+        <details className="hook-lifecycle hook-resource">
+          <summary>
+            <span className="hook-resource-icon"><IconHook size={18} /></span>
+            <span className="hook-resource-copy"><b>Hook lifecycle</b><span>When each hook runs, from launch to the pool</span></span>
+            <span className="dd-chev" aria-hidden="true" />
+          </summary>
+          <div className="hook-lifecycle-body">
+            <p className="small muted">Two rules run inside the token, one is the curve's fee schedule and one is a public bot.</p>
+            <div className="hd-scroll"><LifecycleDiagram feeText={`first ${approxDuration(String(SNIPER_DEFAULT.durationSlots))}`} rampText={approxDuration(meta.defaultSchedule.uncappedAfter)} /></div>
+          </div>
+        </details>
+        <Link to="/transparency" className="hook-resource-link">
+          <span className="hook-resource-icon"><IconEye size={18} /></span>
+          <span className="hook-resource-copy"><b>Public activity</b><span>Keeper claims, buybacks and burns</span></span>
+          <span className="hook-resource-action">View logs <IconArrow size={15} /></span>
+        </Link>
+      </section>
     </div>
   );
 }
 
-function HookPanel({ hook: h, capStartPct, meta }: { hook: HookInfo; capStartPct: number; meta: Meta }) {
+function HookPanel({ hook: h, capStartPct }: { hook: HookInfo; capStartPct: number }) {
   const [diagram, setDiagram] = useState<'flow' | 'buys'>('flow');
   return (
     <section className={`card hook-focus tone-${h.tone}`} id={`hook-${h.id}`} aria-labelledby={`hook-${h.id}-t`}>
@@ -112,8 +119,12 @@ function HookPanel({ hook: h, capStartPct, meta }: { hook: HookInfo; capStartPct
           </details>
         </div>
       </div>
-      <div className="hook-focus-limits"><IconInfo size={16} /><p><b>What it does not do.</b> {h.limits}</p></div>
-      {h.id === 'cap' && <Guard what="the cap explanation"><CapExplanation meta={meta} /></Guard>}
+      {h.id === 'cap' ? (
+        <div className="hook-cap-notes">
+          <section><IconInfo size={17} /><div><h3>Scope &amp; limits</h3><p>The cap is per token account, not per wallet. One person can use several accounts or wallets. It slows snipers down; it does not stop them.</p></div></section>
+          <section><IconArrow size={17} /><div><h3>Selling &amp; migration</h3><p>Selling back into the curve is never blocked by the cap. The pool vault and graduation path are exempt too.</p></div></section>
+        </div>
+      ) : <div className="hook-focus-limits"><IconInfo size={16} /><p><b>Keep in mind.</b> {h.limits}</p></div>}
     </section>
   );
 }

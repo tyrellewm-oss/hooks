@@ -1,0 +1,7 @@
+Generated with built-in image_gen. Opaque monochrome exports; screen/multiply blending removes their backdrop in the site.
+
+White:
+Edit the approved reference logo, preserving EXACTLY its linked-hook icon and slanted outline Hookd wordmark, spelling, spacing, relative sizes and geometry. No redesign. Crop the canvas closely around the complete horizontal logo with a small even margin, removing the large empty borders. Pristine smooth outlines with hollow interiors and no distressed speckles, no texture, no shadows or gradients. One finished horizontal logo. Pure white linework on a uniform pure black #000000 background, including black in all hollow interiors.
+
+Black:
+Edit the approved reference logo, preserving EXACTLY its linked-hook icon and slanted outline Hookd wordmark, spelling, spacing, relative sizes and geometry. No redesign. Crop the canvas closely around the complete horizontal logo with a small even margin, removing the large empty borders. Pristine smooth outlines with hollow interiors and no distressed speckles, no texture, no shadows or gradients. One finished horizontal logo. Pure black linework on a uniform pure white #ffffff background, including white in all hollow interiors. This is the exact opposite colour version of the reference.

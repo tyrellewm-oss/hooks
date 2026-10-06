@@ -379,13 +379,13 @@ export function LockDiagram({ pctText, durText }: { pctText: string; durText: st
   const stations = [
     { x: 70, label: 'launch' },
     { x: 190, label: 'graduation' },
-    { x: unlockX, label: `+${durText}` },
+    { x: unlockX, label: `${durText} later` },
   ];
   return (
     <Frame w={420} h={196} label={`The creator's ${pctText} is locked from launch, through graduation, and unlocks all at once about ${durText} later`}>
       <line x1={L} x2={R} y1={y} y2={y} className="hd-axis" />
       <Block x={stations[0].x} y={y - 12} w={unlockX - stations[0].x} h={24} kind="held" d={6} />
-      <text x={(stations[0].x + unlockX) / 2} y={y + 4.5} textAnchor="middle" className="hd-s on">{pctText} locked</text>
+      <text x={(stations[0].x + stations[1].x) / 2} y={y + 4.5} textAnchor="middle" className="hd-s on">{pctText} locked</text>
       {stations.map((st) => (
         <g key={st.label}>
           <line x1={st.x} x2={st.x} y1={y - 22} y2={y + 18} className="hd-axis" />

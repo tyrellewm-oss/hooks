@@ -2,9 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { api } from './lib/api';
 import { navigate, usePath, usePoll } from './lib/hooks';
 import { setQuery, setTheme, useQuery, useTheme } from './lib/ui';
-import { CONTENT, fill, pageVars } from './lib/shared';
+import { CONTENT } from './lib/shared';
 import { Guard, Link, Skeleton } from './components/bits';
-import { IconBook, IconEye, IconGrid, IconHome, IconHook, IconMenu, IconMoon, IconPlus, IconSearch, IconSun, LogoMark } from './components/Icons';
+import { IconBook, IconEye, IconGrid, IconHome, IconHook, IconMenu, IconMoon, IconPlus, IconSearch, IconSun } from './components/Icons';
 import { TokensPage } from './pages/TokensPage';
 import { HomePage } from './pages/HomePage';
 import { WalletButton } from './components/WalletButton';
@@ -50,22 +50,22 @@ export function App() {
   return (
     <div className="shell">
       <aside className={`sidebar ${menu ? 'open' : ''}`} aria-label="Sidebar">
-        <Link to="/" className="logo"><span className="logo-mark"><LogoMark /></span>Hookd</Link>
+        <Link to="/" className="logo" aria-label="Hookd home">
+          <span className={`brand-lockup brand-lockup--${theme}`}>
+            <img src={`/brand/hookd-${theme === 'dark' ? 'white' : 'black'}.png`} alt="Hookd" width={theme === 'dark' ? 2172 : 1774} height={theme === 'dark' ? 724 : 887} />
+          </span>
+        </Link>
         <nav className="side-nav" aria-label="Main">
           {nav('/', 'Home', <IconHome />)}
           {nav('/tokens', 'Tokens', <IconGrid />)}
           {nav('/create', 'Studio launch', <IconPlus />)}
           {nav('/hooks', 'Hooks', <IconHook />)}
           {nav('/transparency', 'Transparency', <IconEye />)}
-          {nav('/docs', 'Docs', <IconBook />)}
         </nav>
         <div className="side-foot">
-          <div className="side-card" title={m ? `program ${m.programId}` : undefined}>
-            <div className="row" style={{ color: 'var(--text-2)', fontWeight: 500 }}>
-              <span className={`dot ${meta.error ? 'down' : !m ? 'stale' : ''}`} />{m ? m.cluster : 'connecting…'}
-            </div>
-            <div className="mono" style={{ marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m?.rpc ?? '…'}</div>
-          </div>
+          <nav className="side-nav" aria-label="Resources">
+            {nav('/docs', 'Docs', <IconBook />)}
+          </nav>
           <div className="theme-toggle" role="group" aria-label="Theme">
             <button className={theme === 'dark' ? 'on' : ''} aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}><IconMoon size={14} />Dark</button>
             <button className={theme === 'light' ? 'on' : ''} aria-pressed={theme === 'light'} onClick={() => setTheme('light')}><IconSun size={14} />Light</button>
@@ -89,7 +89,6 @@ export function App() {
           </div>
         </header>
         <main><Guard what="this page">{page}</Guard></main>
-        <footer>{m ? <Guard what="the footer">{fill(CONTENT.footer, pageVars(m, null))}</Guard> : null}</footer>
       </div>
     </div>
   );

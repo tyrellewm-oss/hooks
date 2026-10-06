@@ -1,7 +1,8 @@
 /* Optional hooks (max single buy, per-slot limit, buy pot): hooks page groups, launch step, token page pot card. */
 .hook-group { display: grid; gap: 8px; }
 .hook-group-head { font-size: 11.5px; letter-spacing: 0.02em; }
-.hook-selector.opt { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.hook-selector.opt { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .hook-selector.opt { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .hook-selector.opt { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* diagrams */
