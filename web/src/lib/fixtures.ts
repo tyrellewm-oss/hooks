@@ -22,6 +22,7 @@ interface Sim {
   balances: Record<string, bigint>; switchHistory: SwitchEvent[]; raisedFloorBps: number;
   /** optional hooks: rules plus how many buys the pot has counted so far */
   rules?: { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number; cooldownSlots: number; buyCount: number };
+  creatorLock?: { pct: number; slots: number };
 }
 const tokens = (n: number) => BigInt(Math.round(n * 1e6)) * (UNIT / 1_000_000n);
 const fakeKey = (tag: string) => (tag + '1'.repeat(44)).slice(0, 44);
@@ -31,7 +32,7 @@ const SIMS: Sim[] = [
     launchedMsAgo: 25_000, graduated: false, reserveSol: 0.031, balances: { A: 0n, B: tokens(4_000_000) }, switchHistory: [], raisedFloorBps: 0 },
   { mint: fakeKey('FixtureCappedMint'), pool: fakeKey('FixturePooB'), config: fakeKey('FixtureCfgB'), name: 'Fixture Capped', symbol: 'TCAP',
     launchedMsAgo: 245_000, graduated: false, reserveSol: 0.082, balances: { A: tokens(12_400_000), B: tokens(3_000_000) }, switchHistory: [], raisedFloorBps: 0,
-    rules: { maxBuyBps: 50, maxPerSlotBps: 150, windowSlots: '1500', potEvery: 25, potMinBps: 1, cooldownSlots: 25, buyCount: 68 } },
+    rules: { maxBuyBps: 50, maxPerSlotBps: 150, windowSlots: '1500', potEvery: 25, potMinBps: 1, cooldownSlots: 25, buyCount: 68 }, creatorLock: { pct: 5, slots: 216_000 } },
   { mint: fakeKey('FixtureOpenMint'), pool: fakeKey('FixturePooC'), config: fakeKey('FixtureCfgC'), name: 'Fixture Open', symbol: 'TOPEN',
     launchedMsAgo: 40 * 60_000, graduated: false, reserveSol: 0.164, balances: { A: tokens(52_000_000), B: tokens(8_500_000) }, raisedFloorBps: 500,
     switchHistory: [{ scope: 'mint', oldMinCapBps: 0, newMinCapBps: 500, lifted: false, slot: String(slotAt(T0 - 32 * 60_000)), signer: fakeKey('FixtureLiftAuthority'), link: '' }],
@@ -64,7 +65,7 @@ function view(s: Sim, owner?: string | null): TokenView {
       mintHook: { ok: true, phase: s.graduated ? 'post' : 'pre', problems: [] },
     },
     metadata: META.get(s.mint) ?? null,
-    launch: { name: s.name, symbol: s.symbol, mint: s.mint, pool: s.pool, config: s.config, time: new Date(T0 - s.launchedMsAgo).toISOString(), steps, uncappedAfter: BALANCED.uncappedAfter.toString(), migrationQuoteThresholdSol: 0.2, fee: FEE_CONFIG },
+    launch: { name: s.name, symbol: s.symbol, mint: s.mint, pool: s.pool, config: s.config, time: new Date(T0 - s.launchedMsAgo).toISOString(), steps, uncappedAfter: BALANCED.uncappedAfter.toString(), migrationQuoteThresholdSol: 0.2, fee: FEE_CONFIG, ...(s.creatorLock ? { creatorLock: s.creatorLock } : {}) },
     fee: FEE,
     feeConfig: FEE_CONFIG,
     pool: { quoteReserveSol: Math.round(s.reserveSol * 1e4) / 1e4, isMigrated: s.graduated, curveComplete: s.graduated },

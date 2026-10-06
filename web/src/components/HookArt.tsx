@@ -354,15 +354,18 @@ export function CooldownDiagram({ gapText }: { gapText: string }) {
     <Frame w={420} h={196} label={`Curve buys share one ${gapText} gap: A lands, B inside the gap fails, C after the gap lands`}>
       <line x1={L} x2={R} y1={y} y2={y} className="hd-axis" />
       <rect x={marks[0].x + 8} y={y - 11} width={marks[2].x - marks[0].x - 16} height={22} rx="7" className="hd-well" />
-      <text x={(marks[0].x + marks[2].x) / 2} y={y + 4.5} textAnchor="middle" className="hd-s">{gapText} gap</text>
+      {/* the gap label sits left of Buy B's marker so neither covers the other */}
+      <text x={marks[0].x + 16} y={y + 4.5} className="hd-s">{gapText} gap</text>
       {marks.map((m) => (
         <g key={m.label}>
-          <circle cx={m.x} cy={y} r="7" className={m.ok ? 'hd-fill' : 'hd-ghost'} />
+          {m.ok
+            ? <circle cx={m.x} cy={y} r="7" className="hd-fill" />
+            : <g className="hd-opt bad"><circle cx={m.x} cy={y} r="8" /><path d={`M${m.x - 3.2} ${y - 3.2}l6.4 6.4M${m.x + 3.2} ${y - 3.2}l-6.4 6.4`} className="hd-mark" /></g>}
           <text x={m.x} y={y - 24} textAnchor="middle" className="hd-t small">{m.label}</text>
           <text x={m.x} y={y + 34} textAnchor="middle" className={`hd-s strong ${m.ok ? 'ok' : 'bad'}`}>{m.ok ? '\u2713 ' + m.note : '\u2715 ' + m.note}</text>
         </g>
       ))}
-      <text x={(L + R) / 2} y={160} textAnchor="middle" className="hd-s">one shared gap, every buyer together \u00b7 selling is never limited</text>
+      <text x={(L + R) / 2} y={160} textAnchor="middle" className="hd-s">one shared gap, every buyer together {'\u00b7'} selling is never limited</text>
     </Frame>
   );
 }
@@ -388,7 +391,7 @@ export function LockDiagram({ pctText, durText }: { pctText: string; durText: st
       ))}
       <circle cx={unlockX} cy={y} r="7" className="hd-fill" />
       <text x={unlockX} y={y - 24} textAnchor="middle" className="hd-t small">unlocks</text>
-      <text x={(L + R) / 2} y={160} textAnchor="middle" className="hd-s">one piece, on chain \u00b7 the creator cannot sell it earlier</text>
+      <text x={(L + R) / 2} y={160} textAnchor="middle" className="hd-s">one piece, on chain {'\u00b7'} the creator cannot sell it earlier</text>
     </Frame>
   );
 }

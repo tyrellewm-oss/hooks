@@ -40,7 +40,7 @@ export function HooksPage({ meta }: { meta: Meta }) {
         <div>
           <span className="eyebrow"><IconHook size={14} />Hooks</span>
           <h1>The rules every token runs</h1>
-          <p>Four rules every token runs, plus three a launch can add. All fixed at launch. Explore what each does, when it runs and where its limits are.</p>
+          <p>Four rules every token runs, plus five a launch can add. All fixed at launch. Explore what each does, when it runs and where its limits are.</p>
         </div>
         <span className="hero-line" />
       </section>
