@@ -14,7 +14,7 @@
 <style>
   /* Preloader: the hook drops in on its chain, swings, takes a bite, then the name and tagline rise in. It plays once and
      holds; src/main.tsx fades it out once the page has loaded. If the app never starts, it still leaves after 8 s. */
-  #preloader { position: fixed; inset: 0; z-index: 1000; display: grid; place-content: center; justify-items: center; gap: 56px; overflow: hidden;
+  #preloader { position: fixed; inset: 0; z-index: 1000; display: grid; place-content: center; justify-items: center; gap: 36px; overflow: hidden;
     background-color: #0a0a0a; background-image: linear-gradient(rgba(57, 255, 122, .05) 1px, transparent 1px), linear-gradient(90deg, rgba(57, 255, 122, .05) 1px, transparent 1px);
     background-size: 24px 24px; animation: pl-out .4s ease 8s forwards; }
   #preloader.done { animation: pl-out .4s ease forwards; }
@@ -31,7 +31,7 @@
   @keyframes pl-rig { 0% { transform: translateY(-260px) } 29.7% { transform: none } 40.5% { transform: rotate(3deg) } 51.4% { transform: rotate(-2deg) } 60.8% { transform: rotate(.8deg) } 67.6% { transform: none } 74.3% { transform: translateY(10px) } 86.5% { transform: translateY(-4px) } 94.6%, 100% { transform: none } }
   @keyframes pl-rise { 0%, 77% { opacity: 0; transform: translateY(28px) } 100% { opacity: 1; transform: none } }
   @keyframes pl-out { to { opacity: 0; visibility: hidden } }
-  @media (max-width: 560px) { .pl-lockup { zoom: .8; } #preloader { gap: 36px; } }
+  @media (max-width: 560px) { .pl-lockup { zoom: .8; } #preloader { gap: 24px; } }
   @media (prefers-reduced-motion: reduce) { .pl-rig, .pl-word, .pl-cap { animation: none; } }
 </style>
 </head>
