@@ -192,3 +192,31 @@ Three full launch→graduation→DAMM v2 loops, one per schedule, each `dbc_flow
 | Loose | `7outjK22UWGSv6Jxb3KB3gqFhUBjUEBLZLC4UF6daqNz` | full pass |
 
 **Follow-up:** make the demo's mid-ramp buy sizes schedule-aware so Strict doesn't mislabel a correct refusal as FAIL.
+
+## 2026-10-06 — B7: optional hooks live on devnet (browser launch + CLI rejection tests)
+
+**Browser path** (the real user flow): `$HKALL` mint `71EV12JUf4zpkupbo66v7CEZUMaQ3regLqmXSgf4E2k3` launched from the site wizard with a browser Phantom wallet (studio sign-in → 6-step form → wallet signature). Rules on-chain: max buy 0.5%, per-slot 1.5%, window 1500 slots, pot every 50th (min 0.01%). Token page shows all 7 hooks, pot card, phase, frozen schedule. In-platform buy/sell is intentionally not offered; trades come from outside and the hook enforces regardless of venue.
+
+**CLI rejection tests**: `$HKRUL` mint `2jgPeErJXC2ZrsnFYGFSs7GBjszVgJap4Btp6bTUqBg9` (pot every 10th for a fast winner):
+- buy 0.4% ok; buy 0.6% REJECTED on-chain by max single buy ✅
+- pot winner recorded at exactly buy #10 (rules PDA: buyCount 11, wins 1, winner owner+token account stored) ✅
+- per-slot limit not triggered live (two rapid buys landed in different slots — devnet latency); covered by the CI sim suite.
+
+RPC note: public devnet RPCs (api.devnet.solana.com, onfinality) rate-limit the token page's read burst; test day ran on a Helius free key (gitignored, `.devnet-keys/helius_rpc.txt`).
+
+## 2026-10-06 — B8 + D on our fork
+
+**B8**: `$TTEST "Hookd Bare"` mint `J78LjB9216iU2zGuXRpGRReLpbeYpCCUfbcfTdmo3z2U` launched from the site with all optional hooks OFF (browser wallet). No rules account on chain; token page shows the 4 core hooks only. ✅
+**UI follow-ups for the web session**: (1) after "Created", swap the Launch button for a "View token" link (double-launch risk); (2) wizard exposes 3 of the 5 optional hooks — add slow mode (cooldownSlots) + creator lock toggles or badge them "coming soon" on /hooks.
+
+**D (keeper dry run)** on our token `7qKe…Vy16` (keeper/devnet.tdt.json rebuilt for our fork's pools and throwaway keys): claim_dbc ok (~1.86M lamports of real fees), dev split exactly 15.0% (dependent, as expected in a dry run), buyback correctly HELD on hold_twap_warmup (needs 30 min of samples post-graduation). Refusal gates all fired first: unregistered mint, gas wallet empty, three-key-rule warnings. Nothing broadcast. A real `--send` run still needs the TWAP warm-up plus a devnet price stand-in (Jupiter has no devnet prices), same as the original run.
+
+## Devnet — slow mode + creator lock proven live (Oct 6, 2026)
+
+Launched **$HKSLW** `7RPuuTJXGtgwkc9rwRMeZp7byrckXQfnwc6To5hEDZA4` (pool `22mRva8jzC2vVYNHbGac4zq6fajv2ZeDRUoETPFAaWWa`) with **slow mode 50 slots** and **creator lock 5% / 216,000 slots** — the last two optional hooks, both previously unproven live.
+
+- **Slow mode (08)**: buyer A's first buy landed; buyer B's buy inside the gap was rejected on-chain with `BuyCooldownActive` (tx `5zmTftwALtJchrGnKrpABTAbSr68yKpbYJoZbvmhGLjkKu6MVUU86EcAR7DP7E4z6z5u8cFf5d7RNt57nXuUtM5b`); B's retry 30 s later succeeded. Rules PDA: `cooldownSlots 50`, `lastBuySlot 508189192`.
+- **Creator lock (09)**: DBC config's on-chain `lockedVesting` decodes to cliff 49,999,999,000,000 + 1 period × 1,000,000 = exactly 50,000,000,000,000 raw = 5% of supply, cliff 216,000 slots (0x034bc0) after migration — the SDK's all-at-cliff branch, exact.
+- Token page API for the mint shows `cooldownSlots: 50` and `creatorLock {pct 5, slots 216000}`, so the Slow mode and Creator lock cards render on /token. Registered in keeper/registry.json (devnet).
+
+With this, **all 9 hooks are proven working live on devnet** (pot *payouts* remain a separate, not-yet-built feature; recording works).

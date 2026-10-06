@@ -16,7 +16,6 @@ function hookFromHash(): HookId {
 export function HooksPage({ meta }: { meta: Meta }) {
   const hooks = allHooks(meta);
   const [active, setActive] = useState<HookId>(hookFromHash);
-  const selected = hooks.find((hook) => hook.id === active)!;
   const capStartPct = (meta.defaultSchedule.steps[0]?.maxBps ?? 100) / 100;
 
   useEffect(() => {
@@ -59,8 +58,9 @@ export function HooksPage({ meta }: { meta: Meta }) {
         </div>
       ))}
 
-      <div id="hook-explorer-panel">
-        <HookPanel key={selected.id} hook={selected} capStartPct={capStartPct} />
+      {/* every panel is rendered, only the selected one shows: they share one size (hooks.css .hook-panels) */}
+      <div id="hook-explorer-panel" className="hook-panels">
+        {hooks.map((hook) => <HookPanel key={hook.id} hook={hook} on={hook.id === active} capStartPct={capStartPct} />)}
       </div>
 
       <section className="card hook-reference" aria-labelledby="hook-reference-title">
@@ -87,10 +87,10 @@ export function HooksPage({ meta }: { meta: Meta }) {
   );
 }
 
-function HookPanel({ hook: h, capStartPct }: { hook: HookInfo; capStartPct: number }) {
+function HookPanel({ hook: h, on, capStartPct }: { hook: HookInfo; on: boolean; capStartPct: number }) {
   const [diagram, setDiagram] = useState<'flow' | 'buys'>('flow');
   return (
-    <section className={`card hook-focus tone-${h.tone}`} id={`hook-${h.id}`} aria-labelledby={`hook-${h.id}-t`}>
+    <section className={`card hook-focus tone-${h.tone}${on ? '' : ' off'}`} id={`hook-${h.id}`} aria-labelledby={`hook-${h.id}-t`} inert={!on}>
       <div className="hook-focus-head">
         <div><h2 id={`hook-${h.id}-t`}>{h.name}</h2><p className="small muted">{h.short}</p></div>
         <span className={`pill ${h.tone}`}>{h.when}</span>

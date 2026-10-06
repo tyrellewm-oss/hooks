@@ -11,19 +11,22 @@ body {
 }
 .sidebar { background: var(--bg); }
 
-/* ---------- the cut corner, clipped */
-:is(.card, .hero, .modal, .tcard, .strip-item, .tabs, .theme-toggle, .hook-view-switch, .notice, .banner, .side-nav a,
-    button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, button.icon-btn, button.opt-teaser, button.cap-rule-choice) {
+/* ---------- the cut corner, clipped. --c (the cut) and --bd (the colour of the drawn diagonal edge) are registered so
+   they transition: on hover the clip, the diagonal edge lines and the straight borders move together. */
+@property --c { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --bd { syntax: '<color>'; inherits: true; initial-value: transparent; }
+:is(.card, .hero, .modal, .tcard, .strip-item, .tabs, .theme-toggle, .hook-view-switch, .notice, .side-nav a,
+    button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, .icon-btn, button.opt-teaser, button.cap-rule-choice) {
   --c: 9px;
   clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
 }
 :is(.card, .hero, .modal, .tcard, .strip-item) { --c: 14px; }
-:is(.notice, .banner, .tabs, .theme-toggle, .hook-view-switch, .side-nav a) { --c: 7px; }
+:is(.notice, .tabs, .theme-toggle, .hook-view-switch, .side-nav a) { --c: 7px; }
 :where(.card, .modal, .tcard, .strip-item) { position: relative; }
-:where(button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, button.icon-btn, button.opt-teaser, button.cap-rule-choice) { position: relative; }
+:where(button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, .icon-btn, button.opt-teaser, button.cap-rule-choice) { position: relative; }
 
 /* the diagonal edges of a bordered cut shape */
-:is(.card, .hero, .modal, .tcard, .strip-item, button.small:not(.ghost), button:not([class]), .wallet-btn:not(.primary), .wiz-reset, button.icon-btn, button.cap-rule-choice)::before {
+:is(.card, .hero, .modal, .tcard, .strip-item, .tabs:not(.page-tabs), .hook-view-switch, button.small:not(.ghost), button:not([class]), .wallet-btn:not(.primary), .wiz-reset, .icon-btn, button.cap-rule-choice)::before {
   content: '';
   position: absolute;
   inset: -1px;
@@ -34,7 +37,13 @@ body {
     linear-gradient(135deg, transparent calc(50% - 1.1px), var(--bd) calc(50% - 1.1px), var(--bd) calc(50% + 0.1px), transparent calc(50% + 0.1px)) 100% 100% / var(--c) var(--c) no-repeat;
 }
 :is(.card, .hero, .modal, .tcard, .strip-item) { --bd: var(--card-border); }
-:is(button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, button.icon-btn, button.cap-rule-choice) { --bd: var(--line); }
+:is(.tabs:not(.page-tabs), .hook-view-switch) { position: relative; --bd: var(--card-border); }
+/* the selected tab echoes the cut of its strip */
+:is(.tabs:not(.page-tabs) button.on, .hook-view-switch button[aria-pressed='true']) {
+  --c: 5px;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+}
+:is(button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, .icon-btn, button.cap-rule-choice) { --bd: var(--line); }
 
 /* ---------- type: labels and controls speak mono */
 :is(button.primary, .btn.primary, button.small, button.ghost, button:not([class]), .wallet-btn, .wiz-reset,
@@ -52,7 +61,7 @@ button.block { font-size: 13.5px; }
   letter-spacing: 0.08em;
 }
 :is(.card-head h2, .dd-sum h2, .section-head h2) { font-size: 12.5px; font-weight: 600; }
-:is(.pill, .badge, .chip, .hk-state) {
+:is(.pill, .chip, .hk-state) {
   --c: 5px;
   clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
   font-family: var(--mono);
@@ -66,19 +75,19 @@ button.block { font-size: 13.5px; }
 /* ---------- buttons */
 :is(button.primary, .btn.primary) { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
 :is(button.primary, .btn.primary):hover:not(:disabled) { background: var(--brand); opacity: 1; filter: brightness(1.08); --c: 14px; }
-:is(button.small:not(.ghost), button:not([class]), .wallet-btn:not(.primary), .wiz-reset, button.icon-btn, button.cap-rule-choice):hover:not(:disabled) {
+:is(button.small:not(.ghost), button:not([class]), .wallet-btn:not(.primary), .wiz-reset, .icon-btn, button.cap-rule-choice):hover:not(:disabled) {
   --bd: var(--brand); border-color: var(--brand); color: var(--brand); background: var(--brand-soft); --c: 13px;
 }
 button.ghost:hover:not(:disabled) { color: var(--brand); background: transparent; }
-:is(button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, button.icon-btn, button.cap-rule-choice) {
-  transition: clip-path 0.25s cubic-bezier(0.2, 0.9, 0.2, 1), background-color 0.2s, color 0.2s, border-color 0.2s, filter 0.2s;
+:is(button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, .icon-btn, button.cap-rule-choice) {
+  transition: --c 0.25s cubic-bezier(0.2, 0.9, 0.2, 1), --bd 0.2s, background-color 0.2s, color 0.2s, border-color 0.2s, filter 0.2s;
 }
-:is(button, .btn):focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--brand); }
+:is(button, .btn, a.icon-btn):focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--brand); }
 :is(button.primary, .btn.primary):focus-visible { box-shadow: inset 0 0 0 2px var(--brand-ink); }
 
 /* ---------- surfaces */
 .tcard:hover, .strip-item:hover { --bd: var(--line-strong); }
-.tcard { transition: border-color 0.15s ease, transform 0.18s ease-out; }
+.tcard { transition: border-color 0.15s ease, --bd 0.15s ease, transform 0.18s ease-out; }
 .tcard::after {
   content: '';
   position: absolute;
@@ -110,7 +119,8 @@ a.link:hover, .link-inline:hover { text-decoration-color: var(--brand); }
 }
 .duo { fill: currentColor; stroke: none; opacity: 0.26; }
 
-/* ---------- bracket lock: hook cards. The cut shape is painted (no clip) so the brackets can sit outside it. */
+/* ---------- bracket lock: hook cards. The cut shape is painted (no clip) so the brackets can sit outside it.
+   !important on the painted background: the generic `button:hover:not(:disabled)` background is more specific. */
 :is(.hook-selector .hook-choice, button.hk-item, .opt-hook) {
   --cut: 12px;
   --cf: var(--card);
@@ -124,10 +134,10 @@ a.link:hover, .link-inline:hover { text-decoration-color: var(--brand); }
     linear-gradient(var(--cb), var(--cb)) 100% 0 / 1px calc(100% - var(--cut)) no-repeat border-box,
     linear-gradient(var(--cb), var(--cb)) 0 100% / calc(100% - var(--cut)) 1px no-repeat border-box,
     linear-gradient(var(--cb), var(--cb)) 0 var(--cut) / 1px calc(100% - var(--cut)) no-repeat border-box,
-    linear-gradient(135deg, transparent calc(var(--cut) * 0.7071), var(--cf) calc(var(--cut) * 0.7071), var(--cf) calc(100% - var(--cut) * 0.7071), transparent calc(100% - var(--cut) * 0.7071)) border-box;
+    linear-gradient(135deg, transparent calc(var(--cut) * 0.7071), var(--cf) calc(var(--cut) * 0.7071), var(--cf) calc(100% - var(--cut) * 0.7071), transparent calc(100% - var(--cut) * 0.7071)) border-box !important;
 }
 button.hk-item { --cf: var(--panel); }
-:is(.hook-selector .hook-choice, button.hk-item, .opt-hook):is(:hover, :focus-visible) { --cb: var(--line-strong); }
+:is(.hook-selector .hook-choice, button.hk-item, .opt-hook):is(:hover, :focus-visible) { --cb: var(--tone); --cf: color-mix(in srgb, var(--tone) 6%, var(--card)); }
 :is(.hook-selector .hook-choice[aria-pressed='true'], button.hk-item.on, .opt-hook.on) {
   --cb: var(--tone);
   --cf: color-mix(in srgb, var(--tone) 10%, var(--card));
@@ -145,8 +155,8 @@ button.hk-item { --cf: var(--panel); }
     linear-gradient(var(--bc), var(--bc)) 100% 0 / 1.5px 12px no-repeat,
     linear-gradient(var(--bc), var(--bc)) 0 100% / 12px 1.5px no-repeat,
     linear-gradient(var(--bc), var(--bc)) 0 100% / 1.5px 12px no-repeat,
-    linear-gradient(135deg, transparent calc(50% - 0.9px), var(--bc) calc(50% - 0.9px), var(--bc) calc(50% + 0.6px), transparent calc(50% + 0.6px)) 0 0 / 19px 19px no-repeat,
-    linear-gradient(135deg, transparent calc(50% - 0.9px), var(--bc) calc(50% - 0.9px), var(--bc) calc(50% + 0.6px), transparent calc(50% + 0.6px)) 100% 100% / 19px 19px no-repeat;
+    linear-gradient(135deg, transparent calc(50% - 0.9px), var(--bc) calc(50% - 0.9px), var(--bc) calc(50% + 0.6px), transparent calc(50% + 0.6px)) 1.75px 1.75px / 12px 12px no-repeat,
+    linear-gradient(135deg, transparent calc(50% - 0.9px), var(--bc) calc(50% - 0.9px), var(--bc) calc(50% + 0.6px), transparent calc(50% + 0.6px)) right 1.75px bottom 1.75px / 12px 12px no-repeat;
   transition: inset 0.42s cubic-bezier(0.2, 1.5, 0.4, 1), opacity 0.2s;
 }
 :is(.hook-selector .hook-choice, button.hk-item, .opt-hook):is(:hover, :focus-visible, [aria-pressed='true'], .on)::after { inset: -6px; opacity: 1; }
@@ -156,7 +166,7 @@ button.hk-item { --cf: var(--panel); }
   :is(.hook-selector .hook-choice, button.hk-item, .opt-hook)::after, .tcard, .tcard::after { transition: none; }
 }
 
-/* ---------- diagrams: cut blocks with depth (components/HookArt.tsx Block). --bf is the front colour; the top is
+/* ---------- diagrams: blocks with depth (components/HookArt.tsx Block). --bf is the front colour; the top is
    lit, the side is shaded. Data blocks are bright; surface blocks (nodes, shelves, the track) stay quiet. */
 .hd-blk polygon { stroke: var(--bg); stroke-width: 1; stroke-linejoin: round; }
 .hd-blk .f { fill: var(--bf); }
@@ -167,6 +177,7 @@ button.hk-item { --cf: var(--panel); }
 .hd-blk.ok { --bf: var(--green); }
 .hd-blk.cyan { --bf: var(--cyan); }
 .hd-blk.amber { --bf: var(--amber); }
+.hd-blk.knob { --bf: color-mix(in srgb, var(--text) 78%, var(--bg)); }
 .hd-blk:is(.node, .hook, .okn, .badn, .embern) .t { fill: color-mix(in srgb, var(--bf) 82%, #fff); }
 .hd-blk:is(.node, .hook, .okn, .badn, .embern) .r { fill: color-mix(in srgb, var(--bf) 55%, #000); }
 .hd-blk.node { --bf: var(--card); }

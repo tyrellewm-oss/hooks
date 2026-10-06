@@ -20,10 +20,8 @@
 .studio-gate-entry > p.muted { font-size: 14px; }
 .studio-gate-action { margin-top: 22px; }
 .studio-gate-action > .primary, .studio-gate-action .wallet-btn { width: 100%; min-height: 44px; }
-.studio-gate-action .wallet-btn { background: var(--pill-bg); border-color: var(--pill-bg); color: var(--pill-fg); }
-.studio-gate-action .wallet-btn:hover:not(:disabled) { background: var(--pill-bg); opacity: 0.88; }
-.studio-gate-action .wallet-btn:disabled { background: var(--panel-2); border-color: transparent; color: var(--text-4); }
-.studio-gate-action .wallet-pop { left: 0; right: 0; min-width: 0; text-align: left; }
+/* in the gate card the wallet list opens in place and pushes the rest down; the card's cut-corner clip would cut off a floating one */
+.studio-gate-action .wallet-pop { position: static; margin-top: 8px; min-width: 0; text-align: left; box-shadow: none; }
 .studio-gate-entry > .studio-gate-note { margin: 20px 0 0; padding-top: 18px; border-top: 1px solid var(--card-border); font-size: 12px; }
 .launch-entry > .notice { max-width: 560px; margin: 28px auto 0; }
 .launch-entry-link { text-align: center; }
