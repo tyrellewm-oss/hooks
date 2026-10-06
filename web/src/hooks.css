@@ -117,6 +117,12 @@ button.hk-item { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto;
 .hook-choice-name { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.4; }
 .hook-choice-when { font-size: 11px; font-weight: 400; color: var(--text-2); line-height: 1.45; }
 .hook-focus { padding: 0; overflow: hidden; scroll-margin-top: 90px; animation: hook-reveal .16s ease-out; }
+/* All hook panels sit in one grid cell, only the selected one visible, and share their three rows (head, body,
+   footer) through subgrid, so the panel keeps the size of the largest one while you flick through the hooks. */
+.hook-panels { display: grid; grid-template-rows: auto auto auto; }
+.hook-panels > .hook-focus { grid-area: 1 / 1 / 4 / 2; display: grid; grid-template-rows: subgrid; }
+.hook-focus.off { visibility: hidden; animation: none; }
+.hook-focus.off .hd-anim { animation-name: none !important; }   /* parked; the loop starts over when shown */
 .hook-focus-head { display: flex; justify-content: space-between; gap: 18px; align-items: center; padding: 19px 20px; border-bottom: 1px solid var(--card-border); }
 .hook-focus-head h2 { font-size: 18px; }
 .hook-focus-head p { margin: 5px 0 0; font-size: 14px; line-height: 1.65; }
@@ -136,7 +142,7 @@ button.hk-item { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto;
 .hook-settings-disclosure summary:focus-visible, .hook-lifecycle summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .hook-runtime { display: flex; gap: 7px; align-items: baseline; font-size: 11px; line-height: 1.5; color: var(--text-2); border-top: 1px solid var(--card-border); padding-top: 11px; }
 .hook-runtime-dot { height: 5px; width: 5px; border-radius: 50%; flex: none; background: var(--tone); }
-.hook-focus-copy { padding: 20px; min-width: 0; }
+.hook-focus-copy { display: flex; flex-direction: column; justify-content: center; padding: 20px; min-width: 0; }
 .hook-focus-copy .hook-steps { margin-bottom: 16px; }
 .hook-focus-copy .hook-steps li { font-size: 12.5px; gap: 8px; }
 .hook-settings-disclosure { border-top: 1px solid var(--line); padding-top: 12px; }
@@ -145,8 +151,8 @@ button.hk-item { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto;
 .hook-settings-disclosure summary { font-size: 12px; }
 .hook-settings-disclosure .hook-settings { margin: 14px 0 0; }
 .hook-settings-disclosure[open] > summary .dd-chev, .hook-lifecycle[open] > summary .dd-chev { transform: rotate(-135deg); margin-top: 3px; }
-.hook-focus-limits { display: flex; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--card-border); color: var(--text-2); font-size: 12px; }
-.hook-focus-limits > svg { flex: none; color: var(--tone); margin-top: 2px; }
+.hook-focus-limits { display: flex; align-items: center; gap: 9px; padding: 14px 20px; border-top: 1px solid var(--card-border); color: var(--text-2); font-size: 12px; }
+.hook-focus-limits > svg { flex: none; color: var(--tone); }
 .hook-focus-limits p { margin: 0; }
 .hook-focus-limits b { font-weight: 500; color: var(--text); }
 .hook-cap-notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; padding: 20px; border-top: 1px solid var(--card-border); }
@@ -200,7 +206,7 @@ button.cap-rule-choice[aria-pressed='true'] { color: var(--text); background: va
 .cap-rule-footer a { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); }
 .cap-rule-footer a:hover { color: var(--text); }
 @keyframes hook-reveal { from { opacity: .65; } to { opacity: 1; } }
-@media (max-width: 1050px) { .hook-focus-body { grid-template-columns: minmax(0, 1fr); } .hook-focus-art { border-right: 0; border-bottom: 1px solid var(--card-border); } .hook-diagram-stage { min-height: 0; } }
+@media (max-width: 1050px) { .hook-panels, .hook-panels > .hook-focus { display: block; } .hook-focus.off { display: none; } .hook-focus-body { grid-template-columns: minmax(0, 1fr); } .hook-focus-art { border-right: 0; border-bottom: 1px solid var(--card-border); } .hook-diagram-stage { min-height: 0; } }
 @media (max-width: 700px) { .hook-selector { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hook-focus-head { align-items: flex-start; flex-direction: column; gap: 10px; } .hook-focus-art { padding: 14px 10px; } .hook-focus-copy { padding: 16px; } .hook-focus-limits { padding: 14px 16px; } .hook-lifecycle summary > span:first-child { gap: 4px; } }
 @media (pointer: coarse) { .hook-view-switch button, .hook-settings-disclosure summary { min-height: 44px; } }
 @media (max-width: 700px) {
