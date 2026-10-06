@@ -14,7 +14,7 @@ const SUPPLY = 1_000_000_000n * UNIT;
 const T0 = Date.now();
 const SLOT0 = 412_000_000;
 const slotAt = (ms: number) => SLOT0 + Math.trunc((ms - T0) / 400);
-const PROGRAM_ID = 'FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz'; // the devnet hook program (README)
+const PROGRAM_ID = '4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y'; // the devnet hook program (README)
 
 interface Sim {
   mint: string; pool: string; config: string; name: string; symbol: string;

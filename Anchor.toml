@@ -6,10 +6,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-trenches_hook = "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz"
+trenches_hook = "4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y"
 
 [programs.devnet]
-trenches_hook = "FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz"
+trenches_hook = "4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y"
 
 [provider]
 cluster = "localnet"
