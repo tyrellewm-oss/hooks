@@ -16,7 +16,7 @@
      holds; src/main.tsx fades it out once the page has loaded. If the app never starts, it still leaves after 8 s. */
   #preloader { position: fixed; inset: 0; z-index: 1000; display: grid; place-content: center; justify-items: center; gap: 36px; overflow: hidden;
     background-color: #0a0a0a; background-image: linear-gradient(rgba(57, 255, 122, .05) 1px, transparent 1px), linear-gradient(90deg, rgba(57, 255, 122, .05) 1px, transparent 1px);
-    background-size: 24px 24px; animation: pl-out .4s ease 8s forwards; }
+    background-size: 24px 24px; padding-bottom: 6vh; animation: pl-out .4s ease 8s forwards; }
   #preloader.done { animation: pl-out .4s ease forwards; }
   .pl-lockup { position: relative; width: 402px; height: 98px; zoom: 1.25; }
   .pl-rig { position: absolute; left: 0; top: 0; width: 118px; height: 98px; transform-origin: 59px -50vh; animation: pl-rig 2.7s cubic-bezier(.2, .8, .2, 1) both; }
