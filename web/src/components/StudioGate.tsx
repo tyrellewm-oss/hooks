@@ -52,7 +52,7 @@ export function StudioGate({ meta, children, variant = 'default', showSession = 
       {mismatch && <div className="notice amber small" style={{ marginBottom: 10 }}>You're signed in as {short(session!.wallet, 4)}, but the connected wallet is {short(w.address!, 4)}. Sign in again with this wallet.</div>}
       <div className={variant === 'launch' ? 'studio-gate-action' : undefined}>
       {!w.address
-        ? variant === 'launch' ? <WalletButton /> : <div className="notice small">Connect a wallet first (top right).</div>
+        ? variant === 'launch' ? <WalletButton primary /> : <div className="notice small">Connect a wallet first (top right).</div>
         : <button className="primary" disabled={busy} onClick={go}>{busy ? 'Check your wallet…' : `Sign in with ${short(w.address, 4)}`}</button>}
       </div>
       {err && <div className="notice red small" role="alert" style={{ marginTop: 10 }}>{err}</div>}

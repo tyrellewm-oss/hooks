@@ -11,7 +11,10 @@ body {
 }
 .sidebar { background: var(--bg); }
 
-/* ---------- the cut corner, clipped */
+/* ---------- the cut corner, clipped. --c (the cut) and --bd (the colour of the drawn diagonal edge) are registered so
+   they transition: on hover the clip, the diagonal edge lines and the straight borders move together. */
+@property --c { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --bd { syntax: '<color>'; inherits: true; initial-value: transparent; }
 :is(.card, .hero, .modal, .tcard, .strip-item, .tabs, .theme-toggle, .hook-view-switch, .notice, .banner, .side-nav a,
     button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, button.icon-btn, button.opt-teaser, button.cap-rule-choice) {
   --c: 9px;
@@ -71,14 +74,14 @@ button.block { font-size: 13.5px; }
 }
 button.ghost:hover:not(:disabled) { color: var(--brand); background: transparent; }
 :is(button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, button.icon-btn, button.cap-rule-choice) {
-  transition: clip-path 0.25s cubic-bezier(0.2, 0.9, 0.2, 1), background-color 0.2s, color 0.2s, border-color 0.2s, filter 0.2s;
+  transition: --c 0.25s cubic-bezier(0.2, 0.9, 0.2, 1), --bd 0.2s, background-color 0.2s, color 0.2s, border-color 0.2s, filter 0.2s;
 }
 :is(button, .btn):focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--brand); }
 :is(button.primary, .btn.primary):focus-visible { box-shadow: inset 0 0 0 2px var(--brand-ink); }
 
 /* ---------- surfaces */
 .tcard:hover, .strip-item:hover { --bd: var(--line-strong); }
-.tcard { transition: border-color 0.15s ease, transform 0.18s ease-out; }
+.tcard { transition: border-color 0.15s ease, --bd 0.15s ease, transform 0.18s ease-out; }
 .tcard::after {
   content: '';
   position: absolute;

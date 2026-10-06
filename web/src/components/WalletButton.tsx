@@ -8,7 +8,9 @@ const INSTALL = [
   { name: 'Backpack', url: 'https://backpack.app/downloads' },
 ];
 
-export function WalletButton() {
+/** `primary`: the solid main-action style, for a screen whose one job is connecting (the studio sign-in card). */
+export function WalletButton({ primary = false }: { primary?: boolean }) {
+  const cls = `wallet-btn${primary ? ' primary' : ''}`;
   const w = useWallet();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -25,12 +27,12 @@ export function WalletButton() {
   return (
     <div className="wallet" ref={ref}>
       {w.address ? (
-        <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" className="wallet-btn">
+        <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" className={cls}>
           {w.wallet?.icon && <img src={w.wallet.icon} alt="" width={16} height={16} />}
           <span className="mono">{short(w.address, 4)}</span>
         </button>
       ) : (
-        <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" className="wallet-btn" disabled={w.connecting}>
+        <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" className={cls} disabled={w.connecting}>
           {w.connecting ? 'Connecting…' : 'Connect wallet'}
         </button>
       )}
