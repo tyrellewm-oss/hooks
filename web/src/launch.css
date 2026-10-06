@@ -4,7 +4,7 @@
 .launch-heading-row .wiz-head { min-width: 0; }
 .launch-heading-row .studio-session { flex: none; margin: 8px 0 0; }
 .wiz-head { padding: 6px 0 2px; }
-.wiz-kicker { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; font-size: 11.5px; margin-bottom: 8px; }
+.wiz-kicker { font-weight: 600; font-size: 11.5px; margin-bottom: 8px; }
 .wiz-head h1 { font-size: 30px; }
 .wiz-head p { margin: 10px 0 0; font-size: 16px; line-height: 1.65; }
 
@@ -35,16 +35,14 @@
 .wiz-steps li { min-width: 0; }
 button.wiz-step { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-rows: auto auto 18px; gap: 8px; width: 100%; padding-bottom: 2px; }
 button.wiz-step:disabled { cursor: not-allowed; }
-button.wiz-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+button.wiz-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .wiz-line { height: 3px; border-radius: var(--pill); background: var(--panel-2); transition: background 0.25s ease; }
 .wiz-label { padding-inline: 8px; font-size: 13.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.2s ease; }
 .wiz-label .num { color: inherit; margin-right: 2px; }
 .wiz-mark { display: flex; align-items: center; padding-inline: 8px; color: var(--text-3); height: 18px; }
 .wiz-step:hover:not(:disabled) .wiz-label { color: var(--text); }
-.wiz-step.done .wiz-line { background: var(--green); }
 .wiz-step.done .wiz-label { color: var(--text-2); }
 .wiz-step.done .wiz-mark { color: var(--green); }
-.wiz-step.now .wiz-line { background: var(--accent); }
 .wiz-step.now .wiz-label { color: var(--text); font-weight: 600; }
 .wiz-step.warn .wiz-line { background: var(--amber); }
 .wiz-step.warn .wiz-label { color: var(--amber-text); }
@@ -54,7 +52,7 @@ button.wiz-step:focus-visible { outline: 2px solid var(--accent); outline-offset
 .wiz-legend { display: flex; gap: 16px; flex-wrap: wrap; padding-bottom: 4px; }
 .wiz-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .wiz-legend svg { color: var(--green); }
-.wiz-now-dot { width: 14px; height: 3px; border-radius: 2px; background: var(--accent); display: inline-block; }
+.wiz-now-dot { width: 14px; height: 3px; display: inline-block; }
 
 .wiz-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; align-items: start; }
 .wiz-main { min-width: 0; }

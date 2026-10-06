@@ -9,6 +9,9 @@ import './launch.css';
 import './docs.css';
 import './motion.css';
 import './extra-hooks.css';
+import './brand.css';
+import { installBrandFx } from './lib/brandFx';
 
 startWallets();
+installBrandFx();
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);

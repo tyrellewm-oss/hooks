@@ -33,7 +33,7 @@ export interface HookInfo {
   id: HookId;
   name: string;
   icon: ReactNode;
-  tone: 'accent' | 'amber' | 'sim' | 'green';
+  tone: 'accent' | 'amber' | 'sim' | 'green' | 'ember' | 'cyan';
   /** one line for tiles */
   short: string;
   /** when it is on */
@@ -111,7 +111,7 @@ export function hookList(meta: Meta): HookInfo[] {
       diagram: <LiftDiagram />,
     },
     {
-      id: 'burn', name: 'Buyback & burn', icon: <IconFlame size={20} />, tone: 'green', launch: 'always',
+      id: 'burn', name: 'Buyback & burn', icon: <IconFlame size={20} />, tone: 'ember', launch: 'always',
       short: `${FLYWHEEL_SPLIT.buybackPct}% of trading fees buy the token back and burn it`,
       when: 'After graduation, about every 5 min', runs: 'Flywheel keeper (off chain bot, public logs)',
       steps: [
@@ -190,7 +190,7 @@ export function optionalHookList(r: { maxBuyBps: number; maxPerSlotBps: number; 
       diagram: <PotDiagram every={r.potEvery} minText={pctOf(r.potMinBps)} />,
     },
     {
-      id: 'cooldown', name: 'Slow mode', icon: <IconClock size={20} />, tone: 'green', launch: 'optional',
+      id: 'cooldown', name: 'Slow mode', icon: <IconClock size={20} />, tone: 'cyan', launch: 'optional',
       short: `One curve buy every ${r.cooldownSlots} slots (${slotSecs(r.cooldownSlots)})`,
       when: `Curve \u00b7 ${win}`, runs: 'Transfer hook program, one shared timer for the whole token',
       steps: [
@@ -236,7 +236,8 @@ export function creatorLockInfo(pct: number, slots: number): HookInfo {
   };
 }
 
-/** Every hook: the four each token runs, then the optional ones. */
+/** Every hook: the four each token runs, then the optional ones. Includes the creator lock card (with the studio
+ *  defaults) so /hooks#hook-lock — linked from every token that has one — always lands on a card. */
 export const allHooks = (meta: Meta): HookInfo[] => [...hookList(meta), ...optionalHookList(), creatorLockInfo(CREATOR_LOCK_DEFAULT.pct, CREATOR_LOCK_DEFAULT.slots)];
 
 export function ordinal(n: number): string {
