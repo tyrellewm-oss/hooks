@@ -203,3 +203,10 @@ Three full launch→graduation→DAMM v2 loops, one per schedule, each `dbc_flow
 - per-slot limit not triggered live (two rapid buys landed in different slots — devnet latency); covered by the CI sim suite.
 
 RPC note: public devnet RPCs (api.devnet.solana.com, onfinality) rate-limit the token page's read burst; test day ran on a Helius free key (gitignored, `.devnet-keys/helius_rpc.txt`).
+
+## 2026-10-06 — B8 + D on our fork
+
+**B8**: `$TTEST "Hookd Bare"` mint `J78LjB9216iU2zGuXRpGRReLpbeYpCCUfbcfTdmo3z2U` launched from the site with all optional hooks OFF (browser wallet). No rules account on chain; token page shows the 4 core hooks only. ✅
+**UI follow-ups for the web session**: (1) after "Created", swap the Launch button for a "View token" link (double-launch risk); (2) wizard exposes 3 of the 5 optional hooks — add slow mode (cooldownSlots) + creator lock toggles or badge them "coming soon" on /hooks.
+
+**D (keeper dry run)** on our token `7qKe…Vy16` (keeper/devnet.tdt.json rebuilt for our fork's pools and throwaway keys): claim_dbc ok (~1.86M lamports of real fees), dev split exactly 15.0% (dependent, as expected in a dry run), buyback correctly HELD on hold_twap_warmup (needs 30 min of samples post-graduation). Refusal gates all fired first: unregistered mint, gas wallet empty, three-key-rule warnings. Nothing broadcast. A real `--send` run still needs the TWAP warm-up plus a devnet price stand-in (Jupiter has no devnet prices), same as the original run.
