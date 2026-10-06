@@ -79,6 +79,7 @@ const META = new Map<string, TokenMetadata>([[SIMS[1].mint, { description: 'Fixt
 /** Fixture studio: the fixture wallet is the only studio wallet. */
 const STUDIO_WALLET = 'FixtureBrowserWaLLet11111111111111111111111';
 const STUDIO_NONCES = new Set<string>(), STUDIO_SESSIONS = new Set<string>();
+const LAUNCHES = new Map<string, CreateRequest>();
 const PENDING = new Map<string, { mint: string; owner: string; side: Side; amount: string }>();
 
 /** The simulated swap: same cap rule as the program (sdk/capMath.ts). `dry` = simulate without changing balances. */
@@ -230,5 +231,18 @@ export const fixtureApi: Api = {
   async create(req: CreateRequest): Promise<CreateReply> {
     await latency(); await latency();
     return { mint: fakeKey('FixtureNew' + req.symbol), pool: fakeKey('FixtureNewPooL'), registered: false, note: 'not registered: add to keeper/registry.json' };
+  },
+  async launchBuild(req: CreateRequest) {
+    await latency(); await latency();
+    const tx = Array.from(fakeSig(), (ch) => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('');   // stand-in hex
+    LAUNCHES.set(tx, req);
+    return { tx, mint: fakeKey('FixtureNew' + req.symbol), config: fakeKey('FixtureNewCfg'), pool: fakeKey('FixtureNewPooL'), createConfigSig: fakeSig(), simulation: 'ok before signing (simulated)', expiresInMs: 90_000 };
+  },
+  async launchSubmit(txHex: string) {
+    await latency();
+    const req = LAUNCHES.get(txHex);
+    if (!req) throw new ApiError('this is not a launch this server built (unknown or expired message, simulated)', 400);
+    LAUNCHES.delete(txHex);
+    return { mint: fakeKey('FixtureNew' + req.symbol), pool: fakeKey('FixtureNewPooL'), registered: false as const, note: 'not registered: add to keeper/registry.json', sig: fakeSig(), link: '' };
   },
 };

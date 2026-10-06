@@ -18,6 +18,8 @@ import { serverError } from './errors.js';
 import { siteRoute, createReply, type Reply } from './site_registry.js';
 import { WalletRelay, WalletTxRefusal, buildUserSwap, buildUserPoolSwap, parseSlippageBps, submitSigned } from '../sdk/wallet_tx.js';
 import { MintHookRefusal } from '../sdk/mint_hook.js';
+import { KeyRuleRefusal } from '../sdk/keyrules.js';
+import { StudioLaunchRelay, buildUserLaunch, submitUserLaunch, LaunchUserRefusal } from '../sdk/launch_user.js';
 import { staticReply, uiModeFromArgs, assertUiBuilt } from './static.js';
 import { loadPublicKeepers } from './flywheel_public.js';
 import { readIndex, candles, dammPoolFor } from '../sdk/indexer.js';
@@ -67,6 +69,32 @@ async function feeInfo(config: PublicKey) {
 }
 
 const relay = new WalletRelay();
+const launchRelay = new StudioLaunchRelay();
+/** token details given at build time, saved only once that mint's launch confirms (keyed by mint, like the relay: short-lived) */
+const pendingLaunchMeta = new Map<string, ReturnType<typeof validateMetadata>>();
+
+/** Shared validation for /api/create and /api/studio/launch/build: same rules as the program (AC-4/AC-21), QA L-16. */
+function parseLaunchBody(b: any): { error: string } | { opts: { name: string; symbol: string; steps: Step[]; uncappedAfter: bigint; migrationQuoteThresholdSol: number; percentageSupplyOnMigration: number }; meta: ReturnType<typeof validateMetadata> | null } {
+  const name = String(b.name ?? '').slice(0, 32), symbol = String(b.symbol ?? '').toUpperCase().slice(0, 10);
+  if (!name || !/^[A-Z0-9]{2,10}$/.test(symbol)) return { error: 'name and 2-10 char ticker required' };
+  // Either explicit steps, or a named schedule (strict|balanced|loose|demo). Unknown names are a 400, never a silent fallback (QA L-16).
+  let steps: Step[]; let uncappedAfter: bigint;
+  if (b.schedule !== undefined && !b.steps) {
+    try { const sch = resolveSchedule(b.schedule, c.name); steps = sch.steps; uncappedAfter = sch.uncappedAfter; }
+    catch (e: any) { return { error: e.message }; }
+  } else {
+    steps = (b.steps ?? []).map((s: any) => ({ slotOffset: BigInt(s.slotOffset), maxBps: Number(s.maxBps) }));
+    uncappedAfter = BigInt(b.uncappedAfter ?? 0);
+  }
+  const err = validate({ launchSlot: 0n, supply: 1n, steps, uncappedAfter }, RELEASE_LIMITS);
+  if (err) return { error: `InvalidCapSchedule: ${err}` };
+  let percentageSupplyOnMigration: number; // optional; default 20 (validated before any tx)
+  try { percentageSupplyOnMigration = resolvePercentageSupplyOnMigration(b.percentageSupplyOnMigration); }
+  catch (e: any) { return { error: e.message }; }
+  let meta: ReturnType<typeof validateMetadata> | null = null;   // optional token details, validated before any tx
+  if (b.metadata !== undefined) { try { meta = validateMetadata(b.metadata); } catch (e: any) { return { error: e.message }; } }
+  return { opts: { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration }, meta };
+}
 // Studio sign-in (sdk/studio_auth.ts): the create and token-details routes need a session from an allowlisted wallet.
 // Fails closed on devnet (no STUDIO_WALLETS -> studio closed); a local validator without a list stays open.
 const studio = new StudioAuth(parseAllowlist(process.env.STUDIO_WALLETS), c.label, c.name === 'local');
@@ -191,30 +219,47 @@ http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/create' && req.method === 'POST') {
       const who = studioCheck(req); if ('code' in who) return send(res, who.code, who.body);   // studio only
-      const b = await body(req);
-      const name = String(b.name ?? '').slice(0, 32), symbol = String(b.symbol ?? '').toUpperCase().slice(0, 10);
-      if (!name || !/^[A-Z0-9]{2,10}$/.test(symbol)) return send(res, 400, { error: 'name and 2-10 char ticker required' });
-      // Either explicit steps, or a named schedule (strict|balanced|loose|demo). Unknown names are a 400, never a silent fallback (QA L-16).
-      let steps: Step[]; let uncappedAfter: bigint;
-      if (b.schedule !== undefined && !b.steps) {
-        try { const sch = resolveSchedule(b.schedule, c.name); steps = sch.steps; uncappedAfter = sch.uncappedAfter; }
-        catch (e: any) { return send(res, 400, { error: e.message }); }
-      } else {
-        steps = (b.steps ?? []).map((s: any) => ({ slotOffset: BigInt(s.slotOffset), maxBps: Number(s.maxBps) }));
-        uncappedAfter = BigInt(b.uncappedAfter ?? 0);
-      }
-      const err = validate({ launchSlot: 0n, supply: 1n, steps, uncappedAfter }, RELEASE_LIMITS); // same rules as the program (AC-4/AC-21)
-      if (err) return send(res, 400, { error: `InvalidCapSchedule: ${err}` });
-      let percentageSupplyOnMigration: number; // optional; default 20 (validated before any tx)
-      try { percentageSupplyOnMigration = resolvePercentageSupplyOnMigration(b.percentageSupplyOnMigration); }
-      catch (e: any) { return send(res, 400, { error: e.message }); }
-      let meta: ReturnType<typeof validateMetadata> | null = null;   // optional token details, validated before any tx
-      if (b.metadata !== undefined) { try { meta = validateMetadata(b.metadata); } catch (e: any) { return send(res, 400, { error: e.message }); } }
+      const p = parseLaunchBody(await body(req));
+      if ('error' in p) return send(res, 400, p);
       await lp.ensureGlobal(deployer, deployer.publicKey);
       await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);   // 8.3: launches are signed by the launch key, never the admin
-      const rec = await lp.launch(deployer, { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration }, launchKey);
-      if (meta) saveMetadata(c.name, rec.mint, meta);
+      const rec = await lp.launch(deployer, p.opts, launchKey);
+      if (p.meta) saveMetadata(c.name, rec.mint, p.meta);
       return send(res, 200, createReply(rec));   // ticket 8.5b: registered: false + note; the registry is never written
+    }
+    // AC-21 for the studio: the launch tx is signed in the user's own browser wallet. The server co-signs with the
+    // launch key (8.3 pins launches to the one on-chain launch authority) and the per-launch config/mint keypairs,
+    // and relays only what it built (sdk/launch_user.ts: one use, 90 s, every signature verified).
+    if (url.pathname === '/api/studio/launch/build' && req.method === 'POST') {
+      const who = studioCheck(req); if ('code' in who) return send(res, who.code, who.body);   // studio only
+      const p = parseLaunchBody(await body(req));
+      if ('error' in p) return send(res, 400, p);
+      const owner = walletKey(who.wallet);
+      if (!owner) return send(res, 400, { error: 'the studio session wallet is not a valid key' });
+      await lp.ensureGlobal(deployer, deployer.publicKey);
+      await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);
+      try {
+        const built = await buildUserLaunch(lp, launchRelay, deployer, launchKey, owner, p.opts);
+        if (p.meta) pendingLaunchMeta.set(built.mint, p.meta);   // saved only if the launch confirms
+        return send(res, 200, built);
+      } catch (e: any) {
+        if (e instanceof LaunchUserRefusal || e instanceof KeyRuleRefusal || e instanceof MintHookRefusal) return send(res, 400, { error: e.message });
+        throw e;
+      }
+    }
+    if (url.pathname === '/api/studio/launch/submit' && req.method === 'POST') {
+      const who = studioCheck(req); if ('code' in who) return send(res, who.code, who.body);   // studio only
+      const b = await body(req);
+      if (typeof b.tx !== 'string' || !/^[0-9a-f]+$/.test(b.tx)) return send(res, 400, { error: 'tx must be the signed transaction as hex' });
+      try {
+        const out = await submitUserLaunch(lp, launchRelay, b.tx);
+        const meta = pendingLaunchMeta.get(out.record.mint);
+        if (meta) { pendingLaunchMeta.delete(out.record.mint); saveMetadata(c.name, out.record.mint, meta); }
+        return send(res, 200, { ...createReply(out.record), sig: out.sig, link: out.link });
+      } catch (e: any) {
+        if (e instanceof LaunchUserRefusal || e instanceof MintHookRefusal) return send(res, 400, { error: e.message });
+        throw e;
+      }
     }
     if (url.pathname === '/capMath.js') return send(res, 200, capMathJs, 'text/javascript');
     const st = staticReply(url.pathname, UI);   // app/static.ts: classic page or, with --web, the new UI (web/dist)

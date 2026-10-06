@@ -1,5 +1,5 @@
 // Data source: the real backend (app/server.ts via the Vite proxy), or the simulated one in fixture mode.
-import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, BuiltSwap, FlywheelReply, TradesReply, MetadataInput, TokenMetadata } from './types';
+import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, BuiltSwap, FlywheelReply, TradesReply, MetadataInput, TokenMetadata , BuiltLaunch, LaunchSubmitReply } from './types';
 import { fixtureApi } from './fixtures';
 import { ApiError } from './errors';
 import { studioToken, clearStudioSession } from './studio';
@@ -16,6 +16,9 @@ export interface Api {
   walletBuild(mint: string, owner: string, side: Side, amount: string, opts?: { venue?: 'curve' | 'pool'; slippageBps?: number }): Promise<BuiltSwap>;
   walletSubmit(signedTxBase64: string): Promise<TradeResult>;
   create(req: CreateRequest): Promise<CreateReply>;
+  /** AC-21 studio launch: the server builds and co-signs, the connected wallet signs, launchSubmit relays */
+  launchBuild(req: CreateRequest): Promise<BuiltLaunch>;
+  launchSubmit(txHex: string): Promise<LaunchSubmitReply>;
   flywheel(): Promise<FlywheelReply>;
   studioChallenge(wallet: string): Promise<{ nonce: string; message: string; expiresInMs: number }>;
   studioSession(wallet: string, nonce: string, signature: string): Promise<{ token: string; wallet: string; expiresInMs: number }>;
@@ -47,6 +50,8 @@ const httpApi: Api = {
   walletBuild: (mint, owner, side, amount, opts) => call<BuiltSwap>('/api/wallet/build', post({ mint, owner, side, amount, ...opts })),
   walletSubmit: (tx) => call<TradeResult>('/api/wallet/submit', post({ tx })),
   create: (req) => call<CreateReply>('/api/create', post(req)),
+  launchBuild: (req) => call<BuiltLaunch>('/api/studio/launch/build', post(req)),
+  launchSubmit: (txHex) => call<LaunchSubmitReply>('/api/studio/launch/submit', post({ tx: txHex })),
   flywheel: () => call<FlywheelReply>('/api/flywheel'),
   studioChallenge: (wallet) => call('/api/studio/challenge?wallet=' + encodeURIComponent(wallet)),
   studioSession: (wallet, nonce, signature) => call('/api/studio/session', post({ wallet, nonce, signature })),

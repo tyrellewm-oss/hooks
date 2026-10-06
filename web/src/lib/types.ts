@@ -159,3 +159,6 @@ export interface CreateRequest {
   metadata?: MetadataInput;
 }
 export interface CreateReply { mint: string; pool: string; registered: false; note: string }
+/** AC-21 studio launch: the server-built, co-signed launch tx the connected wallet signs (hex), plus what it creates */
+export interface BuiltLaunch { tx: string; mint: string; config: string; pool: string; createConfigSig: string; simulation: string; expiresInMs: number }
+export interface LaunchSubmitReply extends CreateReply { sig: string; link: string }
