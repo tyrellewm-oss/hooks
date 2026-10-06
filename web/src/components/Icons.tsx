@@ -20,3 +20,10 @@ export const IconArrow = (p: { size?: number }) => <I {...p}><path d="M5 12h14M1
 export const LogoMark = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 18h4.5v-5H13V8h7" /></svg>
 );
+export const IconHook = (p: { size?: number }) => <I {...p}><circle cx="14" cy="4.5" r="1.8" /><path d="M14 6.3v8.2a4.8 4.8 0 0 1-9.6 0V12l-1.6 1.6" /></I>;
+export const IconShield = (p: { size?: number }) => <I {...p}><path d="M12 3l7 2.8v5.6c0 4.5-3 7.4-7 8.6-4-1.2-7-4.1-7-8.6V5.8L12 3z" /><path d="M8.8 12l2.2 2.2 4.2-4.4" /></I>;
+export const IconFee = (p: { size?: number }) => <I {...p}><circle cx="12" cy="12" r="8.5" /><path d="M9 15l6-6" /><circle cx="9.3" cy="9.3" r="1" /><circle cx="14.7" cy="14.7" r="1" /></I>;
+export const IconFlame = (p: { size?: number }) => <I {...p}><path d="M12 3c.8 3.6-3.2 5.6-3.2 9.2a3.2 3.2 0 0 0 6.4 0c0-1.5-.7-2.4-1.3-3.2 2.7 1.2 4.6 3.7 4.6 6.6A6.5 6.5 0 0 1 5.5 15.6C5.5 10.2 11 8 12 3z" /></I>;
+export const IconSwitch = (p: { size?: number }) => <I {...p}><rect x="3" y="7" width="18" height="10" rx="5" /><circle cx="16" cy="12" r="2.6" /></I>;
+export const IconLock = (p: { size?: number }) => <I {...p}><rect x="5" y="10.5" width="14" height="10" rx="2.5" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></I>;
+export const IconInfo = (p: { size?: number }) => <I {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 7.8v.2" /></I>;

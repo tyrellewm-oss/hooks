@@ -76,8 +76,7 @@ const find = (mint: string) => {
   return s;
 };
 const META = new Map<string, TokenMetadata>([[SIMS[1].mint, { description: 'Fixture token for UI work. Studio-entered details show here.', website: 'https://example.org', x: 'https://x.com/example', telegram: null, image: null, updatedAt: new Date(T0).toISOString() }]]);
-/** Fixture studio: the fixture wallet is the only studio wallet. */
-const STUDIO_WALLET = 'FixtureBrowserWaLLet11111111111111111111111';
+/** Fixture studio: any connected wallet may sign in (demo only; the real server checks STUDIO_WALLETS). */
 const STUDIO_NONCES = new Set<string>(), STUDIO_SESSIONS = new Set<string>();
 const LAUNCHES = new Map<string, CreateRequest>();
 const PENDING = new Map<string, { mint: string; owner: string; side: Side; amount: string }>();
@@ -211,14 +210,13 @@ export const fixtureApi: Api = {
   },
   async studioChallenge(wallet) {
     await latency();
-    if (wallet !== STUDIO_WALLET) throw new ApiError('this wallet is not on the studio list', 403);
     const nonce = fakeSig().slice(0, 32);
     STUDIO_NONCES.add(nonce);
     return { nonce, message: `Trenches studio sign-in (fixture)\n\nWallet: ${wallet}\nNonce: ${nonce}`, expiresInMs: 300_000 };
   },
   async studioSession(wallet, nonce, signature) {
     await latency();
-    if (!STUDIO_NONCES.delete(nonce) || wallet !== STUDIO_WALLET || !/^[0-9a-f]{128}$/.test(signature)) throw new ApiError('sign-in failed (simulated)', 401);
+    if (!STUDIO_NONCES.delete(nonce) || !/^[0-9a-f]{128}$/.test(signature)) throw new ApiError('sign-in failed (simulated)', 401);
     const token = Array.from({ length: 64 }, () => '0123456789abcdef'[Math.trunc(Math.random() * 16)]).join('');
     STUDIO_SESSIONS.add(token);
     return { token, wallet, expiresInMs: 8 * 3600_000 };

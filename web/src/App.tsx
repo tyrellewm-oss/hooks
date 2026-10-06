@@ -4,11 +4,12 @@ import { navigate, usePath, usePoll } from './lib/hooks';
 import { setQuery, setTheme, useQuery, useTheme } from './lib/ui';
 import { CONTENT, fill, pageVars } from './lib/shared';
 import { Guard, Link, Skeleton } from './components/bits';
-import { IconEye, IconGrid, IconMenu, IconMoon, IconPlus, IconRamp, IconSearch, IconSun, LogoMark } from './components/Icons';
+import { IconEye, IconGrid, IconHook, IconMenu, IconMoon, IconPlus, IconRamp, IconSearch, IconSun, LogoMark } from './components/Icons';
 import { TokensPage } from './pages/TokensPage';
 import { WalletButton } from './components/WalletButton';
 import { TokenPage } from './pages/TokenPage';
 import { HowItWorksPage } from './pages/HowItWorksPage';
+import { HooksPage } from './pages/HooksPage';
 import { CreatePage } from './pages/CreatePage';
 import { TransparencyPage } from './pages/TransparencyPage';
 
@@ -28,6 +29,7 @@ export function App() {
     ? <div className="card"><h2>Couldn't reach the launch page backend</h2><p className="muted small" style={{ marginTop: 8 }}>{meta.error.message}. Start it with <code>pnpm page -- --cluster devnet</code> (port 5175), or run <code>pnpm dev:fixtures</code> in web/ for simulated data.</p></div>
     : <div className="stack"><Skeleton h={150} /><Skeleton h={320} /></div>;
   else if (tokenMatch) page = <TokenPage key={tokenMatch[1]} mint={decodeURIComponent(tokenMatch[1])} meta={m} />;
+  else if (path === '/hooks') page = <HooksPage meta={m} />;
   else if (path === '/how-it-works') page = <HowItWorksPage meta={m} />;
   else if (path === '/create') page = <CreatePage meta={m} />;
   else if (path === '/transparency') page = <TransparencyPage meta={m} />;
@@ -43,9 +45,10 @@ export function App() {
         <Link to="/" className="logo"><span className="logo-mark"><LogoMark /></span>Trenches</Link>
         <nav className="side-nav" aria-label="Main">
           {nav('/', 'Tokens', <IconGrid />)}
+          {nav('/create', 'Studio launch', <IconPlus />)}
+          {nav('/hooks', 'Hooks', <IconHook />)}
           {nav('/how-it-works', 'How the cap works', <IconRamp />)}
           {nav('/transparency', 'Transparency', <IconEye />)}
-          {nav('/create', 'Studio launch', <IconPlus />)}
         </nav>
         <div className="side-foot">
           <div className="side-card" title={m ? `program ${m.programId}` : undefined}>

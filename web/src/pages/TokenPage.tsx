@@ -7,7 +7,7 @@ import { useWallet } from '../lib/wallet';
 import { pageVars, pctOf, tok, BPS_DENOM, approxDuration } from '../lib/shared';
 import { curveFeePctAt, elapsedSlots, estimateSlot, isGraduated, liveCap, liveNextChange, phaseOf } from '../lib/token';
 import { CapRamp } from '../components/CapRamp';
-import { TradePanel } from '../components/TradePanel';
+import { hookList, FLYWHEEL_SPLIT } from '../lib/hookInfo';
 import { Dropdown, RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
 import { Addr, CurveProgress, Guard, Link, PhasePill, PhaseStepper, Skeleton, Stat } from '../components/bits';
 import { TokenImage, TokenLinks, DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
@@ -128,11 +128,9 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
           </div>
         </div>
 
-        {/* right: trade box first, phases under it, then the stacked info sections */}
+        {/* right: the token's hooks live, phases under it, then the stacked info sections */}
         <div className="sticky stack" style={{ marginTop: 0 }}>
-          <Guard what="the trade panel">
-            <TradePanel view={view} meta={meta} slot={slot} vars={vars!} onTraded={live.refresh} />
-          </Guard>
+          <LiveHooks meta={meta} capText={graduated ? 'ended' : capPct ?? 'no cap'} feeText={graduated ? 'ended' : feeNow === null ? 'n/a' : `~${feeNow}%`} switchUses={view.switchHistory.length} graduated={graduated} />
           <Dropdown title="Phase" aside={<PhasePill phase={phase} />} defaultOpen>
             <PhaseStepper phase={phase} />
           </Dropdown>
@@ -178,5 +176,32 @@ function EditDetails({ meta, mint, ticker, metadata, onClose, onSaved }: { meta:
       </div>
     </div>,
     document.body
+  );
+}
+
+/** The four hooks with this token's live state; links to the hooks page for the diagrams. */
+function LiveHooks({ meta, capText, feeText, switchUses, graduated }: { meta: Meta; capText: string; feeText: string; switchUses: number; graduated: boolean }) {
+  const value: Record<string, string> = {
+    cap: capText,
+    fee: feeText,
+    switch: switchUses ? `used ${switchUses}×` : 'never used',
+    burn: graduated ? `${FLYWHEEL_SPLIT.buybackPct}% of fees` : 'after graduation',
+  };
+  return (
+    <section className="card">
+      <div className="card-head" style={{ marginBottom: 6 }}>
+        <h2 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>Hooks on this token</h2>
+        <Link to="/hooks" className="right small link">How they work</Link>
+      </div>
+      <div className="hk-live">
+        {hookList(meta).map((h) => (
+          <Link key={h.id} to={`/hooks#hook-${h.id}`} className={`hk-live-row tone-${h.tone}`}>
+            <span className="hook-tile">{h.icon}</span>
+            <span className="nm">{h.name}</span>
+            <span className="v">{value[h.id]}</span>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }

@@ -9,6 +9,9 @@ import { CapRamp } from '../components/CapRamp';
 import { Addr } from '../components/bits';
 import { StudioGate } from '../components/StudioGate';
 import { DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
+import { CapDiagram } from '../components/HookArt';
+import { hookList, type HookId } from '../lib/hookInfo';
+import { HooksLink } from './HooksPage';
 
 const SCHEDULE_ERRORS: Record<ScheduleError, string> = {
   BadLength: 'Use 1 to 8 steps.',
@@ -92,6 +95,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
         <span className="hero-line" />
       </section>
       <StudioGate meta={meta}>
+      <HooksPicker meta={meta} capText={'err' in check ? null : pctOf(check.steps![0].maxBps)} />
       <div className="grid-token">
         <div className="card">
           <div className="card-head"><h2>Cap schedule</h2>{selected && <span className={`right pill ${selected.id === 'balanced' ? 'green' : 'amber'}`}>{selected.label}</span>}</div>
@@ -150,6 +154,47 @@ export function CreatePage({ meta }: { meta: Meta }) {
         </div>
       </div>
       </StudioGate>
+    </div>
+  );
+}
+
+/** Which hooks this launch gets. The cap is tuned in the schedule card below; the other three are on for every token.
+ *  Picking one shows its diagram and how it works. */
+function HooksPicker({ meta, capText }: { meta: Meta; capText: string | null }) {
+  const hooks = hookList(meta);
+  const [sel, setSel] = useState<HookId>('cap');
+  const h = hooks.find((x) => x.id === sel)!;
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-head">
+        <h2>Hooks on this token</h2>
+        <span className="small faint">{hooks.length} hooks · fixed at launch</span>
+        <span className="right"><HooksLink /></span>
+      </div>
+      <div className="hk-grid">
+        <div className="hk-list" role="listbox" aria-label="Hooks">
+          {hooks.map((x) => (
+            <button key={x.id} role="option" aria-selected={sel === x.id} className={`hk-item tone-${x.tone} ${sel === x.id ? 'on' : ''}`} onClick={() => setSel(x.id)}>
+              <span className="hook-tile">{x.icon}</span>
+              <span style={{ minWidth: 0 }}><span className="nm">{x.name}</span><span className="st">{x.when}</span></span>
+              <span className={`hk-state ${x.launch}`}>{x.launch === 'tunable' ? 'Set below' : 'Always on'}</span>
+            </button>
+          ))}
+        </div>
+        <div className={`hk-preview tone-${h.tone}`}>
+          <div className="row" style={{ marginBottom: 8, gap: 10 }}>
+            <span className="hook-tile" style={{ width: 30, height: 30, borderRadius: 6 }}>{h.icon}</span>
+            <div style={{ minWidth: 0 }}><b style={{ fontSize: 14 }}>{h.name}</b><div className="small faint">{h.short}</div></div>
+          </div>
+          {h.id === 'cap' && capText ? <CapDiagram capText={capText} /> : h.diagram}
+          <ol className="hook-steps" style={{ marginTop: 10 }}>
+            {h.steps.map((x, i) => <li key={i}><span className="hook-n">{i + 1}</span><span>{x}</span></li>)}
+          </ol>
+          <p className="small faint" style={{ margin: 0 }}>
+            {h.launch === 'tunable' ? 'Set the cap steps in the Cap schedule card below.' : `On for every launch. Runs in: ${h.runs}.`}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

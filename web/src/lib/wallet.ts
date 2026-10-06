@@ -71,6 +71,8 @@ export async function disconnect() {
 export async function signTransaction(tx: Uint8Array): Promise<Uint8Array> {
   const { wallet, account } = state;
   if (!wallet || !account) throw new Error('Connect a wallet first');
+  // fixture mode: every built tx is a stand-in, so no wallet (real or pretend) is asked to sign it
+  if (FIXTURE_MODE) return tx;
   const [out] = await (wallet.features[SIGN_TX] as any).signTransaction({ account, transaction: tx, chain: CHAIN });
   return out.signedTransaction as Uint8Array;
 }
