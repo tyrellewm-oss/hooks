@@ -7,7 +7,7 @@ import { useWallet } from '../lib/wallet';
 import { pageVars, pctOf, tok, BPS_DENOM, approxDuration } from '../lib/shared';
 import { curveFeePctAt, elapsedSlots, estimateSlot, isGraduated, liveCap, liveNextChange, phaseOf } from '../lib/token';
 import { CapRamp } from '../components/CapRamp';
-import { hookList, optionalHookList, FLYWHEEL_SPLIT, ordinal, windowText } from '../lib/hookInfo';
+import { hookList, optionalHookList, creatorLockInfo, FLYWHEEL_SPLIT, ordinal, windowText } from '../lib/hookInfo';
 import { Dropdown, RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
 import { Addr, CurveProgress, Guard, Link, PhasePill, PhaseStepper, Skeleton, Stat } from '../components/bits';
 import { TokenImage, TokenLinks, DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
@@ -130,7 +130,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
 
         {/* right: the token's hooks live, phases under it, then the stacked info sections */}
         <div className="sticky stack" style={{ marginTop: 0 }}>
-          <LiveHooks meta={meta} capText={graduated ? 'ended' : capPct ?? 'no cap'} feeText={graduated ? 'ended' : feeNow === null ? 'n/a' : `~${feeNow}%`} switchUses={view.switchHistory.length} graduated={graduated} rules={view.rules ?? null} slot={slot} />
+          <LiveHooks meta={meta} capText={graduated ? 'ended' : capPct ?? 'no cap'} feeText={graduated ? 'ended' : feeNow === null ? 'n/a' : `~${feeNow}%`} switchUses={view.switchHistory.length} graduated={graduated} rules={view.rules ?? null} creatorLock={view.launch?.creatorLock ?? null} slot={slot} />
           {view.rules && view.rules.potEvery > 0 && <PotCard rules={view.rules} graduated={graduated} />}
           <Dropdown title="Phase" aside={<PhasePill phase={phase} />} defaultOpen>
             <PhaseStepper phase={phase} />
@@ -182,15 +182,17 @@ function EditDetails({ meta, mint, ticker, metadata, onClose, onSaved }: { meta:
 
 /** The four hooks, plus any optional ones this token launched with, with this token's live state; links to the hooks
  *  page for the diagrams. */
-function LiveHooks({ meta, capText, feeText, switchUses, graduated, rules, slot }: { meta: Meta; capText: string; feeText: string; switchUses: number; graduated: boolean; rules: RulesView | null; slot: bigint }) {
+function LiveHooks({ meta, capText, feeText, switchUses, graduated, rules, creatorLock, slot }: { meta: Meta; capText: string; feeText: string; switchUses: number; graduated: boolean; rules: RulesView | null; creatorLock: { pct: number; slots: number } | null; slot: bigint }) {
   // max buy and the per-slot limit apply for their window (0 = until graduation); the hook is gone after graduation
   const inWindow = !!rules && !graduated && (rules.windowSlots === '0' || slot <= BigInt(rules.launchSlot) + BigInt(rules.windowSlots));
   const ruleState = (pct: string) => (graduated ? 'ended' : inWindow ? pct : 'window over');
-  const extras = rules ? optionalHookList(rules).filter((h) => (h.id === 'maxbuy' ? rules.maxBuyBps > 0 : h.id === 'slot' ? rules.maxPerSlotBps > 0 : rules.potEvery > 0)) : [];
+  const extras = rules ? optionalHookList(rules).filter((h) => (h.id === 'maxbuy' ? rules.maxBuyBps > 0 : h.id === 'slot' ? rules.maxPerSlotBps > 0 : h.id === 'cooldown' ? rules.cooldownSlots > 0 : rules.potEvery > 0)) : [];
   const value: Record<string, string> = {
     maxbuy: rules ? ruleState(pctOf(rules.maxBuyBps)) : '',
     slot: rules ? ruleState(`${pctOf(rules.maxPerSlotBps)} / slot`) : '',
     pot: rules ? `${Number(rules.wins)} winner${rules.wins === '1' ? '' : 's'}` : '',
+    cooldown: rules ? ruleState(`every ${rules.cooldownSlots} slots`) : '',
+    lock: creatorLock ? (graduated ? 'unlocking after graduation' : `${creatorLock.pct}% locked`) : '',
     cap: capText,
     fee: feeText,
     switch: switchUses ? `used ${switchUses}×` : 'never used',
@@ -203,7 +205,7 @@ function LiveHooks({ meta, capText, feeText, switchUses, graduated, rules, slot 
         <Link to="/hooks" className="right small link">How they work</Link>
       </div>
       <div className="hk-live">
-        {[...hookList(meta), ...extras].map((h) => (
+        {[...hookList(meta), ...extras, ...(creatorLock ? [creatorLockInfo(creatorLock.pct, creatorLock.slots)] : [])].map((h) => (
           <Link key={h.id} to={`/hooks#hook-${h.id}`} className={`hk-live-row tone-${h.tone}`}>
             <span className="hook-tile">{h.icon}</span>
             <span className="nm">{h.name}</span>

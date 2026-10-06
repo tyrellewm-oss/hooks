@@ -15,6 +15,8 @@ Written from a review of `main` at `b319e4e`, then revised against `feat/buy-rul
 | 05 | Max single buy | optional, chosen at launch | hook program **v2** |
 | 06 | Per-slot buy limit | optional, chosen at launch | hook program **v2** |
 | 07 | Buy pot (every Nth buy wins) | optional, chosen at launch | hook program **v2** (counts on chain; the keeper pays winners) |
+| 08 | Slow mode (one buy every N slots, added 2026-10-06) | optional, chosen at launch | hook program **v2** |
+| 09 | Creator lock (added 2026-10-06) | optional, chosen at launch | Meteora DBC locked vesting (config only, no program change) |
 
 The launch wizard already does what §6 recommends: the four base hooks are on for every launch, the cap has a preset picker (Balanced default, labelled approved; Strict and Loose labelled not approved; a custom editor), and the three optional hooks are off until the creator switches them on. **The v2 program is not on devnet.** `launch_log.md` records the last devnet upgrade as `5290ec1` (v1 plus the 8.3 launch key). The server detects this and refuses a launch with optional hooks on, with the hint "needs the program upgrade". So today's devnet testing can cover hooks 01–04 only; 05–07 are tested in CI simulation (`.github/workflows/sim.yml`, `scripts/sim/verify_rules.ts`) and need a devnet upgrade of the program before they can be launched for real.
 
@@ -88,7 +90,8 @@ Repeat for at least three launches, one per schedule (`--schedule balanced`, `st
    - A second token account for the same wallet can buy another 1% in phase 1 (this is the documented per-account limit, not a bug, but confirm the page says so).
 5. Graduate (fill the threshold) → hook revoked on the mint, DAMM v2 pool created, a post-migration buy of >4% succeeds with no cap. Check the pool's fee (base 0.25%, dynamic on) matches the page copy.
 6. Run `scripts/indexer.ts loop --cluster devnet` during the above and confirm the token page chart and trades feed show the buys, sells and blocked rows.
-7. Optional hooks (after B0): launch one token with all three on (defaults: max single buy 0.5%, per-slot limit 1.5%, window first ~10 min, pot every 50th buy, min 0.01%). Then: a 0.6% buy fails with the max-buy error; two buys in the same slot totalling over 1.5% fail on the second; after the window both succeed; 50 qualifying buys produce one pot winner event, shown on the token page's Buy pot card. Launch a second token with them off and confirm the token page shows no optional hooks.
+7. Optional hooks (after B0): launch one token with all four on (defaults: max single buy 0.5%, per-slot limit 1.5%, slow mode 25 slots, window first ~10 min, pot every 50th buy, min 0.01%). Then: a 0.6% buy fails with the max-buy error; two buys in the same slot totalling over 1.5% fail on the second; a buy inside the 25-slot gap fails with the cooldown error and one after it lands; after the window all pass; 50 qualifying buys produce one pot winner event, shown on the token page's Buy pot card. Launch a second token with them off and confirm the token page shows no optional hooks.
+8. Creator lock (works on the current devnet program, no upgrade needed): launch with a 5% lock for ~1 day, confirm the launch record and token page show it, that the curve sells 5% less, and after graduation that the creator cannot claim before the cliff and can after.
 
 **C. Devnet: page and wallet**
 1. `pnpm page -- --cluster devnet --web` with `STUDIO_WALLETS` set; sign in with a studio wallet, create a launch from the form, edit token details (image, description, links).

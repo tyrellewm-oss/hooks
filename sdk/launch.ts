@@ -132,8 +132,29 @@ export interface LaunchOpts {
   migrationFeeOption?: MigrationFeeOption;         // DAMM v2 pool fee after migration (FixedBps25 = 0.25%)
   percentageSupplyOnMigration?: number;            // % of supply reserved for the DAMM v2 pool at migration (integer 1..49, default 20 -> 80% sold on the curve)
   authorities?: Authorities;                       // hook upgrade + lift + launch authority for the §12a preflight (read from chain if omitted)
-  rules?: BuyRules;                                // v2 buy rules (max single buy, max per slot, Nth-buy pot); omitted = v1 hook config
+  rules?: BuyRules;                                // v2 buy rules (max single buy, max per slot, Nth-buy pot, slow mode); omitted = v1 hook config
+  creatorLockPct?: number;                         // creator lock: % of supply set aside for the creator, locked until after migration (0/omitted = none)
+  creatorLockSlots?: number;                       // creator lock: slots after migration before the locked tokens unlock (all at once)
 }
+/** Creator lock: DBC locked vesting, all-at-cliff. The creator's share is minted into the vesting escrow at launch and
+ *  unlocks in one piece `creatorLockSlots` after migration (ActivationType.Slot: durations are slots). Whole percents
+ *  keep the SDK's all-at-cliff branch exact (totalLockedVestingAmount == cliffUnlockAmount). */
+export const CREATOR_LOCK_PCT_MAX = 10;
+export const CREATOR_LOCK_SLOTS_MAX = 6_480_000;   // ~30 days at ~0.4 s/slot, same ceiling as the cap ramp
+export class CreatorLockRefusal extends Error { constructor(m: string) { super(m); this.name = 'CreatorLockRefusal'; } }
+export interface CreatorLock { pct: number; slots: number }
+/** Validate the creator lock (undefined/null/0 pct -> none). Throws CreatorLockRefusal, never guesses. */
+export function resolveCreatorLock(o: { creatorLockPct?: number | null; creatorLockSlots?: number | null }): CreatorLock | null {
+  const pct = o.creatorLockPct ?? 0;
+  if (pct === 0) return null;
+  if (typeof pct !== 'number' || !Number.isInteger(pct) || pct < 1 || pct > CREATOR_LOCK_PCT_MAX)
+    throw new CreatorLockRefusal(`creator lock must be a whole percent of supply, 1 to ${CREATOR_LOCK_PCT_MAX} (got ${String(o.creatorLockPct)})`);
+  const slots = o.creatorLockSlots ?? 0;
+  if (typeof slots !== 'number' || !Number.isInteger(slots) || slots < 1 || slots > CREATOR_LOCK_SLOTS_MAX)
+    throw new CreatorLockRefusal(`creator lock duration must be 1 to ${CREATOR_LOCK_SLOTS_MAX} slots after migration (got ${String(o.creatorLockSlots)})`);
+  return { pct, slots };
+}
+
 /** Default % of supply that goes to the migration pool (behaviour unchanged from the hard-coded 20). */
 export const DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION = 20;
 /** Accepted range. DBC's buildCurve does not validate this value itself: 0 divides by zero, and with DAMM v2 migration
@@ -156,11 +177,17 @@ export function launchFeeConfig(o: Partial<LaunchOpts>) {
     creatorTradingFeePercentage: o.creatorTradingFeePercentage ?? d.creatorTradingFeePercentage, migrationFeeOption: o.migrationFeeOption ?? d.migrationFeeOption,
     percentageSupplyOnMigration: resolvePercentageSupplyOnMigration(o.percentageSupplyOnMigration) };
 }
-export interface LaunchRecord { name?: string; symbol?: string; cluster: string; label: string; time: string; programId: string; config: string; pool: string; mint: string; quoteMint: string; steps: { slotOffset: string; maxBps: number }[]; uncappedAfter: string; migrationQuoteThresholdSol: number; fee: any; txs: Record<string, string>; mintHookCheck?: string; mintHookSimulation?: string }
+export interface LaunchRecord { name?: string; symbol?: string; cluster: string; label: string; time: string; programId: string; config: string; pool: string; mint: string; quoteMint: string; steps: { slotOffset: string; maxBps: number }[]; uncappedAfter: string; migrationQuoteThresholdSol: number; fee: any; creatorLock?: CreatorLock | null; txs: Record<string, string>; mintHookCheck?: string; mintHookSimulation?: string }
 
 /** DBC config params for a launch (pure; no network). Launchpad.configParams uses this. */
 export function curveConfigParams(o: Partial<LaunchOpts>) {
   const f = launchFeeConfig(o);
+  const lock = resolveCreatorLock(o);
+  const supply = o.totalSupply ?? 1_000_000_000;
+  // all-at-cliff vesting: the SDK's totalLockedVestingAmount == cliffUnlockAmount branch (1 token per period internally)
+  const lockedVesting = lock
+    ? { totalLockedVestingAmount: (supply / 100) * lock.pct, numberOfVestingPeriod: 1, cliffUnlockAmount: (supply / 100) * lock.pct, totalVestingDuration: 1, cliffDurationFromMigrationTime: lock.slots }
+    : { totalLockedVestingAmount: 0, numberOfVestingPeriod: 0, cliffUnlockAmount: 0, totalVestingDuration: 0, cliffDurationFromMigrationTime: 0 };
   return buildCurve({
     token: { tokenType: TokenType.Token2022, tokenBaseDecimal: TokenDecimal.SIX, tokenQuoteDecimal: 9, tokenAuthorityOption: TokenAuthorityOption.Immutable, totalTokenSupply: o.totalSupply ?? 1_000_000_000, leftover: 0 },
     fee: {
@@ -169,7 +196,7 @@ export function curveConfigParams(o: Partial<LaunchOpts>) {
     },
     migration: { migrationOption: MigrationOption.MET_DAMM_V2, migrationFeeOption: f.migrationFeeOption, migrationFee: { feePercentage: 0, creatorFeePercentage: 0 } },
     liquidityDistribution: { partnerPermanentLockedLiquidityPercentage: 100, partnerLiquidityPercentage: 0, creatorPermanentLockedLiquidityPercentage: 0, creatorLiquidityPercentage: 0 },
-    lockedVesting: { totalLockedVestingAmount: 0, numberOfVestingPeriod: 0, cliffUnlockAmount: 0, totalVestingDuration: 0, cliffDurationFromMigrationTime: 0 },
+    lockedVesting,
     activationType: ActivationType.Slot,
     percentageSupplyOnMigration: f.percentageSupplyOnMigration,
     migrationQuoteThreshold: o.migrationQuoteThresholdSol ?? 1,
@@ -384,7 +411,7 @@ export class Launchpad {
     const rec: LaunchRecord = {
       name: o.name, symbol: o.symbol, cluster: this.c.name, label: this.c.label, time: nowIct(), programId: this.hook.programId.toBase58(), config: configKp.publicKey.toBase58(), pool: pool.toBase58(), mint: mintKp.publicKey.toBase58(),
       quoteMint: NATIVE_MINT.toBase58(), steps: o.steps.map(s => ({ slotOffset: s.slotOffset.toString(), maxBps: s.maxBps })), uncappedAfter: o.uncappedAfter.toString(),
-      migrationQuoteThresholdSol: o.migrationQuoteThresholdSol ?? 1, fee: { mode: 'FeeSchedulerLinear (anti-sniper fee schedule)', ...launchFeeConfig(o) }, txs,
+      migrationQuoteThresholdSol: o.migrationQuoteThresholdSol ?? 1, fee: { mode: 'FeeSchedulerLinear (anti-sniper fee schedule)', ...launchFeeConfig(o) }, creatorLock: resolveCreatorLock(o), txs,
     };
     // blocker #7: the mint only exists now. The authority alone does not prove the mint is ours: the pinned signer is DBC's
     // shared pool-authority PDA, the same for every DBC pool. So all of these are required: the DBC pool at the derived

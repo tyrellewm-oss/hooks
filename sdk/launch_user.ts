@@ -20,7 +20,7 @@ import { assertMintHook, type MintHookExpectation } from './mint_hook.js';
 import { launchConfigChecks } from './keyrules.js';
 import {
   Launchpad, gateHook, assertLaunchKeygenAllowed, assertLaunchSigner, launchKeypairsFor, buildCreatePoolTx,
-  preSendMintHookCheck, mintHookExpectationFor, curveConfigParams, launchFeeConfig, sendTx,
+  preSendMintHookCheck, mintHookExpectationFor, curveConfigParams, launchFeeConfig, resolveCreatorLock, sendTx,
   type LaunchOpts, type LaunchRecord,
 } from './launch.js';
 import { explorerTx, nowIct, type Cluster } from './cluster.js';
@@ -145,7 +145,7 @@ export async function submitUserLaunch(lp: Launchpad, relay: StudioLaunchRelay, 
     name: o.name, symbol: o.symbol, cluster: lp.c.name, label: lp.c.label, time: nowIct(), programId: lp.hook.programId.toBase58(),
     config: p.config, pool: p.pool, mint: p.mint, quoteMint: NATIVE_MINT.toBase58(),
     steps: o.steps.map((s) => ({ slotOffset: s.slotOffset.toString(), maxBps: s.maxBps })), uncappedAfter: o.uncappedAfter.toString(),
-    migrationQuoteThresholdSol: o.migrationQuoteThresholdSol ?? 1, fee: { mode: 'FeeSchedulerLinear (anti-sniper fee schedule)', ...launchFeeConfig(o) },
+    migrationQuoteThresholdSol: o.migrationQuoteThresholdSol ?? 1, fee: { mode: 'FeeSchedulerLinear (anti-sniper fee schedule)', ...launchFeeConfig(o) }, creatorLock: resolveCreatorLock(o),
     txs: { createConfig: p.createConfigSig, createPoolAndHookConfig: sig },
   };
   rec.mintHookSimulation = p.simulationNote;

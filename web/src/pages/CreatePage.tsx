@@ -11,7 +11,7 @@ import { StudioGate, StudioSessionControls } from '../components/StudioGate';
 import { useStudioAccess } from '../lib/studio';
 import { DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
 import { CapDiagram } from '../components/HookArt';
-import { hookList, optionalHookList, RULES_DEFAULT, RULES_WINDOWS, windowText, ordinal, type HookId, type OptionalHookId } from '../lib/hookInfo';
+import { hookList, optionalHookList, creatorLockInfo, RULES_DEFAULT, RULES_WINDOWS, CREATOR_LOCK_DEFAULT, CREATOR_LOCK_DURATIONS, windowText, ordinal, type HookId, type OptionalHookId } from '../lib/hookInfo';
 import { HooksLink } from './HooksPage';
 import { IconArrow, IconCheck } from '../components/Icons';
 
@@ -28,14 +28,20 @@ const SCHEDULE_ERRORS: Record<ScheduleError, string> = {
 interface Row { offset: string; pct: string }
 
 /** The optional hooks as the form holds them (percent strings); `on` says which are switched on. */
-interface Extras { on: Record<OptionalHookId, boolean>; maxBuyPct: string; perSlotPct: string; windowSlots: string; potEvery: string; potMinPct: string }
+interface Extras { on: Record<OptionalHookId, boolean>; maxBuyPct: string; perSlotPct: string; windowSlots: string; potEvery: string; potMinPct: string; cooldownSlots: string; lockOn: boolean; lockPct: string; lockSlots: string }
 const pctStr = (bps: number) => String(bps / 100);
-const emptyExtras = (): Extras => ({ on: { maxbuy: false, slot: false, pot: false }, maxBuyPct: pctStr(RULES_DEFAULT.maxBuyBps), perSlotPct: pctStr(RULES_DEFAULT.maxPerSlotBps), windowSlots: RULES_DEFAULT.windowSlots, potEvery: String(RULES_DEFAULT.potEvery), potMinPct: pctStr(RULES_DEFAULT.potMinBps) });
+const emptyExtras = (): Extras => ({ on: { maxbuy: false, slot: false, pot: false, cooldown: false }, maxBuyPct: pctStr(RULES_DEFAULT.maxBuyBps), perSlotPct: pctStr(RULES_DEFAULT.maxPerSlotBps), windowSlots: RULES_DEFAULT.windowSlots, potEvery: String(RULES_DEFAULT.potEvery), potMinPct: pctStr(RULES_DEFAULT.potMinBps), cooldownSlots: String(RULES_DEFAULT.cooldownSlots), lockOn: false, lockPct: String(CREATOR_LOCK_DEFAULT.pct), lockSlots: String(CREATOR_LOCK_DEFAULT.slots) });
 /** percent of supply (up to 2 decimals) -> bps, or null if it isn't one */
 const toBps = (v: string, min: number) => { const t = v.trim(); if (!/^\d+(\.\d{1,2})?$/.test(t)) return null; const b = Math.round(Number(t) * 100); return b >= min && b <= 10_000 ? b : null; };
 /** Same limits as the server (sdk/buy_rules.ts) and the program (validate_rules). */
-function checkExtras(x: Extras): { err: string | null; rules?: BuyRulesInput } {
-  if (!x.on.maxbuy && !x.on.slot && !x.on.pot) return { err: null };
+function checkExtras(x: Extras): { err: string | null; rules?: BuyRulesInput; lock?: { pct: number; slots: number } } {
+  let lock: { pct: number; slots: number } | undefined;
+  if (x.lockOn) {
+    const pct = /^\d+$/.test(x.lockPct.trim()) ? Number(x.lockPct) : NaN;
+    if (!(pct >= 1 && pct <= 10)) return { err: 'Creator lock: a whole percent of supply, 1 to 10.' };
+    lock = { pct, slots: Number(x.lockSlots) };
+  }
+  if (!x.on.maxbuy && !x.on.slot && !x.on.pot && !x.on.cooldown) return { err: null, lock };
   const maxBuyBps = x.on.maxbuy ? toBps(x.maxBuyPct, 1) : 0;
   if (maxBuyBps === null) return { err: 'Max single buy: 0.01% to 100% of supply.' };
   const maxPerSlotBps = x.on.slot ? toBps(x.perSlotPct, 1) : 0;
@@ -45,7 +51,9 @@ function checkExtras(x: Extras): { err: string | null; rules?: BuyRulesInput } {
   if (x.on.pot && !(potEvery >= 10 && potEvery <= 100_000)) return { err: 'Buy pot: a winner every 10 to 100,000 buys.' };
   const potMinBps = x.on.pot ? toBps(x.potMinPct, 0) : 0;
   if (potMinBps === null) return { err: 'Buy pot minimum: 0% to 100% of supply, up to 2 decimals.' };
-  return { err: null, rules: { maxBuyBps, maxPerSlotBps, windowSlots: x.on.maxbuy || x.on.slot ? x.windowSlots : '0', potEvery, potMinBps } };
+  const cooldownSlots = x.on.cooldown ? (/^\d+$/.test(x.cooldownSlots.trim()) ? Number(x.cooldownSlots) : NaN) : 0;
+  if (x.on.cooldown && !(cooldownSlots >= 1 && cooldownSlots <= 150)) return { err: 'Slow mode: 1 to 150 slots between buys (~0.4 s to ~1 min).' };
+  return { err: null, rules: { maxBuyBps, maxPerSlotBps, windowSlots: x.on.maxbuy || x.on.slot || x.on.cooldown ? x.windowSlots : '0', potEvery, potMinBps, cooldownSlots }, lock };
 }
 const rowsOf = (s: NamedSchedule): Row[] => s.steps.map((x) => ({ offset: x.slotOffset.toString(), pct: String(x.maxBps / 100) }));
 
@@ -114,7 +122,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
   async function create() {
     if (!('steps' in check) || formErr || extrasCheck.err) return;
     setBusy(true); setError(null); setResult(null);
-    const req = { name: name.trim(), symbol, steps: check.steps!, uncappedAfter: unc.trim(), thresholdSol: Number(threshold), percentageSupplyOnMigration: Number(onMigration), metadata: toInput(details), ...(extrasCheck.rules ? { rules: extrasCheck.rules } : {}) };
+    const req = { name: name.trim(), symbol, steps: check.steps!, uncappedAfter: unc.trim(), thresholdSol: Number(threshold), percentageSupplyOnMigration: Number(onMigration), metadata: toInput(details), ...(extrasCheck.rules ? { rules: extrasCheck.rules } : {}), ...(extrasCheck.lock ? { creatorLockPct: extrasCheck.lock.pct, creatorLockSlots: extrasCheck.lock.slots } : {}) };
     try {
       if (bw.address) {
         // AC-21: the launch tx is signed in the connected wallet; the server co-signs with the launch key (8.3)
@@ -341,15 +349,17 @@ function HooksPicker({ meta, capText, extrasOn, onExtras }: { meta: Meta; capTex
   );
 }
 
-function extrasSummary(x: Extras, c: { err: string | null; rules?: BuyRulesInput }): string {
+function extrasSummary(x: Extras, c: { err: string | null; rules?: BuyRulesInput; lock?: { pct: number; slots: number } }): string {
   if (c.err) return 'needs attention';
   const r = c.rules;
-  if (!r) return 'none';
+  if (!r) return c.lock ? `creator lock ${c.lock.pct}%` : 'none';
   const parts: string[] = [];
   if (r.maxBuyBps) parts.push(`max buy ${pctOf(r.maxBuyBps)}`);
   if (r.maxPerSlotBps) parts.push(`${pctOf(r.maxPerSlotBps)} per slot`);
   if (r.maxBuyBps || r.maxPerSlotBps) parts.push(windowText(x.windowSlots));
   if (r.potEvery) parts.push(`pot: every ${ordinal(r.potEvery)} buy`);
+  if (r.cooldownSlots) parts.push(`slow mode ${r.cooldownSlots} slots`);
+  if (c.lock) parts.push(`creator lock ${c.lock.pct}%`);
   return parts.join(' · ');
 }
 
@@ -362,7 +372,10 @@ function OptionalHooksStep({ value: x, onChange, err, capStartBps }: { value: Ex
   const live = {
     maxBuyBps: toBps(x.maxBuyPct, 1) ?? RULES_DEFAULT.maxBuyBps, maxPerSlotBps: toBps(x.perSlotPct, 1) ?? RULES_DEFAULT.maxPerSlotBps,
     windowSlots: x.windowSlots, potEvery: /^\d+$/.test(x.potEvery) && +x.potEvery >= 10 ? +x.potEvery : RULES_DEFAULT.potEvery, potMinBps: toBps(x.potMinPct, 0) ?? RULES_DEFAULT.potMinBps,
+    cooldownSlots: /^\d+$/.test(x.cooldownSlots) && +x.cooldownSlots >= 1 && +x.cooldownSlots <= 150 ? +x.cooldownSlots : RULES_DEFAULT.cooldownSlots,
   };
+  const liveLock = { pct: /^\d+$/.test(x.lockPct) && +x.lockPct >= 1 && +x.lockPct <= 10 ? +x.lockPct : CREATOR_LOCK_DEFAULT.pct, slots: Number(x.lockSlots) || CREATOR_LOCK_DEFAULT.slots };
+  const lockCard = creatorLockInfo(liveLock.pct, liveLock.slots);
   const hooks = optionalHookList(live);
   const maxBuyBps = toBps(x.maxBuyPct, 1);
   const windowField = (
@@ -393,6 +406,12 @@ function OptionalHooksStep({ value: x, onChange, err, capStartBps }: { value: Ex
       </div>
       <div className="notice small">Winners are recorded on chain and listed on the token page. Payouts aren’t switched on yet.</div>
     </>,
+    cooldown: <>
+      <label className="field"><span>Gap between buys (slots)</span><input value={x.cooldownSlots} inputMode="numeric" onChange={(e) => set({ cooldownSlots: e.target.value })} />
+        <span className="hint">1 to 150 slots (~0.4 s to ~1 min). One shared gap for every buyer; selling is never limited.</span>
+      </label>
+      {x.on.maxbuy || x.on.slot ? <div className="hint">Applies for: the same window as the other buy limits ({windowText(x.windowSlots)}).</div> : windowField}
+    </>,
   };
   return (
     <div className="card">
@@ -417,6 +436,29 @@ function OptionalHooksStep({ value: x, onChange, err, capStartBps }: { value: Ex
             </section>
           );
         })}
+        <section className={`opt-hook tone-${lockCard.tone} ${x.lockOn ? 'on' : ''}`}>
+          <div className="opt-hook-head">
+            <span className="hook-tile">{lockCard.icon}</span>
+            <span style={{ minWidth: 0 }}><span className="nm">{lockCard.name}</span><span className="st">{x.lockOn ? lockCard.short : 'Give yourself a supply share that stays locked until after graduation'}</span></span>
+            <button type="button" role="switch" aria-checked={x.lockOn} aria-label={`Creator lock: ${x.lockOn ? 'on' : 'off'}`} className="tgl" onClick={() => set({ lockOn: !x.lockOn })} />
+          </div>
+          {x.lockOn && (
+            <div className="opt-hook-body">
+              <div>{lockCard.diagram}</div>
+              <div className="opt-hook-fields">
+                <div className="wiz-two">
+                  <label className="field"><span>Creator share (% of supply)</span><input value={x.lockPct} inputMode="numeric" onChange={(e) => set({ lockPct: e.target.value })} /><span className="hint">1 to 10, whole percents</span></label>
+                  <label className="field"><span>Locked for</span>
+                    <select value={x.lockSlots} onChange={(e) => set({ lockSlots: e.target.value })}>
+                      {CREATOR_LOCK_DURATIONS.map((d) => <option key={d.slots} value={String(d.slots)}>{d.label} after graduation</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div className="notice small">Not a transfer-hook rule: Meteora’s locked vesting holds it on chain. This share is not sold on the curve, and it can’t be changed after launch.</div>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
       {err && <div className="notice red small" style={{ marginTop: 12 }}>{err}</div>}
       <p className="small faint" style={{ margin: '12px 0 0' }}>Selling is never limited by these. Each needs the upgraded hook program; if the cluster doesn’t have it yet, the launch is refused before anything is sent. <HooksLink /></p>

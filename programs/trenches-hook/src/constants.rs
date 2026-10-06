@@ -13,6 +13,8 @@ pub const POT_EVERY_MIN: u32 = 10;
 pub const POT_EVERY_MAX: u32 = 100_000;
 /// Opening window for the buy limits (slots); 0 means the whole bonding curve.
 pub const RULES_WINDOW_MAX: u64 = 1_000_000;
+/// Slow mode: maximum gap the rules may demand between curve buys (slots; ~1 min at ~0.4 s/slot).
+pub const COOLDOWN_MAX: u64 = 150;
 pub const MAX_EXEMPT: usize = 4;
 
 pub const SCOPE_GLOBAL: u8 = 0;

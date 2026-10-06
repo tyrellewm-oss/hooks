@@ -21,7 +21,7 @@ interface Sim {
   launchedMsAgo: number; graduated: boolean; reserveSol: number;
   balances: Record<string, bigint>; switchHistory: SwitchEvent[]; raisedFloorBps: number;
   /** optional hooks: rules plus how many buys the pot has counted so far */
-  rules?: { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number; buyCount: number };
+  rules?: { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number; cooldownSlots: number; buyCount: number };
 }
 const tokens = (n: number) => BigInt(Math.round(n * 1e6)) * (UNIT / 1_000_000n);
 const fakeKey = (tag: string) => (tag + '1'.repeat(44)).slice(0, 44);
@@ -31,11 +31,11 @@ const SIMS: Sim[] = [
     launchedMsAgo: 25_000, graduated: false, reserveSol: 0.031, balances: { A: 0n, B: tokens(4_000_000) }, switchHistory: [], raisedFloorBps: 0 },
   { mint: fakeKey('FixtureCappedMint'), pool: fakeKey('FixturePooB'), config: fakeKey('FixtureCfgB'), name: 'Fixture Capped', symbol: 'TCAP',
     launchedMsAgo: 245_000, graduated: false, reserveSol: 0.082, balances: { A: tokens(12_400_000), B: tokens(3_000_000) }, switchHistory: [], raisedFloorBps: 0,
-    rules: { maxBuyBps: 50, maxPerSlotBps: 150, windowSlots: '1500', potEvery: 25, potMinBps: 1, buyCount: 68 } },
+    rules: { maxBuyBps: 50, maxPerSlotBps: 150, windowSlots: '1500', potEvery: 25, potMinBps: 1, cooldownSlots: 25, buyCount: 68 } },
   { mint: fakeKey('FixtureOpenMint'), pool: fakeKey('FixturePooC'), config: fakeKey('FixtureCfgC'), name: 'Fixture Open', symbol: 'TOPEN',
     launchedMsAgo: 40 * 60_000, graduated: false, reserveSol: 0.164, balances: { A: tokens(52_000_000), B: tokens(8_500_000) }, raisedFloorBps: 500,
     switchHistory: [{ scope: 'mint', oldMinCapBps: 0, newMinCapBps: 500, lifted: false, slot: String(slotAt(T0 - 32 * 60_000)), signer: fakeKey('FixtureLiftAuthority'), link: '' }],
-    rules: { maxBuyBps: 0, maxPerSlotBps: 0, windowSlots: '0', potEvery: 100, potMinBps: 1, buyCount: 341 } },
+    rules: { maxBuyBps: 0, maxPerSlotBps: 0, windowSlots: '0', potEvery: 100, potMinBps: 1, cooldownSlots: 0, buyCount: 341 } },
   { mint: fakeKey('FixtureGraduatedMint'), pool: fakeKey('FixturePooD'), config: fakeKey('FixtureCfgD'), name: 'Fixture Graduated', symbol: 'TGRAD',
     launchedMsAgo: 3 * 3600_000, graduated: true, reserveSol: 0.2, balances: { A: tokens(9_000_000), B: tokens(41_000_000) }, switchHistory: [], raisedFloorBps: 0 },
 ];

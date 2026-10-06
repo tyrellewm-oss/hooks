@@ -3,18 +3,25 @@
 import type { ReactNode } from 'react';
 import type { Meta } from './types';
 import { approxDuration, pctOf } from './shared';
-import { CapDiagram, FlywheelDiagram, LiftDiagram, SniperFeeDiagram, MaxBuyDiagram, SlotLimitDiagram, PotDiagram } from '../components/HookArt';
-import { IconFee, IconFlame, IconShield, IconSwitch, IconCeiling, IconBlocks, IconTrophy } from '../components/Icons';
+import { CapDiagram, FlywheelDiagram, LiftDiagram, SniperFeeDiagram, MaxBuyDiagram, SlotLimitDiagram, PotDiagram, CooldownDiagram, LockDiagram } from '../components/HookArt';
+import { IconFee, IconFlame, IconShield, IconSwitch, IconCeiling, IconBlocks, IconTrophy, IconClock, IconLock } from '../components/Icons';
 
 export const SNIPER_DEFAULT = { startBps: 5000, endBps: 100, periods: 10, durationSlots: 150 };
 export const FLYWHEEL_SPLIT = { devPct: 15, buybackPct: 85 };
 
-export type HookId = 'cap' | 'fee' | 'switch' | 'burn' | OptionalHookId;
-export type OptionalHookId = 'maxbuy' | 'slot' | 'pot';
-export const HOOK_IDS: HookId[] = ['cap', 'fee', 'switch', 'burn', 'maxbuy', 'slot', 'pot'];
+export type HookId = 'cap' | 'fee' | 'switch' | 'burn' | 'lock' | OptionalHookId;
+export type OptionalHookId = 'maxbuy' | 'slot' | 'pot' | 'cooldown';
+export const HOOK_IDS: HookId[] = ['cap', 'fee', 'switch', 'burn', 'maxbuy', 'slot', 'pot', 'cooldown', 'lock'];
 
 /** Studio defaults for the optional hooks (shares of supply in bps; window in slots, 0 = until graduation). */
-export const RULES_DEFAULT = { maxBuyBps: 50, maxPerSlotBps: 150, windowSlots: '1500', potEvery: 50, potMinBps: 1 };
+export const RULES_DEFAULT = { maxBuyBps: 50, maxPerSlotBps: 150, windowSlots: '1500', potEvery: 50, potMinBps: 1, cooldownSlots: 25 };
+/** Creator lock defaults (not a transfer-hook rule: DBC locked vesting, set at launch). ~1 day at ~0.4 s/slot. */
+export const CREATOR_LOCK_DEFAULT = { pct: 5, slots: 216_000 };
+export const CREATOR_LOCK_DURATIONS: { slots: number; label: string }[] = [
+  { slots: 216_000, label: '~1 day' },
+  { slots: 1_512_000, label: '~1 week' },
+  { slots: 6_480_000, label: '~30 days' },
+];
 export const RULES_WINDOWS: { slots: string; label: string }[] = [
   { slots: '150', label: 'First ~1 min' },
   { slots: '1500', label: 'First ~10 min' },
@@ -126,7 +133,7 @@ export function hookList(meta: Meta): HookInfo[] {
 
 /** The optional hooks a launch can turn on (program v2 rules). Values shown are the studio defaults unless `r` is a
  *  token's own rules. */
-export function optionalHookList(r: { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number } = RULES_DEFAULT): HookInfo[] {
+export function optionalHookList(r: { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number; cooldownSlots: number } = RULES_DEFAULT): HookInfo[] {
   const win = windowText(r.windowSlots);
   const Win = win[0].toUpperCase() + win.slice(1);
   return [
@@ -182,7 +189,51 @@ export function optionalHookList(r: { maxBuyBps: number; maxPerSlotBps: number; 
       limits: 'It is not random: anyone watching the count can try to time the winning buy. The hook only records winners; it cannot hold or send SOL, and payouts are not switched on yet.',
       diagram: <PotDiagram every={r.potEvery} minText={pctOf(r.potMinBps)} />,
     },
+    {
+      id: 'cooldown', name: 'Slow mode', icon: <IconClock size={20} />, tone: 'green', launch: 'optional',
+      short: `One curve buy every ${r.cooldownSlots} slots (~${slotSecs(r.cooldownSlots)})`,
+      when: `Curve \u00b7 ${win}`, runs: 'Transfer hook program, one shared timer for the whole token',
+      steps: [
+        'After any curve buy lands, a shared timer starts for the whole token.',
+        `The next buy, from anyone, must wait ${r.cooldownSlots} slots (~${slotSecs(r.cooldownSlots)}). A buy inside the gap fails and nothing moves.`,
+        'A crew splitting across many wallets waits out the gap for every single buy, so taking a large share takes a long time.',
+      ],
+      settings: [
+        { k: 'Gap between buys', v: `${r.cooldownSlots} slots \u00b7 ~${slotSecs(r.cooldownSlots)}` },
+        { k: 'Applies', v: Win },
+        { k: 'Counts', v: 'all buyers together' },
+        { k: 'Selling', v: 'never limited' },
+      ],
+      limits: 'It slows everyone down equally, honest buyers included: in a busy opening a buy can fail just for being second; trying again after the gap works. It throttles how fast the curve can fill during the window.',
+      diagram: <CooldownDiagram gapText={`${r.cooldownSlots}-slot`} />,
+    },
   ];
+}
+
+/** ~seconds for a slot count at ~0.4 s/slot (estimate, same base as approxDuration). */
+const slotSecs = (slots: number) => approxDuration(String(slots));
+
+/** Creator lock as a hook card (display only): DBC locked vesting set at launch, not a transfer-hook rule. */
+export function creatorLockInfo(pct: number, slots: number): HookInfo {
+  const dur = approxDuration(String(slots));
+  return {
+    id: 'lock', name: 'Creator lock', icon: <IconLock size={20} />, tone: 'accent', launch: 'optional',
+    short: `${pct}% of supply locked for the creator until ~${dur} after graduation`,
+    when: `From launch until ~${dur} after graduation`, runs: 'Meteora DBC locked vesting, set at launch',
+    steps: [
+      `${pct}% of the supply is set aside for the creator at launch, locked on chain.`,
+      'It stays locked through the whole bonding curve and through graduation.',
+      `It unlocks in one piece ~${dur} after the token migrates to the pool. Until then the creator cannot sell any of it.`,
+    ],
+    settings: [
+      { k: 'Creator share', v: `${pct}% of supply` },
+      { k: 'Unlocks', v: `~${dur} after graduation` },
+      { k: 'Unlock shape', v: 'all at once' },
+      { k: 'Changeable later', v: 'no' },
+    ],
+    limits: 'It locks only this allocation: it does not stop the creator buying more on the curve like anyone else. A launch without it gives the creator no allocation at all.',
+    diagram: <LockDiagram pctText={`${pct}%`} durText={approxDuration(String(slots))} />,
+  };
 }
 
 /** Every hook: the four each token runs, then the optional ones. */

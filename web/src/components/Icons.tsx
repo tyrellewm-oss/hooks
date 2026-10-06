@@ -31,4 +31,5 @@ export const IconHome = (p: { size?: number }) => <I {...p}><path d="M4 11l8-6.5
 export const IconBook = (p: { size?: number }) => <I {...p}><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v15H5.5A1.5 1.5 0 0 0 4 20.5z" /><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v15h5.5a1.5 1.5 0 0 1 1.5 1.5z" /></I>;
 export const IconCeiling = (p: { size?: number }) => <I {...p}><path d="M4 5h16" /><path d="M12 20V9M8 13l4-4 4 4" /></I>;
 export const IconBlocks = (p: { size?: number }) => <I {...p}><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /><rect x="8.5" y="4" width="7" height="7" rx="1.5" /></I>;
+export const IconClock = (p: { size?: number }) => <I {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></I>;
 export const IconTrophy = (p: { size?: number }) => <I {...p}><path d="M8 4h8v5a4 4 0 0 1-8 0V4z" /><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v3.5M8.5 20h7M10 16.5h4" /></I>;

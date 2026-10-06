@@ -119,6 +119,8 @@ pub struct RulesArgs {
     pub pot_every: u32,
     /// Nth-buy pot: a buy qualifies from this many tokens (raw).
     pub pot_min_tokens: u64,
+    /// Slow mode: minimum slots between curve buys (mint-wide) during the window; 0 = off.
+    pub cooldown_slots: u64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, Debug, InitSpace, PartialEq, Eq)]
@@ -140,11 +142,14 @@ pub struct RulesState {
     pub window_slots: u64,
     pub pot_every: u32,
     pub pot_min_tokens: u64,
+    pub cooldown_slots: u64,
     // ---- counters (written only by transfer_hook)
     pub cur_slot: u64,
     pub bought_in_slot: u64,
     pub buy_count: u64,
     pub last_counted_slot: u64,
     pub wins: u64,
+    /// Slow mode: slot of the last curve buy (any buyer).
+    pub last_buy_slot: u64,
     pub winners: [PotWin; POT_WINNERS],
 }

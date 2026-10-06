@@ -341,3 +341,54 @@ export function PotDiagram({ every, minText }: { every: number; minText: string 
     </Frame>
   );
 }
+
+/** Slow mode: a shared gap between curve buys. Buy A lands, B comes too soon and fails, C waits out the gap and lands. */
+export function CooldownDiagram({ gapText }: { gapText: string }) {
+  const y = 96, L = 36, R = 404;
+  const marks = [
+    { x: 92, label: 'Buy A', ok: true, note: 'lands' },
+    { x: 196, label: 'Buy B', ok: false, note: 'too soon' },
+    { x: 328, label: 'Buy C', ok: true, note: 'lands' },
+  ];
+  return (
+    <Frame w={420} h={196} label={`Curve buys share one ${gapText} gap: A lands, B inside the gap fails, C after the gap lands`}>
+      <line x1={L} x2={R} y1={y} y2={y} className="hd-axis" />
+      <rect x={marks[0].x + 8} y={y - 11} width={marks[2].x - marks[0].x - 16} height={22} rx="7" className="hd-well" />
+      <text x={(marks[0].x + marks[2].x) / 2} y={y + 4.5} textAnchor="middle" className="hd-s">{gapText} gap</text>
+      {marks.map((m) => (
+        <g key={m.label}>
+          <circle cx={m.x} cy={y} r="7" className={m.ok ? 'hd-fill' : 'hd-ghost'} />
+          <text x={m.x} y={y - 24} textAnchor="middle" className="hd-t small">{m.label}</text>
+          <text x={m.x} y={y + 34} textAnchor="middle" className={`hd-s strong ${m.ok ? 'ok' : 'bad'}`}>{m.ok ? '\u2713 ' + m.note : '\u2715 ' + m.note}</text>
+        </g>
+      ))}
+      <text x={(L + R) / 2} y={160} textAnchor="middle" className="hd-s">one shared gap, every buyer together \u00b7 selling is never limited</text>
+    </Frame>
+  );
+}
+
+/** Creator lock: the creator's slice stays locked through the curve and graduation, unlocking in one piece later. */
+export function LockDiagram({ pctText, durText }: { pctText: string; durText: string }) {
+  const y = 84, L = 36, R = 404, unlockX = 318;
+  const stations = [
+    { x: 70, label: 'launch' },
+    { x: 190, label: 'graduation' },
+    { x: unlockX, label: `+${durText}` },
+  ];
+  return (
+    <Frame w={420} h={196} label={`The creator's ${pctText} is locked from launch, through graduation, and unlocks all at once about ${durText} later`}>
+      <line x1={L} x2={R} y1={y} y2={y} className="hd-axis" />
+      <rect x={stations[0].x} y={y - 12} width={unlockX - stations[0].x} height={24} rx="7" className="hd-well" />
+      <text x={(stations[0].x + unlockX) / 2} y={y + 4.5} textAnchor="middle" className="hd-s">{pctText} locked</text>
+      {stations.map((st) => (
+        <g key={st.label}>
+          <line x1={st.x} x2={st.x} y1={y - 16} y2={y + 16} className="hd-axis" />
+          <text x={st.x} y={y + 34} textAnchor="middle" className="hd-s">{st.label}</text>
+        </g>
+      ))}
+      <circle cx={unlockX} cy={y} r="7" className="hd-fill" />
+      <text x={unlockX} y={y - 24} textAnchor="middle" className="hd-t small">unlocks</text>
+      <text x={(L + R) / 2} y={160} textAnchor="middle" className="hd-s">one piece, on chain \u00b7 the creator cannot sell it earlier</text>
+    </Frame>
+  );
+}

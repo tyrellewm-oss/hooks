@@ -71,6 +71,8 @@ export interface LaunchRecord {
   uncappedAfter: string;
   migrationQuoteThresholdSol: number;
   fee?: Record<string, unknown>;
+  /** creator lock: % of supply locked for the creator until `slots` after migration (null/absent = none) */
+  creatorLock?: { pct: number; slots: number } | null;
   txs?: Record<string, string>;
 }
 
@@ -89,7 +91,7 @@ export interface TokenMetadata { description: string; website: string | null; x:
 export interface MetadataInput { description: string; website: string; x: string; telegram: string; image?: { data: string } | null }
 
 /** The optional hooks a launch can turn on (sdk/buy_rules.ts). Shares are bps of supply; 0 = off. */
-export interface BuyRulesInput { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number }
+export interface BuyRulesInput { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number; cooldownSlots: number }
 export interface PotWinner { owner: string; tokenAccount: string; buyIndex: string; slot: string }
 /** rulesView() in app/server.ts: the token's rules account, live */
 export interface RulesView extends BuyRulesInput { launchSlot: string; buyCount: string; wins: string; winners: PotWinner[] }
@@ -169,6 +171,9 @@ export interface CreateRequest {
   rules?: BuyRulesInput;
   /** AC-21 studio launch only: the connected wallet that pays and signs (needed where the studio is open without sign-in) */
   owner?: string;
+  /** creator lock (DBC locked vesting): % of supply for the creator, locked until this many slots after migration */
+  creatorLockPct?: number;
+  creatorLockSlots?: number;
 }
 export interface CreateReply { mint: string; pool: string; registered: false; note: string }
 /** AC-21 studio launch: the server-built, co-signed launch tx the connected wallet signs (hex), plus what it creates */

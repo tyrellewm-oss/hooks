@@ -10,7 +10,7 @@ import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { resolveCluster, parseClusterArg, explorerAddr, explorerTx, assertNotMainnet } from '../sdk/cluster.js';
 import { defaultSchedule, scheduleJson, resolveSchedule } from '../sdk/schedules.js';
 import { loadOrCreate, deployerName } from '../sdk/keys.js';
-import { Launchpad, listLaunches, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration, dammV2MigrationConfigFor } from '../sdk/launch.js';
+import { Launchpad, listLaunches, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration, resolveCreatorLock, CreatorLockRefusal, dammV2MigrationConfigFor, type CreatorLock } from '../sdk/launch.js';
 import { validate, RELEASE_LIMITS, type Step } from '../sdk/capMath.js';
 import { parseRestrictionsLifted, decodeRules, type BuyRules } from '../sdk/hook.js';
 import { parseBuyRules, buyRulesBps, rulesUnsupportedHint, BuyRulesRefusal } from '../sdk/buy_rules.js';
@@ -75,7 +75,7 @@ const launchRelay = new StudioLaunchRelay();
 const pendingLaunchMeta = new Map<string, ReturnType<typeof validateMetadata>>();
 
 /** Shared validation for /api/create and /api/studio/launch/build: same rules as the program (AC-4/AC-21), QA L-16. */
-function parseLaunchBody(b: any): { error: string } | { opts: { name: string; symbol: string; steps: Step[]; uncappedAfter: bigint; migrationQuoteThresholdSol: number; percentageSupplyOnMigration: number; rules?: BuyRules }; meta: ReturnType<typeof validateMetadata> | null } {
+function parseLaunchBody(b: any): { error: string } | { opts: { name: string; symbol: string; steps: Step[]; uncappedAfter: bigint; migrationQuoteThresholdSol: number; percentageSupplyOnMigration: number; rules?: BuyRules; creatorLockPct?: number; creatorLockSlots?: number }; meta: ReturnType<typeof validateMetadata> | null } {
   const name = String(b.name ?? '').slice(0, 32), symbol = String(b.symbol ?? '').toUpperCase().slice(0, 10);
   if (!name || !/^[A-Z0-9]{2,10}$/.test(symbol)) return { error: 'name and 2-10 char ticker required' };
   // Either explicit steps, or a named schedule (strict|balanced|loose|demo). Unknown names are a 400, never a silent fallback (QA L-16).
@@ -92,11 +92,13 @@ function parseLaunchBody(b: any): { error: string } | { opts: { name: string; sy
   let percentageSupplyOnMigration: number; // optional; default 20 (validated before any tx)
   try { percentageSupplyOnMigration = resolvePercentageSupplyOnMigration(b.percentageSupplyOnMigration); }
   catch (e: any) { return { error: e.message }; }
-  let rules: BuyRules | null;   // optional hooks (max single buy, max per slot, Nth-buy pot); none = the v1 hook config
+  let rules: BuyRules | null;   // optional hooks (max single buy, max per slot, Nth-buy pot, slow mode); none = the v1 hook config
   try { rules = parseBuyRules(b.rules); } catch (e: any) { if (e instanceof BuyRulesRefusal) return { error: e.message }; throw e; }
+  let lock: CreatorLock | null;   // creator lock (DBC locked vesting): validated here so a bad value is a 400, not a thrown 500
+  try { lock = resolveCreatorLock(b); } catch (e: any) { if (e instanceof CreatorLockRefusal) return { error: e.message }; throw e; }
   let meta: ReturnType<typeof validateMetadata> | null = null;   // optional token details, validated before any tx
   if (b.metadata !== undefined) { try { meta = validateMetadata(b.metadata); } catch (e: any) { return { error: e.message }; } }
-  return { opts: { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration, ...(rules ? { rules } : {}) }, meta };
+  return { opts: { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration, ...(rules ? { rules } : {}), ...(lock ? { creatorLockPct: lock.pct, creatorLockSlots: lock.slots } : {}) }, meta };
 }
 // Studio sign-in (sdk/studio_auth.ts): the create and token-details routes need a session from an allowlisted wallet.
 // Fails closed on devnet (no STUDIO_WALLETS -> studio closed); a local validator without a list stays open.
