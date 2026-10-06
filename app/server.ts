@@ -12,12 +12,15 @@ import { defaultSchedule, scheduleJson, resolveSchedule } from '../sdk/schedules
 import { loadOrCreate, deployerName } from '../sdk/keys.js';
 import { Launchpad, listLaunches, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration, dammV2MigrationConfigFor } from '../sdk/launch.js';
 import { validate, RELEASE_LIMITS, type Step } from '../sdk/capMath.js';
-import { parseRestrictionsLifted } from '../sdk/hook.js';
+import { parseRestrictionsLifted, decodeRules, type BuyRules } from '../sdk/hook.js';
+import { parseBuyRules, buyRulesBps, rulesUnsupportedHint, BuyRulesRefusal } from '../sdk/buy_rules.js';
 import { redactDeep } from '../sdk/redact.js';
 import { serverError } from './errors.js';
 import { siteRoute, createReply, type Reply } from './site_registry.js';
 import { WalletRelay, WalletTxRefusal, buildUserSwap, buildUserPoolSwap, parseSlippageBps, submitSigned } from '../sdk/wallet_tx.js';
 import { MintHookRefusal } from '../sdk/mint_hook.js';
+import { KeyRuleRefusal } from '../sdk/keyrules.js';
+import { StudioLaunchRelay, buildUserLaunch, submitUserLaunch, LaunchUserRefusal } from '../sdk/launch_user.js';
 import { staticReply, uiModeFromArgs, assertUiBuilt } from './static.js';
 import { loadPublicKeepers } from './flywheel_public.js';
 import { readIndex, candles, dammPoolFor } from '../sdk/indexer.js';
@@ -67,6 +70,34 @@ async function feeInfo(config: PublicKey) {
 }
 
 const relay = new WalletRelay();
+const launchRelay = new StudioLaunchRelay();
+/** token details given at build time, saved only once that mint's launch confirms (keyed by mint, like the relay: short-lived) */
+const pendingLaunchMeta = new Map<string, ReturnType<typeof validateMetadata>>();
+
+/** Shared validation for /api/create and /api/studio/launch/build: same rules as the program (AC-4/AC-21), QA L-16. */
+function parseLaunchBody(b: any): { error: string } | { opts: { name: string; symbol: string; steps: Step[]; uncappedAfter: bigint; migrationQuoteThresholdSol: number; percentageSupplyOnMigration: number; rules?: BuyRules }; meta: ReturnType<typeof validateMetadata> | null } {
+  const name = String(b.name ?? '').slice(0, 32), symbol = String(b.symbol ?? '').toUpperCase().slice(0, 10);
+  if (!name || !/^[A-Z0-9]{2,10}$/.test(symbol)) return { error: 'name and 2-10 char ticker required' };
+  // Either explicit steps, or a named schedule (strict|balanced|loose|demo). Unknown names are a 400, never a silent fallback (QA L-16).
+  let steps: Step[]; let uncappedAfter: bigint;
+  if (b.schedule !== undefined && !b.steps) {
+    try { const sch = resolveSchedule(b.schedule, c.name); steps = sch.steps; uncappedAfter = sch.uncappedAfter; }
+    catch (e: any) { return { error: e.message }; }
+  } else {
+    steps = (b.steps ?? []).map((s: any) => ({ slotOffset: BigInt(s.slotOffset), maxBps: Number(s.maxBps) }));
+    uncappedAfter = BigInt(b.uncappedAfter ?? 0);
+  }
+  const err = validate({ launchSlot: 0n, supply: 1n, steps, uncappedAfter }, RELEASE_LIMITS);
+  if (err) return { error: `InvalidCapSchedule: ${err}` };
+  let percentageSupplyOnMigration: number; // optional; default 20 (validated before any tx)
+  try { percentageSupplyOnMigration = resolvePercentageSupplyOnMigration(b.percentageSupplyOnMigration); }
+  catch (e: any) { return { error: e.message }; }
+  let rules: BuyRules | null;   // optional hooks (max single buy, max per slot, Nth-buy pot); none = the v1 hook config
+  try { rules = parseBuyRules(b.rules); } catch (e: any) { if (e instanceof BuyRulesRefusal) return { error: e.message }; throw e; }
+  let meta: ReturnType<typeof validateMetadata> | null = null;   // optional token details, validated before any tx
+  if (b.metadata !== undefined) { try { meta = validateMetadata(b.metadata); } catch (e: any) { return { error: e.message }; } }
+  return { opts: { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration, ...(rules ? { rules } : {}) }, meta };
+}
 // Studio sign-in (sdk/studio_auth.ts): the create and token-details routes need a session from an allowlisted wallet.
 // Fails closed on devnet (no STUDIO_WALLETS -> studio closed); a local validator without a list stays open.
 const studio = new StudioAuth(parseAllowlist(process.env.STUDIO_WALLETS), c.label, c.name === 'local');
@@ -96,7 +127,16 @@ async function tokenView(mintStr: string, owner: PublicKey | null = null) {
     percentageSupplyOnMigration: (rec.fee as any)?.percentageSupplyOnMigration ?? DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION } : null;
   // the connected browser wallet, when the page passes ?owner=<pubkey>: its token balance and SOL (read only)
   const wallet = owner ? { owner: owner.toBase58(), tokens: (await lp.tokenBalance(mint, owner)).toString(), sol: (await c.connection.getBalance(owner, 'confirmed')) / LAMPORTS_PER_SOL } : null;
-  return { status: st, launch: rec, metadata: publicMetadata(loadMetadata(c.name, mintStr), mintStr), fee, feeConfig, pool, balances: bal, wallet, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
+  return { status: st, launch: rec, rules: await rulesView(mint), metadata: publicMetadata(loadMetadata(c.name, mintStr), mintStr), fee, feeConfig, pool, balances: bal, wallet, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
+}
+
+/** The token's optional hooks (rules PDA), or null for a token launched without them. Shares are bps of supply. */
+async function rulesView(mint: PublicKey) {
+  const a = await c.connection.getAccountInfo(lp.hook.rulesPda(mint), 'confirmed');
+  if (!a || !a.owner.equals(lp.hook.programId)) return null;
+  const r = decodeRules(a.data);   // winners: the last 16, newest first
+  return { ...buyRulesBps(r), launchSlot: r.launchSlot.toString(), buyCount: r.buyCount.toString(), wins: r.wins.toString(),
+    winners: r.winners.map((w) => ({ owner: w.owner.toBase58(), tokenAccount: w.tokenAccount.toBase58(), buyIndex: w.buyIndex.toString(), slot: w.slot.toString() })) };
 }
 
 async function trade(b: any, rec: { mint: string; pool: string }): Promise<Reply> {
@@ -191,30 +231,51 @@ http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/create' && req.method === 'POST') {
       const who = studioCheck(req); if ('code' in who) return send(res, who.code, who.body);   // studio only
-      const b = await body(req);
-      const name = String(b.name ?? '').slice(0, 32), symbol = String(b.symbol ?? '').toUpperCase().slice(0, 10);
-      if (!name || !/^[A-Z0-9]{2,10}$/.test(symbol)) return send(res, 400, { error: 'name and 2-10 char ticker required' });
-      // Either explicit steps, or a named schedule (strict|balanced|loose|demo). Unknown names are a 400, never a silent fallback (QA L-16).
-      let steps: Step[]; let uncappedAfter: bigint;
-      if (b.schedule !== undefined && !b.steps) {
-        try { const sch = resolveSchedule(b.schedule, c.name); steps = sch.steps; uncappedAfter = sch.uncappedAfter; }
-        catch (e: any) { return send(res, 400, { error: e.message }); }
-      } else {
-        steps = (b.steps ?? []).map((s: any) => ({ slotOffset: BigInt(s.slotOffset), maxBps: Number(s.maxBps) }));
-        uncappedAfter = BigInt(b.uncappedAfter ?? 0);
-      }
-      const err = validate({ launchSlot: 0n, supply: 1n, steps, uncappedAfter }, RELEASE_LIMITS); // same rules as the program (AC-4/AC-21)
-      if (err) return send(res, 400, { error: `InvalidCapSchedule: ${err}` });
-      let percentageSupplyOnMigration: number; // optional; default 20 (validated before any tx)
-      try { percentageSupplyOnMigration = resolvePercentageSupplyOnMigration(b.percentageSupplyOnMigration); }
-      catch (e: any) { return send(res, 400, { error: e.message }); }
-      let meta: ReturnType<typeof validateMetadata> | null = null;   // optional token details, validated before any tx
-      if (b.metadata !== undefined) { try { meta = validateMetadata(b.metadata); } catch (e: any) { return send(res, 400, { error: e.message }); } }
+      const p = parseLaunchBody(await body(req));
+      if ('error' in p) return send(res, 400, p);
       await lp.ensureGlobal(deployer, deployer.publicKey);
       await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);   // 8.3: launches are signed by the launch key, never the admin
-      const rec = await lp.launch(deployer, { name, symbol, steps, uncappedAfter, migrationQuoteThresholdSol: Number(b.thresholdSol ?? 1), percentageSupplyOnMigration }, launchKey);
-      if (meta) saveMetadata(c.name, rec.mint, meta);
+      let rec;
+      try { rec = await lp.launch(deployer, p.opts, launchKey); }
+      catch (e: any) { const hint = p.opts.rules && rulesUnsupportedHint(String(e?.message ?? e)); if (hint) return send(res, 400, { error: hint }); throw e; }
+      if (p.meta) saveMetadata(c.name, rec.mint, p.meta);
       return send(res, 200, createReply(rec));   // ticket 8.5b: registered: false + note; the registry is never written
+    }
+    // AC-21 for the studio: the launch tx is signed in the user's own browser wallet. The server co-signs with the
+    // launch key (8.3 pins launches to the one on-chain launch authority) and the per-launch config/mint keypairs,
+    // and relays only what it built (sdk/launch_user.ts: one use, 90 s, every signature verified).
+    if (url.pathname === '/api/studio/launch/build' && req.method === 'POST') {
+      const who = studioCheck(req); if ('code' in who) return send(res, who.code, who.body);   // studio only
+      const p = parseLaunchBody(await body(req));
+      if ('error' in p) return send(res, 400, p);
+      const owner = walletKey(who.wallet);
+      if (!owner) return send(res, 400, { error: 'the studio session wallet is not a valid key' });
+      await lp.ensureGlobal(deployer, deployer.publicKey);
+      await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);
+      try {
+        const built = await buildUserLaunch(lp, launchRelay, deployer, launchKey, owner, p.opts);
+        if (p.meta) pendingLaunchMeta.set(built.mint, p.meta);   // saved only if the launch confirms
+        return send(res, 200, built);
+      } catch (e: any) {
+        const hint = p.opts.rules && rulesUnsupportedHint(String(e?.message ?? e));
+        if (hint) return send(res, 400, { error: hint });
+        if (e instanceof LaunchUserRefusal || e instanceof KeyRuleRefusal || e instanceof MintHookRefusal) return send(res, 400, { error: e.message });
+        throw e;
+      }
+    }
+    if (url.pathname === '/api/studio/launch/submit' && req.method === 'POST') {
+      const who = studioCheck(req); if ('code' in who) return send(res, who.code, who.body);   // studio only
+      const b = await body(req);
+      if (typeof b.tx !== 'string' || !/^[0-9a-f]+$/.test(b.tx)) return send(res, 400, { error: 'tx must be the signed transaction as hex' });
+      try {
+        const out = await submitUserLaunch(lp, launchRelay, b.tx);
+        const meta = pendingLaunchMeta.get(out.record.mint);
+        if (meta) { pendingLaunchMeta.delete(out.record.mint); saveMetadata(c.name, out.record.mint, meta); }
+        return send(res, 200, { ...createReply(out.record), sig: out.sig, link: out.link });
+      } catch (e: any) {
+        if (e instanceof LaunchUserRefusal || e instanceof MintHookRefusal) return send(res, 400, { error: e.message });
+        throw e;
+      }
     }
     if (url.pathname === '/capMath.js') return send(res, 200, capMathJs, 'text/javascript');
     const st = staticReply(url.pathname, UI);   // app/static.ts: classic page or, with --web, the new UI (web/dist)

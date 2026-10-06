@@ -49,7 +49,7 @@ async function home() {
   <div class="card"><h2>Test tokens on ${META.cluster}</h2><table><tr><th>Mint</th><th>Launched</th></tr>${rows}</table></div>
   <div class="card"><h2>Create a test token (${META.cluster}, studio test key only - no public self-serve)</h2>
     <p class="muted">Signed server-side by a throwaway ${META.cluster === 'DEVNET' ? 'devnet' : 'local'} test key. Creates a Meteora DBC config with the transfer hook, the pool, and the frozen cap config in one go.</p>
-    <label>Name <input id="c-name" value="Trenches Test" maxlength="32"></label>
+    <label>Name <input id="c-name" value="Hookd Test" maxlength="32"></label>
     <label>Ticker <input id="c-sym" value="TTEST" maxlength="10"></label>
     <p class="muted">Default schedule: <b>${esc(META.defaultSchedule.name)}</b> (${esc(META.defaultSchedule.label)})</p>
     <label>Cap steps (slot offset : % of supply), one per line <br><textarea id="c-steps" rows="4" cols="30"></textarea></label>

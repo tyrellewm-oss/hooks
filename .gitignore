@@ -55,3 +55,9 @@ artifacts/
 
 # token details entered in the studio (sdk/metadata.ts); local like launches/
 /metadata/
+
+# local editor/app helpers
+.claude/
+
+# local simulation: deployed devnet program bytecode (scripts/sim/programs.ts)
+.sim-programs/

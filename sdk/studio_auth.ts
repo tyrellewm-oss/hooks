@@ -28,7 +28,7 @@ export function parseAllowlist(v: string | undefined): ReadonlySet<string> {
 
 /** The exact text the wallet signs. Fixed layout; the server rebuilds it, never takes it from the browser. */
 export function challengeText(wallet: string, nonce: string, cluster: string, issued: number, expires: number): string {
-  return ['Trenches studio sign-in', '', 'Sign this message to use the studio tools. It is not a transaction and costs nothing.', '',
+  return ['Hookd studio sign-in', '', 'Sign this message to use the studio tools. It is not a transaction and costs nothing.', '',
     `Wallet: ${wallet}`, `Cluster: ${cluster}`, `Nonce: ${nonce}`, `Issued: ${new Date(issued).toISOString()}`, `Expires: ${new Date(expires).toISOString()}`].join('\n');
 }
 

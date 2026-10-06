@@ -173,6 +173,8 @@ pnpm qa-schedule <mint> --cluster devnet
 
 ## Flywheel keeper (devnet)
 
+Monitoring (go-live G7, detection half): `node --import tsx scripts/keeper_watch.ts --cluster devnet [--loop 60]` reads the keeper's public logs (registry mints only, same loader as the transparency page) and alerts when the newest run is stale, several runs failed in a row, or a keeper is paused — stdout plus a non-zero exit for supervisors, and an optional https webhook from `KEEPER_ALERT_WEBHOOK`. Who receives alerts and who may pause is King's G7 decision. Rules in `sdk/keeper_health.ts` (unit-tested).
+
 Fee keeper: claim → 15/85 split → capped buyback on DAMM v2 → verified burn. Code in `sdk/flywheel/`, CLI in `scripts/flywheel.ts`, devnet configs in `keeper/`, dry-run write-up in `flywheel_dryrun_log.md`.
 
 **`run` and `loop` are DRY RUNS by default.** A dry run executes the real keeper code path against a throwaway copy of the saved state. It builds and simulates each step (`simulateTransaction`, read-only) and broadcasts nothing. The saved state, journal and public log are not changed, so a later real run starts from exactly the same place. Only an explicit `--send` broadcasts. Each command prints a `DRY RUN` or `SENDING` banner first.
@@ -199,7 +201,7 @@ pnpm e2e                     # headless Chrome: create -> 8-box gate -> buy -> c
 The page signs with backend throwaway test wallets, not the user's browser wallet. This is a deliberate deviation from AC-21 (the brief said to use backend throwaway keys); see "Status" and "Known limitations" above.
 
 ### New front end (`web/`, work in progress)
-A redesign of the launch page: token list, token page (cap schedule chart with a live "now" marker, lifecycle stage, room-under-cap preview, checklist dialog, "Why did my trade fail?" explainer, rules and risks, switch history), "How the cap works" and the studio launch tool. It talks to the same backend (`app/server.ts`) and imports the tested shared modules directly (`sdk/capMath.ts`, `sdk/schedules.ts`, `app/public/{pagevars,format,explainer}.js`, `research/page_content.json`), so copy, cap math and error mapping have one source. The old page in `app/public` is unchanged and stays the e2e target until the new one replaces it.
+A redesign of the launch page: token list, token page (cap schedule chart with a live "now" marker, lifecycle stage, the token's hooks with live values, rules and risks, switch history; no buy/sell panel), a home page (hero, live preview tiles, closest to graduation, latest burns; token list moved to `/tokens`), a Hooks page (one card and diagram per hook: cap per token account, anti-sniper fee, lift-only switch, buyback & burn), "How the cap works" and the studio launch tool (with a hooks picker). It talks to the same backend (`app/server.ts`) and imports the tested shared modules directly (`sdk/capMath.ts`, `sdk/schedules.ts`, `app/public/{pagevars,format,explainer}.js`, `research/page_content.json`), so copy, cap math and error mapping have one source. The old page in `app/public` is unchanged and stays the e2e target until the new one replaces it.
 ```bash
 cd web && pnpm install
 pnpm dev:fixtures            # simulated data, no backend or validator needed  -> http://127.0.0.1:5176
@@ -227,8 +229,7 @@ All `/api/token/<mint>/...` routes go through `app/site_registry.ts`: registry m
 - Nothing else: no fee, withdraw, pause, freeze, custody or allowlist. Exemptions are limited to the DBC and DAMM v2 pool authority PDAs; there are no manual exemptions.
 
 ## Verifiable build (AC-35)
-`solana-verify build` was not run: its Docker build image does not fit this box's disk. Steps for anyone with the space:
-`solana-verify build --library-name trenches_hook` → `solana-verify get-program-hash -u devnet FieaXj…` → compare with `solana-verify get-executable-hash target/deploy/trenches_hook.so`.
+`solana-verify build` was not run: its Docker build image does not fit this box's disk. On a machine with Docker and ~10 GB free, the whole check is one command: `bash scripts/verify_build.sh` (builds reproducibly, compares the local and deployed hashes, exits non-zero on a mismatch; devnet only).
 What was checked instead: the release `.so` built from commit `f8803e8` (`cargo build-sbf`, no features; solana-cli / cargo-build-sbf 3.0.14, platform-tools v1.51) has sha256 `02d402bc2e2db90d69c6eb7155483364d7afca1cc500c010a90e5de36927bead`, and `solana program dump` of the devnet program gives the same sha256 (393,592 bytes, no padding). `pnpm qa-schedule` also compares the deployed bytes with the local release `.so`. This is not a reproducible (Docker) build.
 
 ## License

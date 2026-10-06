@@ -67,7 +67,7 @@ export function TokensPage({ meta }: { meta: Meta }) {
           <h1>Launches with a rising cap</h1>
           <p>While a token is on its bonding curve, each token account can hold at most a set share of supply, and that share only rises. It slows snipers down; it doesn't stop them. The cap ends at graduation or when the ramp ends.</p>
         </div>
-        <button className="primary" onClick={() => navigate('/how-it-works')} style={{ flex: 'none', padding: '10px 20px' }}>How the cap works</button>
+        <button className="primary" onClick={() => navigate('/hooks#hook-cap')} style={{ flex: 'none', padding: '10px 20px' }}>How the cap works</button>
         <span className="hero-line" />
       </section>
 

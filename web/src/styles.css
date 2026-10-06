@@ -28,7 +28,6 @@
   --sim: #c39bff;
   --sim-soft: rgba(195, 155, 255, 0.1);
   --scrim: rgba(0, 0, 0, 0.7);
-  --trade-fg: #0a0a0a;
   color-scheme: dark;
 }
 [data-theme='light'] {
@@ -60,7 +59,6 @@
   --sim: #7c3fc4;
   --sim-soft: rgba(124, 63, 196, 0.08);
   --scrim: rgba(20, 20, 20, 0.35);
-  --trade-fg: #ffffff;
   color-scheme: light;
 }
 :root {
@@ -70,6 +68,7 @@
   --r-inner: 6px;
   --pill: 999px;
   --side-w: 248px;
+  --page-gutter: 24px;
 }
 
 * { box-sizing: border-box; }
@@ -105,12 +104,13 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0; }
 .theme-toggle button.on { background: var(--card); color: var(--text); box-shadow: 0 0 0 1px var(--card-border); }
 
 .main-col { min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--card-border); }
-.topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(12px); }
+.topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; padding: 12px var(--page-gutter); background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(12px); }
 .search { flex: 1; max-width: 360px; position: relative; }
 .search input { width: 100%; border-radius: var(--pill); padding: 9px 14px 9px 36px; background: transparent; border: 1px solid var(--line); font-size: 13.5px; }
 .search svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-3); }
 .topbar .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .wallet { position: relative; }
+.studio-session { justify-content: flex-end; flex-wrap: wrap; margin-bottom: 10px; gap: 8px; }
 .wallet-btn { gap: 8px; }
 .wallet-btn img { border-radius: 4px; }
 .wallet-pop { position: absolute; right: 0; top: calc(100% + 8px); min-width: 250px; background: var(--card); border: 1px solid var(--card-border); border-radius: 8px; padding: 8px; z-index: 40; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35); }
@@ -118,21 +118,21 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0; }
 .pop-item:hover { background: var(--hover); }
 .icon-btn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; padding: 0; background: transparent; border: 1px solid var(--line); color: var(--text-2); }
 .menu-btn { display: none; }
-.banner { margin: 0 24px; padding: 8px 14px; border-radius: var(--r-inner); background: var(--amber-soft); color: var(--amber-text); font-size: 12.5px; text-align: center; }
+.banner { margin: 0 var(--page-gutter); padding: 8px 14px; border-radius: var(--r-inner); background: var(--amber-soft); color: var(--amber-text); font-size: 12.5px; text-align: center; }
 .banner.sim { margin-top: 8px; background: var(--sim-soft); color: var(--sim); }
-main { width: 100%; max-width: 1240px; margin: 0 auto; padding: 22px 24px 48px; overflow-wrap: anywhere; }
-footer { overflow-wrap: anywhere; color: var(--text-4); font-size: 11.5px; padding: 18px 24px 28px; text-align: center; max-width: 1240px; margin: 0 auto; }
+main { width: 100%; padding: 22px var(--page-gutter) 48px; overflow-wrap: anywhere; }
+footer { width: 100%; overflow-wrap: anywhere; color: var(--text-4); font-size: 11.5px; padding: 18px var(--page-gutter) 28px; text-align: center; }
 
 @media (max-width: 900px) {
+  :root { --page-gutter: 16px; }
   .shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar { position: fixed; z-index: 60; left: 0; top: 0; bottom: 0; width: 272px; background: var(--bg); border-right: 1px solid var(--card-border); transform: translateX(-100%); transition: transform 0.2s ease; }
   .sidebar.open { transform: none; }
   .side-scrim { position: fixed; inset: 0; z-index: 55; background: var(--scrim); }
   .main-col { border-left: 0; }
   .menu-btn { display: grid; }
-  .topbar { padding: 10px 16px; }
-  .banner { margin: 0 16px; }
-  main { padding: 16px 16px 40px; }
+  .topbar { padding-block: 10px; }
+  main { padding-block: 16px 40px; }
   .badge { font-size: 10px; padding: 4px 8px; }
   .hide-sm { display: none !important; }
 }
@@ -155,7 +155,7 @@ footer { overflow-wrap: anywhere; color: var(--text-4); font-size: 11.5px; paddi
 
 .hero { background: var(--card); border: 1px solid var(--card-border); border-radius: var(--r-card); padding: 30px 32px; display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; position: relative; overflow: hidden; }
 .hero h1 { font-size: 30px; }
-.hero p { color: var(--text-3); max-width: 560px; margin: 12px 0 0; font-size: 14px; }
+.hero p { color: var(--text-3); max-width: 560px; margin: 12px 0 0; font-size: 16px; line-height: 1.65; }
 .hero .hero-line { position: absolute; right: 0; top: 52px; width: 40%; height: 1px; background: linear-gradient(90deg, transparent, var(--line-strong)); pointer-events: none; }
 @media (max-width: 640px) { .hero { flex-direction: column; padding: 22px; } .hero .hero-line { display: none; } }
 .section-head { display: flex; align-items: center; justify-content: space-between; margin: 26px 0 12px; }
@@ -172,9 +172,6 @@ button.ghost { border-color: transparent; color: var(--text-3); padding: 4px 8px
 button.ghost:hover:not(:disabled) { color: var(--text); }
 button.chip { padding: 4px 11px; font-size: 12.5px; background: var(--panel); border-color: transparent; color: var(--text-2); }
 button.block { width: 100%; padding: 12px 16px; font-size: 15px; }
-button.trade-buy:not(:disabled) { background: var(--green); border-color: var(--green); color: var(--trade-fg); }
-button.trade-sell:not(:disabled) { background: var(--red); border-color: var(--red); color: var(--trade-fg); }
-button.trade-buy:hover:not(:disabled), button.trade-sell:hover:not(:disabled) { opacity: 0.88; }
 button.small, .small > button { font-size: 12.5px; }
 input, select, textarea { font: inherit; font-size: 14px; color: var(--text); background: var(--panel); border: 1px solid transparent; border-radius: var(--r-inner); padding: 10px 12px; width: 100%; }
 input:hover, select:hover { border-color: var(--line); }
@@ -191,11 +188,6 @@ label.field > span.spread { display: flex; }
 .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--panel); border-radius: var(--pill); padding: 4px; }
 .seg button { border: 0; color: var(--text-3); font-weight: 600; }
 .seg button.on { background: var(--card); color: var(--text); box-shadow: 0 0 0 1px var(--card-border); }
-.seg button.on.buy { color: var(--green); background: var(--green-soft); }
-.seg button.on.sell { color: var(--red); background: var(--red-soft); }
-.amount { position: relative; }
-.amount input { font-family: var(--mono); font-size: 20px; padding: 14px 70px 14px 14px; }
-.amount .unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--text-3); font-size: 12.5px; font-family: var(--mono); }
 
 /* ---------- data */
 table { border-collapse: collapse; width: 100%; }
@@ -297,11 +289,6 @@ ul.rules li b { color: var(--text); font-weight: 600; }
 /* modal */
 .scrim { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px; z-index: 1000; overflow-y: auto; }
 .modal { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; width: 100%; max-width: 640px; padding: 22px 24px; }
-.ck-item { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 10px; border-radius: var(--r-inner); cursor: pointer; align-items: start; }
-.ck-item:hover { background: var(--hover); }
-.ck-item input { width: 16px; height: 16px; margin-top: 3px; accent-color: var(--text); padding: 0; }
-.ck-item span { color: var(--text-3); font-size: 13.5px; }
-.ck-item.on span { color: var(--text); }
 
 /* chart */
 .chart-legend { position: absolute; top: 2px; left: 4px; z-index: 3; font-size: 11.5px; pointer-events: none; background: color-mix(in srgb, var(--card) 72%, transparent); border-radius: 4px; padding: 2px 6px; }
@@ -330,9 +317,6 @@ details > summary::-webkit-details-marker { display: none; }
 .dd-chev { width: 8px; height: 8px; border-right: 1.5px solid var(--text-3); border-bottom: 1.5px solid var(--text-3); transform: rotate(45deg); transition: transform 0.28s ease; flex: none; margin-top: -3px; }
 .dd.open .dd-chev { transform: rotate(-135deg); margin-top: 3px; }
 
-/* trade panel helper lines */
-.signer-line { display: block; font-size: 12px; color: var(--text-3); margin-top: 6px; line-height: 1.5; }
-.signer-line.warn { color: var(--amber-text); }
 .rules-line { padding: 0 6px; line-height: 1.6; }
 
 /* ---------- GMGN-style token page */

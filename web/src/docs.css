@@ -1,0 +1,79 @@
+/* Docs page: sticky contents on the left, a readable single column on the right. Theme tokens only. */
+.docs { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; align-items: start; max-width: 1120px; margin: 0 auto; }
+.docs-toc { position: sticky; top: 84px; max-height: calc(100vh - 110px); overflow: auto; padding: 4px 0 16px; scrollbar-width: thin; }
+.docs-toc-title { font-size: 13px; font-weight: 600; margin: 0 0 14px 12px; }
+.docs-toc-group + .docs-toc-group { margin-top: 16px; }
+.docs-toc-g { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-4); margin: 0 0 6px 12px; }
+.docs-toc a { display: block; padding: 6px 12px; border-left: 2px solid var(--line); font-size: 13.5px; color: var(--text-3); transition: color 0.15s ease, border-color 0.15s ease; }
+.docs-toc a:hover { color: var(--text); }
+.docs-toc a.on { color: var(--text); border-left-color: var(--accent); font-weight: 500; }
+
+.docs-body { min-width: 0; max-width: 760px; }
+.docs-hero { padding: 6px 0 26px; border-bottom: 1px solid var(--card-border); margin-bottom: 8px; }
+.docs-kicker { font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); margin-bottom: 10px; }
+.docs-hero h1 { font-size: clamp(28px, 3.4vw, 38px); letter-spacing: -0.03em; }
+.docs-hero p { color: var(--text-2); margin: 12px 0 0; font-size: 15px; line-height: 1.65; max-width: 620px; }
+
+.docs-sec { padding: 30px 0 6px; scroll-margin-top: 80px; }
+.docs-sec + .docs-sec { border-top: 1px solid var(--card-border); }
+.docs-sec h2 { font-size: 21px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 12px; position: relative; }
+.docs-anchor { position: absolute; left: -22px; color: var(--text-4); opacity: 0; transition: opacity 0.15s ease; font-weight: 400; }
+.docs-sec h2:hover .docs-anchor { opacity: 1; }
+.docs-sec > p, .docs-sec li { color: var(--text-2); font-size: 15px; line-height: 1.7; }
+.docs-sec > p { margin: 0 0 14px; }
+.docs-sec b { color: var(--text); font-weight: 600; }
+.docs-list { margin: 0 0 14px; padding-left: 20px; }
+.docs-list li { margin: 4px 0; }
+.docs-list li::marker { color: var(--text-4); }
+.docs-steps { list-style: none; counter-reset: s; margin: 0 0 16px; padding: 0; display: grid; gap: 10px; }
+.docs-steps li { counter-increment: s; position: relative; padding-left: 38px; }
+.docs-steps li::before { content: counter(s); width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); background: var(--panel-2); position: absolute; left: 0; top: 2px; }
+
+.docs-fig { margin: 18px 0 20px; padding: 18px 20px 12px; background: var(--card); border: 1px solid var(--card-border); border-radius: var(--r-card); }
+.docs-fig .hd { max-width: 520px; margin: 0 auto; }
+.docs-fig .hd-scroll .hd { max-width: none; }
+.docs-fig figcaption { font-size: 12.5px; color: var(--text-3); text-align: center; margin-top: 10px; }
+.docs-callout { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; margin: 0 0 16px; border-radius: var(--r-inner); background: var(--panel); box-shadow: inset 2px 0 0 var(--accent); font-size: 14px; color: var(--text-2); line-height: 1.6; }
+.docs-callout svg { flex: none; margin-top: 3px; color: var(--accent); }
+
+.docs-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 4px 0 16px; }
+.docs-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-inner); background: var(--card); border: 1px solid var(--card-border); transition: border-color 0.15s ease; }
+.docs-card:hover { border-color: var(--tone); }
+.docs-card .hook-tile { width: 34px; height: 34px; border-radius: 6px; }
+.docs-card .hook-tile svg { width: 17px; height: 17px; }
+.docs-card > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.docs-card b { font-size: 13.5px; }
+
+.docs-addr { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); margin: 0 0 12px; border: 1px solid var(--card-border); border-radius: var(--r-card); overflow: hidden; background: var(--card); }
+.docs-addr dt, .docs-addr dd { margin: 0; padding: 11px 14px; border-bottom: 1px solid var(--card-border); font-size: 13.5px; }
+.docs-addr dt { color: var(--text-3); }
+.docs-addr dd { font-family: var(--mono); font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.docs-addr > :nth-last-child(-n + 2) { border-bottom: 0; }
+
+.docs-faq { border: 1px solid var(--card-border); border-radius: var(--r-inner); background: var(--card); margin-bottom: 8px; }
+.docs-faq > button { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 16px; cursor: pointer; font-size: 14.5px; font-weight: 500; color: var(--text); }
+.docs-faq > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-inner); }
+.docs-faq .dd-body p { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.65; }
+.docs-faq.open .dd-wrap { grid-template-rows: 1fr; }
+.docs-faq .dd-body { padding: 0 16px; }
+.docs-faq.open .dd-body { padding: 0 16px 14px; }
+.docs-faq.open .dd-chev { transform: rotate(-135deg); margin-top: 3px; }
+.docs-sec .card { margin-top: 4px; }
+
+@media (max-width: 900px) {
+  .docs { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .docs-toc { position: static; max-height: none; display: flex; gap: 6px; overflow-x: auto; padding: 0 0 6px; scrollbar-width: none; }
+  .docs-toc::-webkit-scrollbar { display: none; }
+  .docs-toc-title, .docs-toc-g { display: none; }
+  .docs-toc-group { display: contents; }
+  .docs-toc a { flex: none; border: 1px solid var(--card-border); border-radius: var(--pill); padding: 6px 12px; font-size: 13px; background: var(--card); }
+  .docs-toc a.on { border-color: var(--accent); }
+  .docs-anchor { display: none; }
+}
+@media (max-width: 560px) {
+  .docs-cards { grid-template-columns: minmax(0, 1fr); }
+  .docs-addr { grid-template-columns: minmax(0, 1fr); }
+  .docs-addr dt { border-bottom: 0; padding-bottom: 2px; }
+  .docs-addr dd { padding-top: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .docs-toc a, .docs-anchor, .docs-card { transition: none; } }

@@ -52,7 +52,8 @@ export class Env {
     }
     const meta = (simulate ? (r as any).meta() : r) as TransactionMetadata;
     let returnData: Buffer | undefined;
-    try { returnData = Buffer.from(meta.returnData().data()); } catch {}
+    // only simulations read return data (view_schedule): on Linux, reading it from a send with none aborts the process
+    if (simulate) { try { returnData = Buffer.from(meta.returnData().data()); } catch {} }
     return { ok: true, logs: meta.logs(), hookError: null, returnData };
   }
 
@@ -71,7 +72,7 @@ export class Env {
   /** Overwrite an account (tests only: load recorded devnet bytes, or forge a state the program must refuse). */
   setAccountData(k: PublicKey, data: Buffer, owner: PublicKey = this.hook.programId, lamports?: bigint) {
     const rent = this.svm.minimumBalanceForRentExemption(BigInt(data.length));
-    this.svm.setAccount(k, { lamports: Number(lamports ?? rent), data, owner, executable: false });
+    this.svm.setAccount(k, { lamports: Number(lamports ?? rent), data, owner, executable: false, rentEpoch: 0 } as any);   // rentEpoch: litesvm's Linux build aborts (std::bad_alloc) without it
   }
 
   /** Token-2022 mint with TransferHook -> our program, full supply minted to `holderOwner`'s ATA, mint authority then set to None. */

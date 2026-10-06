@@ -11,6 +11,9 @@ export const PROGRAM_ERRORS = Object.freeze({
   InvalidCapSchedule: 6003,
   NotTransferring: 6004,
   InvalidMint: 6005,
+  MaxBuyExceeded: 6006,        // v2 buy rules (no page_content key yet: shown with the generic text)
+  SlotBuyLimitExceeded: 6007,
+  InvalidRules: 6008,
 });
 const BY_CODE = Object.fromEntries(Object.entries(PROGRAM_ERRORS).map(([n, c]) => [c, n]));
 

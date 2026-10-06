@@ -15,4 +15,10 @@ pub enum HookError {
     NotTransferring,
     #[msg("Mint or token account is not a Token-2022 account of a mint hooked to this program")]
     InvalidMint,
+    #[msg("This buy is larger than the token's max single buy in the opening window")]
+    MaxBuyExceeded,
+    #[msg("Buys in this slot have reached the token's per-slot limit; try again next slot")]
+    SlotBuyLimitExceeded,
+    #[msg("Invalid buy rules (limits above supply, pot interval out of range, or no rule enabled)")]
+    InvalidRules,
 }

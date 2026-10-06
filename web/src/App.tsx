@@ -4,14 +4,21 @@ import { navigate, usePath, usePoll } from './lib/hooks';
 import { setQuery, setTheme, useQuery, useTheme } from './lib/ui';
 import { CONTENT, fill, pageVars } from './lib/shared';
 import { Guard, Link, Skeleton } from './components/bits';
-import { IconEye, IconGrid, IconMenu, IconMoon, IconPlus, IconRamp, IconSearch, IconSun, LogoMark } from './components/Icons';
+import { IconBook, IconEye, IconGrid, IconHome, IconHook, IconMenu, IconMoon, IconPlus, IconSearch, IconSun, LogoMark } from './components/Icons';
 import { TokensPage } from './pages/TokensPage';
+import { HomePage } from './pages/HomePage';
 import { WalletButton } from './components/WalletButton';
 import { TokenPage } from './pages/TokenPage';
-import { HowItWorksPage } from './pages/HowItWorksPage';
+import { HooksPage } from './pages/HooksPage';
 import { CreatePage } from './pages/CreatePage';
 import { TransparencyPage } from './pages/TransparencyPage';
+import { DocsPage } from './pages/DocsPage';
 
+
+function CapPageRedirect() {
+  useEffect(() => navigate('/hooks#hook-cap', { replace: true }), []);
+  return null;
+}
 
 export function App() {
   const path = usePath();
@@ -24,28 +31,33 @@ export function App() {
 
   let page: ReactNode;
   const tokenMatch = path.match(/^\/token\/([^/]+)\/?$/);
-  if (!m) page = meta.error
+  if (path === '/how-it-works' || path === '/how-it-works/') page = <CapPageRedirect />;
+  else if (!m) page = meta.error
     ? <div className="card"><h2>Couldn't reach the launch page backend</h2><p className="muted small" style={{ marginTop: 8 }}>{meta.error.message}. Start it with <code>pnpm page -- --cluster devnet</code> (port 5175), or run <code>pnpm dev:fixtures</code> in web/ for simulated data.</p></div>
     : <div className="stack"><Skeleton h={150} /><Skeleton h={320} /></div>;
   else if (tokenMatch) page = <TokenPage key={tokenMatch[1]} mint={decodeURIComponent(tokenMatch[1])} meta={m} />;
-  else if (path === '/how-it-works') page = <HowItWorksPage meta={m} />;
+  else if (path === '/hooks') page = <HooksPage meta={m} />;
   else if (path === '/create') page = <CreatePage meta={m} />;
+  else if (path === '/docs') page = <DocsPage meta={m} />;
   else if (path === '/transparency') page = <TransparencyPage meta={m} />;
-  else if (path === '/') page = <TokensPage meta={m} />;
-  else page = <div className="card"><h2>Page not found</h2><p style={{ marginTop: 8 }}><Link to="/" className="link">Back to tokens</Link></p></div>;
+  else if (path === '/tokens') page = <TokensPage meta={m} />;
+  else if (path === '/') page = <HomePage meta={m} />;
+  else page = <div className="card"><h2>Page not found</h2><p style={{ marginTop: 8 }}><Link to="/" className="link">Back to home</Link></p></div>;
 
-  const isActive = (to: string) => (to === '/' ? path === '/' || path.startsWith('/token/') : path === to);
+  const isActive = (to: string) => (to === '/tokens' ? path === '/tokens' || path.startsWith('/token/') : path === to);
   const nav = (to: string, label: string, icon: ReactNode) => <Link to={to} className={isActive(to) ? 'active' : ''}>{icon}{label}</Link>;
 
   return (
     <div className="shell">
       <aside className={`sidebar ${menu ? 'open' : ''}`} aria-label="Sidebar">
-        <Link to="/" className="logo"><span className="logo-mark"><LogoMark /></span>Trenches</Link>
+        <Link to="/" className="logo"><span className="logo-mark"><LogoMark /></span>Hookd</Link>
         <nav className="side-nav" aria-label="Main">
-          {nav('/', 'Tokens', <IconGrid />)}
-          {nav('/how-it-works', 'How the cap works', <IconRamp />)}
-          {nav('/transparency', 'Transparency', <IconEye />)}
+          {nav('/', 'Home', <IconHome />)}
+          {nav('/tokens', 'Tokens', <IconGrid />)}
           {nav('/create', 'Studio launch', <IconPlus />)}
+          {nav('/hooks', 'Hooks', <IconHook />)}
+          {nav('/transparency', 'Transparency', <IconEye />)}
+          {nav('/docs', 'Docs', <IconBook />)}
         </nav>
         <div className="side-foot">
           <div className="side-card" title={m ? `program ${m.programId}` : undefined}>
@@ -68,7 +80,7 @@ export function App() {
           <label className="search">
             <IconSearch size={15} />
             <span className="sr-only">Search tokens</span>
-            <input placeholder="Search name, ticker or mint" value={q} onChange={(e) => { setQuery(e.target.value); if (path !== '/') navigate('/'); }} />
+            <input placeholder="Search name, ticker or mint" value={q} onChange={(e) => { setQuery(e.target.value); if (path !== '/tokens') navigate('/tokens'); }} />
           </label>
           <div className="actions">
             <span className="badge">{CONTENT.devnet_label}</span>
@@ -76,10 +88,8 @@ export function App() {
             <WalletButton />
           </div>
         </header>
-        {/* AC-23: the banner string from page copy shows on every page (slim, under the top bar) */}
-        <div className="banner">{CONTENT.banner}</div>
         <main><Guard what="this page">{page}</Guard></main>
-        <footer>{m ? <Guard what="the footer">{fill(CONTENT.footer, pageVars(m, null))}</Guard> : CONTENT.banner}</footer>
+        <footer>{m ? <Guard what="the footer">{fill(CONTENT.footer, pageVars(m, null))}</Guard> : null}</footer>
       </div>
     </div>
   );

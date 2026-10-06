@@ -6,7 +6,7 @@ import type { Wallet, WalletAccount } from '@wallet-standard/base';
 import { FIXTURE_MODE } from './api';
 
 const CONNECT = 'standard:connect', DISCONNECT = 'standard:disconnect', SIGN_TX = 'solana:signTransaction', SIGN_MSG = 'solana:signMessage';
-const LAST_KEY = 'trenches-last-wallet';
+const LAST_KEY = 'hookd-last-wallet';
 export const CHAIN = 'solana:devnet';
 
 export interface WalletState {
@@ -71,6 +71,8 @@ export async function disconnect() {
 export async function signTransaction(tx: Uint8Array): Promise<Uint8Array> {
   const { wallet, account } = state;
   if (!wallet || !account) throw new Error('Connect a wallet first');
+  // fixture mode: every built tx is a stand-in, so no wallet (real or pretend) is asked to sign it
+  if (FIXTURE_MODE) return tx;
   const [out] = await (wallet.features[SIGN_TX] as any).signTransaction({ account, transaction: tx, chain: CHAIN });
   return out.signedTransaction as Uint8Array;
 }
@@ -85,6 +87,7 @@ export async function signMessage(message: Uint8Array): Promise<Uint8Array> {
   return out.signature as Uint8Array;
 }
 
+export const bytesToHex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 export const hexToBytes = (h: string) => { if (!/^(?:[0-9a-f]{2})*$/i.test(h)) throw new Error('bad transaction encoding'); const b = new Uint8Array(h.length / 2); for (let i = 0; i < b.length; i++) b[i] = parseInt(h.substr(i * 2, 2), 16); return b; };
 export const b64ToBytes = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 export const bytesToB64 = (b: Uint8Array) => { let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };

@@ -4,8 +4,8 @@ import { useSyncExternalStore } from 'react';
 import { api } from './api';
 import { signMessage, useWallet } from './wallet';
 
-const KEY = 'trenches-studio';
-const EVENT = 'trenches:studio';
+const KEY = 'hookd-studio';
+const EVENT = 'hookd:studio';
 interface Saved { token: string; wallet: string }
 let saved: Saved | null = (() => { try { return JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch { return null; } })();
 

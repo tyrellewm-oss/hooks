@@ -36,8 +36,15 @@ describe('L-16: schedule name resolution', () => {
   });
   test('page server rejects an unknown schedule name with 400 (code check: resolveSchedule + 400)', () => {
     const src = readFileSync('app/server.ts', 'utf8');
-    assert.match(src, /resolveSchedule\(b\.schedule, c\.name\)/);
-    assert.match(src, /catch \(e: any\) \{ return send\(res, 400, \{ error: e\.message \}\); \}/);
+    // parseLaunchBody (shared by /api/create and the wallet launch route) turns the refusal into { error }, and both
+    // routes answer that with 400 before building anything
+    const start = src.indexOf('function parseLaunchBody');
+    const parse = src.slice(start, src.indexOf('\n}\n', start));
+    assert.match(parse, /try \{ const sch = resolveSchedule\(b\.schedule, c\.name\);[^\n]*\}\s*catch \(e: any\) \{ return \{ error: e\.message \}; \}/);
+    for (const route of ['/api/create', '/api/studio/launch/build']) {
+      const r = src.slice(src.indexOf(`url.pathname === '${route}'`)).slice(0, 600);
+      assert.match(r, /const p = parseLaunchBody\(await body\(req\)\);\s*if \('error' in p\) return send\(res, 400, p\);/, route);
+    }
   });
 });
 

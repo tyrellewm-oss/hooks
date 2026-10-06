@@ -9,6 +9,9 @@
 //! - Per-mint config is written once and is immutable. The only mutable rule
 //!   state is the lift-only switch (global allow-all, per-mint lift, per-mint raise).
 //! - No fees, no custody, no withdraw, no pause, no CPI into Token-2022.
+//! - v2 mints (initialize_extra_account_meta_list_v2) add buy rules fixed at launch: a max single buy and a max
+//!   bought per slot in an opening window, and an Nth-buy pot counter that records winners (no funds held here).
+//!   Rules only ever apply to buys out of a DBC pool vault; sells and graduation are never touched.
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program::set_return_data;
 use anchor_lang::system_program;
@@ -136,95 +139,48 @@ pub mod trenches_hook {
         ctx: Context<InitializeExtraAccountMetaList>,
         args: InitConfigArgs,
     ) -> Result<()> {
-        // 8.3: (a) Global migrated (74 bytes), (b) launch key set, (c) signer == launch key, (d) signer != admin.
-        {
-            let g = ctx.accounts.global.to_account_info();
-            require!(g.data_len() == GLOBAL_V2_LEN, HookError::Unauthorized);
-            let launch = launch_authority_of(&g.try_borrow_data()?).ok_or(error!(HookError::Unauthorized))?;
-            require_keys_eq!(ctx.accounts.authority.key(), launch, HookError::Unauthorized);
-            require_keys_neq!(ctx.accounts.authority.key(), ctx.accounts.global.authority, HookError::Unauthorized);
-        }
-        let mint_key = ctx.accounts.mint.key();
-        // Mint must be a Token-2022 mint whose TransferHook points at this program.
-        let supply = {
-            let info = ctx.accounts.mint.to_account_info();
-            require_keys_eq!(*info.owner, spl_token_2022::ID, HookError::InvalidMint);
-            let data = info.try_borrow_data()?;
-            let mint = StateWithExtensions::<MintState>::unpack(&data).map_err(|_| error!(HookError::InvalidMint))?;
-            let ext = mint.get_extension::<TransferHookExt>().map_err(|_| error!(HookError::InvalidMint))?;
-            let pid: Option<Pubkey> = ext.program_id.into();
-            require!(pid == Some(crate::ID), HookError::InvalidMint);
-            mint.base.supply
+        let a = &ctx.accounts;
+        init_mint(
+            &a.payer.to_account_info(), &a.authority, &a.global, &a.mint.to_account_info(),
+            &a.extra_account_meta_list, &a.config, &a.lift, &a.system_program.to_account_info(),
+            (ctx.bumps.extra_account_meta_list, ctx.bumps.config, ctx.bumps.lift), &args, &extra_metas()?,
+        )?;
+        Ok(())
+    }
+
+    /// v2 per-mint setup: everything v1 does, plus the buy rules (max single buy, max bought per slot, Nth-buy pot)
+    /// in a fourth PDA that the transfer hook reads and updates (a 4th, writable extra account). Same signer rules.
+    pub fn initialize_extra_account_meta_list_v2(
+        ctx: Context<InitializeExtraAccountMetaListV2>,
+        args: InitConfigArgs,
+        rules: RulesArgs,
+    ) -> Result<()> {
+        let a = &ctx.accounts;
+        let cfg = init_mint(
+            &a.payer.to_account_info(), &a.authority, &a.global, &a.mint.to_account_info(),
+            &a.extra_account_meta_list, &a.config, &a.lift, &a.system_program.to_account_info(),
+            (ctx.bumps.extra_account_meta_list, ctx.bumps.config, ctx.bumps.lift), &args, &extra_metas_v2()?,
+        )?;
+        validate_rules(&rules, cfg.supply_ref)?;
+        let mint_key = a.mint.key();
+        create_pda_once(&a.payer.to_account_info(), &a.rules, &a.system_program.to_account_info(),
+            &[RULES_SEED, mint_key.as_ref(), &[ctx.bumps.rules]], 8 + RulesState::INIT_SPACE)?;
+        let st = RulesState {
+            mint: mint_key, bump: ctx.bumps.rules, launch_slot: cfg.launch_slot,
+            max_buy_tokens: rules.max_buy_tokens, max_per_slot_tokens: rules.max_per_slot_tokens, window_slots: rules.window_slots,
+            pot_every: rules.pot_every, pot_min_tokens: rules.pot_min_tokens,
+            cur_slot: 0, bought_in_slot: 0, buy_count: 0, last_counted_slot: 0, wins: 0,
+            winners: [PotWin::default(); POT_WINNERS],
         };
-        // Reference supply = the mint's actual supply at init (must be minted first).
-        require!(supply > 0 && args.supply_ref == supply, HookError::InvalidCapSchedule);
-        // QA H-1: no caller-supplied exemptions. The only exempt receivers are the
-        // DBC and DAMM v2 pool authority PDAs (constants, derived from the Meteora
-        // program ids). The field stays in the args/account layout but must be empty.
-        if !args.exempt_owners.is_empty() {
-            msg!("InvalidCapSchedule: exempt_owners must be empty (no manual exemptions)");
-            return err!(HookError::InvalidCapSchedule);
-        }
-
-        let steps: Vec<cap_math::Step> = args
-            .steps
-            .iter()
-            .map(|s| cap_math::Step { slot_offset: s.slot_offset, max_bps: s.max_bps })
-            .collect();
-        let launch_slot = Clock::get()?.slot;
-        let cc = cap_math::CapConfig::new(launch_slot, supply, &steps, args.uncapped_after)
-            .map_err(|_| error!(HookError::InvalidCapSchedule))?;
-        cap_math::validate(&cc, build_limits()).map_err(|e| {
-            msg!("InvalidCapSchedule: {:?}", e);
-            error!(HookError::InvalidCapSchedule)
-        })?;
-
-        // --- create the three PDAs (fails with ConfigFrozen if any already exists)
-        let payer = ctx.accounts.payer.to_account_info();
-        let sys = ctx.accounts.system_program.to_account_info();
-        let metas = extra_metas()?;
-        let meta_size = ExtraAccountMetaList::size_of(metas.len())?;
-        create_pda_once(&payer, &ctx.accounts.extra_account_meta_list, &sys,
-            &[EXTRA_METAS_SEED, mint_key.as_ref(), &[ctx.bumps.extra_account_meta_list]], meta_size)?;
-        create_pda_once(&payer, &ctx.accounts.config, &sys,
-            &[CONFIG_SEED, mint_key.as_ref(), &[ctx.bumps.config]], 8 + MintConfig::INIT_SPACE)?;
-        create_pda_once(&payer, &ctx.accounts.lift, &sys,
-            &[LIFT_SEED, mint_key.as_ref(), &[ctx.bumps.lift]], 8 + LiftState::INIT_SPACE)?;
-
-        {
-            let mut data = ctx.accounts.extra_account_meta_list.try_borrow_mut_data()?;
-            ExtraAccountMetaList::init::<ExecuteInstruction>(&mut data, &metas)?;
-        }
-        let mut exempt = [Pubkey::default(); MAX_EXEMPT];
-        exempt[..args.exempt_owners.len()].copy_from_slice(&args.exempt_owners);
-        let mut st = [StepData::default(); cap_math::MAX_STEPS];
-        for (i, s) in cc.active_steps().iter().enumerate() {
-            st[i] = StepData { slot_offset: s.slot_offset, max_bps: s.max_bps };
-        }
-        let cfg = MintConfig {
-            mint: mint_key,
-            launch_slot,
-            supply_ref: supply,
-            steps: st,
-            step_count: cc.step_count,
-            uncapped_after: args.uncapped_after,
-            exempt_owners: exempt,
-            exempt_count: args.exempt_owners.len() as u8,
-            test_slots_build: cfg!(feature = "test-slots"),
-            launcher: ctx.accounts.authority.key(),
-            bump: ctx.bumps.config,
-        };
-        write_account(&ctx.accounts.config, &cfg)?;
-        write_account(&ctx.accounts.lift, &LiftState { mint: mint_key, lifted: false, raised_floor_bps: 0, bump: ctx.bumps.lift })?;
-        msg!("trenches-hook: config frozen for mint={} launch_slot={} supply={} test_slots_build={}",
-            mint_key, launch_slot, supply, cfg.test_slots_build);
-        log_schedule(&cfg);
+        write_account(&a.rules, &st)?;
+        msg!("rules: mint={} max_buy={} max_per_slot={} window_slots={} pot_every={} pot_min={}",
+            mint_key, st.max_buy_tokens, st.max_per_slot_tokens, st.window_slots, st.pot_every, st.pot_min_tokens);
         Ok(())
     }
 
     /// Transfer-hook Execute. The ONE rule: destination post-transfer balance <= cap.
     #[instruction(discriminator = ExecuteInstruction::SPL_DISCRIMINATOR_SLICE)]
-    pub fn transfer_hook(ctx: Context<TransferHook>, _amount: u64) -> Result<()> {
+    pub fn transfer_hook(ctx: Context<TransferHook>, amount: u64) -> Result<()> {
         let mint_key = ctx.accounts.mint.key();
         // Mint: Token-2022, hook points at us.
         {
@@ -238,7 +194,7 @@ pub mod trenches_hook {
         }
         // Source: Token-2022 account of this mint, currently transferring
         // (rejects direct invocation of the hook outside a real transfer).
-        {
+        let source_owner = {
             let info = ctx.accounts.source_token.to_account_info();
             require_keys_eq!(*info.owner, spl_token_2022::ID, HookError::InvalidMint);
             let data = info.try_borrow_data()?;
@@ -246,7 +202,8 @@ pub mod trenches_hook {
             require_keys_eq!(src.base.mint, mint_key, HookError::InvalidMint);
             let ext = src.get_extension::<TransferHookAccount>().map_err(|_| error!(HookError::NotTransferring))?;
             require!(bool::from(ext.transferring), HookError::NotTransferring);
-        }
+            src.base.owner
+        };
         // Destination: Token-2022 account of this mint (post-transfer state).
         let (dest_owner, dest_balance) = {
             let info = ctx.accounts.destination_token.to_account_info();
@@ -261,7 +218,16 @@ pub mod trenches_hook {
         let slot = Clock::get()?.slot;
         let cap = cap_math::effective_cap(&cfg.cap_config(), &ctx.accounts.lift.to_lift(), ctx.accounts.global.lifted, slot);
         match cap_math::decide(exempt, cap, dest_balance) {
-            cap_math::Decision::Allow => Ok(()),
+            cap_math::Decision::Allow => {
+                // v2 mints carry a 4th extra account (the rules PDA); Token-2022 always passes it for them.
+                let v2 = ctx.accounts.extra_account_meta_list.data_len() == ExtraAccountMetaList::size_of(4)?;
+                match (v2, ctx.remaining_accounts.first()) {
+                    (false, _) => Ok(()),
+                    (true, None) => err!(HookError::InvalidRules),
+                    (true, Some(rules)) => apply_rules(rules, &mint_key, &source_owner, &dest_owner,
+                        &ctx.accounts.destination_token.key(), amount, slot),
+                }
+            }
             cap_math::Decision::Reject { cap } => {
                 let next = cap_math::next_change(&cfg.cap_config(), slot);
                 msg!(
@@ -341,6 +307,103 @@ pub mod trenches_hook {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn init_mint<'info>(
+    payer: &AccountInfo<'info>,
+    authority: &Signer<'info>,
+    global: &Account<'info, Global>,
+    mint: &AccountInfo<'info>,
+    extra_account_meta_list: &AccountInfo<'info>,
+    config: &AccountInfo<'info>,
+    lift: &AccountInfo<'info>,
+    sys: &AccountInfo<'info>,
+    bumps: (u8, u8, u8),
+    args: &InitConfigArgs,
+    metas: &[ExtraAccountMeta],
+) -> Result<MintConfig> {
+    // 8.3: (a) Global migrated (74 bytes), (b) launch key set, (c) signer == launch key, (d) signer != admin.
+    {
+        let g = global.to_account_info();
+        require!(g.data_len() == GLOBAL_V2_LEN, HookError::Unauthorized);
+        let launch = launch_authority_of(&g.try_borrow_data()?).ok_or(error!(HookError::Unauthorized))?;
+        require_keys_eq!(authority.key(), launch, HookError::Unauthorized);
+        require_keys_neq!(authority.key(), global.authority, HookError::Unauthorized);
+    }
+    let mint_key = mint.key();
+    // Mint must be a Token-2022 mint whose TransferHook points at this program.
+    let supply = {
+        let info = mint.clone();
+        require_keys_eq!(*info.owner, spl_token_2022::ID, HookError::InvalidMint);
+        let data = info.try_borrow_data()?;
+        let mint = StateWithExtensions::<MintState>::unpack(&data).map_err(|_| error!(HookError::InvalidMint))?;
+        let ext = mint.get_extension::<TransferHookExt>().map_err(|_| error!(HookError::InvalidMint))?;
+        let pid: Option<Pubkey> = ext.program_id.into();
+        require!(pid == Some(crate::ID), HookError::InvalidMint);
+        mint.base.supply
+    };
+    // Reference supply = the mint's actual supply at init (must be minted first).
+    require!(supply > 0 && args.supply_ref == supply, HookError::InvalidCapSchedule);
+    // QA H-1: no caller-supplied exemptions. The only exempt receivers are the
+    // DBC and DAMM v2 pool authority PDAs (constants, derived from the Meteora
+    // program ids). The field stays in the args/account layout but must be empty.
+    if !args.exempt_owners.is_empty() {
+        msg!("InvalidCapSchedule: exempt_owners must be empty (no manual exemptions)");
+        return err!(HookError::InvalidCapSchedule);
+    }
+
+    let steps: Vec<cap_math::Step> = args
+        .steps
+        .iter()
+        .map(|s| cap_math::Step { slot_offset: s.slot_offset, max_bps: s.max_bps })
+        .collect();
+    let launch_slot = Clock::get()?.slot;
+    let cc = cap_math::CapConfig::new(launch_slot, supply, &steps, args.uncapped_after)
+        .map_err(|_| error!(HookError::InvalidCapSchedule))?;
+    cap_math::validate(&cc, build_limits()).map_err(|e| {
+        msg!("InvalidCapSchedule: {:?}", e);
+        error!(HookError::InvalidCapSchedule)
+    })?;
+
+    // --- create the three PDAs (fails with ConfigFrozen if any already exists)
+    let meta_size = ExtraAccountMetaList::size_of(metas.len())?;
+    create_pda_once(payer, extra_account_meta_list, sys,
+        &[EXTRA_METAS_SEED, mint_key.as_ref(), &[bumps.0]], meta_size)?;
+    create_pda_once(payer, config, sys,
+        &[CONFIG_SEED, mint_key.as_ref(), &[bumps.1]], 8 + MintConfig::INIT_SPACE)?;
+    create_pda_once(payer, lift, sys,
+        &[LIFT_SEED, mint_key.as_ref(), &[bumps.2]], 8 + LiftState::INIT_SPACE)?;
+
+    {
+        let mut data = extra_account_meta_list.try_borrow_mut_data()?;
+        ExtraAccountMetaList::init::<ExecuteInstruction>(&mut data, metas)?;
+    }
+    let mut exempt = [Pubkey::default(); MAX_EXEMPT];
+    exempt[..args.exempt_owners.len()].copy_from_slice(&args.exempt_owners);
+    let mut st = [StepData::default(); cap_math::MAX_STEPS];
+    for (i, s) in cc.active_steps().iter().enumerate() {
+        st[i] = StepData { slot_offset: s.slot_offset, max_bps: s.max_bps };
+    }
+    let cfg = MintConfig {
+        mint: mint_key,
+        launch_slot,
+        supply_ref: supply,
+        steps: st,
+        step_count: cc.step_count,
+        uncapped_after: args.uncapped_after,
+        exempt_owners: exempt,
+        exempt_count: args.exempt_owners.len() as u8,
+        test_slots_build: cfg!(feature = "test-slots"),
+        launcher: authority.key(),
+        bump: bumps.1,
+    };
+    write_account(config, &cfg)?;
+    write_account(lift, &LiftState { mint: mint_key, lifted: false, raised_floor_bps: 0, bump: bumps.2 })?;
+    msg!("trenches-hook: config frozen for mint={} launch_slot={} supply={} test_slots_build={}",
+        mint_key, launch_slot, supply, cfg.test_slots_build);
+    log_schedule(&cfg);
+    Ok(cfg)
+}
+
 pub fn build_limits() -> cap_math::Limits {
     if cfg!(feature = "test-slots") { cap_math::TEST_SLOTS_LIMITS } else { cap_math::RELEASE_LIMITS }
 }
@@ -359,6 +422,82 @@ pub fn extra_metas() -> Result<Vec<ExtraAccountMeta>> {
         ExtraAccountMeta::new_with_seeds(&[Seed::Literal { bytes: LIFT_SEED.to_vec() }, Seed::AccountKey { index: 1 }], false, false)?,
         ExtraAccountMeta::new_with_seeds(&[Seed::Literal { bytes: GLOBAL_SEED.to_vec() }], false, false)?,
     ])
+}
+
+/// v2 extra metas: v1's three, then the rules PDA (writable: the hook updates its counters).
+pub fn extra_metas_v2() -> Result<Vec<ExtraAccountMeta>> {
+    let mut m = extra_metas()?;
+    m.push(ExtraAccountMeta::new_with_seeds(&[Seed::Literal { bytes: RULES_SEED.to_vec() }, Seed::AccountKey { index: 1 }], false, true)?);
+    Ok(m)
+}
+
+pub fn validate_rules(r: &RulesArgs, supply: u64) -> Result<()> {
+    let pot_ok = r.pot_every == 0 || (POT_EVERY_MIN..=POT_EVERY_MAX).contains(&r.pot_every);
+    let any = r.max_buy_tokens > 0 || r.max_per_slot_tokens > 0 || r.pot_every > 0;
+    let ok = any && pot_ok
+        && r.max_buy_tokens <= supply && r.max_per_slot_tokens <= supply && r.pot_min_tokens <= supply
+        && r.window_slots <= RULES_WINDOW_MAX;
+    if !ok {
+        msg!("InvalidRules: max_buy={} max_per_slot={} window={} pot_every={} pot_min={} supply={}",
+            r.max_buy_tokens, r.max_per_slot_tokens, r.window_slots, r.pot_every, r.pot_min_tokens, supply);
+        return err!(HookError::InvalidRules);
+    }
+    Ok(())
+}
+
+/// A buy is a transfer out of a DBC pool vault (owner = DBC pool authority) to anyone but a pool authority
+/// (the graduation path vault -> DAMM v2 is not a buy). Sells and wallet-to-wallet transfers are never touched.
+pub fn is_curve_buy(source_owner: &Pubkey, dest_owner: &Pubkey) -> bool {
+    *source_owner == DBC_POOL_AUTHORITY && *dest_owner != DBC_POOL_AUTHORITY && *dest_owner != DAMM_V2_POOL_AUTHORITY
+}
+
+fn apply_rules(rules: &AccountInfo, mint: &Pubkey, source_owner: &Pubkey, dest_owner: &Pubkey, dest_token: &Pubkey, amount: u64, slot: u64) -> Result<()> {
+    require_keys_eq!(*rules.owner, crate::ID, HookError::InvalidRules);
+    require!(rules.is_writable, HookError::InvalidRules);
+    let mut r = {
+        let data = rules.try_borrow_data()?;
+        RulesState::try_deserialize(&mut &data[..]).map_err(|_| error!(HookError::InvalidRules))?
+    };
+    require_keys_eq!(r.mint, *mint, HookError::InvalidRules);
+    let expected = Pubkey::create_program_address(&[RULES_SEED, mint.as_ref(), &[r.bump]], &crate::ID)
+        .map_err(|_| error!(HookError::InvalidRules))?;
+    require_keys_eq!(rules.key(), expected, HookError::InvalidRules);
+    if !is_curve_buy(source_owner, dest_owner) {
+        return Ok(());
+    }
+    let in_window = r.window_slots == 0 || slot <= r.launch_slot.saturating_add(r.window_slots);
+    if in_window && r.max_buy_tokens > 0 && amount > r.max_buy_tokens {
+        msg!("MaxBuyExceeded: token_account={} owner={} amount={} max={} slot={}", dest_token, dest_owner, amount, r.max_buy_tokens, slot);
+        return err!(HookError::MaxBuyExceeded);
+    }
+    if in_window && r.max_per_slot_tokens > 0 {
+        if r.cur_slot != slot {
+            r.cur_slot = slot;
+            r.bought_in_slot = 0;
+        }
+        let total = r.bought_in_slot.saturating_add(amount);
+        if total > r.max_per_slot_tokens {
+            msg!("SlotBuyLimitExceeded: slot={} bought={} amount={} max={}", slot, r.bought_in_slot, amount, r.max_per_slot_tokens);
+            return err!(HookError::SlotBuyLimitExceeded);
+        }
+        r.bought_in_slot = total;
+    }
+    // Nth-buy pot: one count per slot at most (the first qualifying buy in a slot), never random.
+    if r.pot_every > 0 && amount >= r.pot_min_tokens && slot != r.last_counted_slot {
+        r.buy_count = r.buy_count.saturating_add(1);
+        r.last_counted_slot = slot;
+        if r.buy_count % (r.pot_every as u64) == 0 {
+            let i = (r.wins % POT_WINNERS as u64) as usize;
+            r.winners[i] = PotWin { owner: *dest_owner, token_account: *dest_token, buy_index: r.buy_count, slot };
+            r.wins = r.wins.saturating_add(1);
+            msg!("PotWin: mint={} owner={} token_account={} buy_index={} slot={}", mint, dest_owner, dest_token, r.buy_count, slot);
+            emit!(PotWon { mint: *mint, owner: *dest_owner, token_account: *dest_token, buy_index: r.buy_count, slot });
+        }
+    }
+    let mut data = rules.try_borrow_mut_data()?;
+    let mut cursor: &mut [u8] = &mut data;
+    r.try_serialize(&mut cursor)?;
+    Ok(())
 }
 
 fn log_schedule(cfg: &MintConfig) {
@@ -451,6 +590,31 @@ pub struct InitializeExtraAccountMetaList<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitializeExtraAccountMetaListV2<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// Launcher: must be the launch key in Global bytes 42..74 (checked in init_mint, 8.3), never the admin.
+    pub authority: Signer<'info>,
+    #[account(seeds = [GLOBAL_SEED], bump = global.bump)]
+    pub global: Account<'info, Global>,
+    /// CHECK: validated in init_mint (Token-2022 mint with TransferHook -> this program).
+    pub mint: UncheckedAccount<'info>,
+    /// CHECK: created here once (PDA ["extra-account-metas", mint]).
+    #[account(mut, seeds = [EXTRA_METAS_SEED, mint.key().as_ref()], bump)]
+    pub extra_account_meta_list: AccountInfo<'info>,
+    /// CHECK: created here once (PDA ["config", mint]).
+    #[account(mut, seeds = [CONFIG_SEED, mint.key().as_ref()], bump)]
+    pub config: AccountInfo<'info>,
+    /// CHECK: created here once (PDA ["lift", mint]).
+    #[account(mut, seeds = [LIFT_SEED, mint.key().as_ref()], bump)]
+    pub lift: AccountInfo<'info>,
+    /// CHECK: created here once (PDA ["rules", mint]).
+    #[account(mut, seeds = [RULES_SEED, mint.key().as_ref()], bump)]
+    pub rules: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct RotateAdmin<'info> {
     /// Must equal Global bytes 8..40 (checked in the handler).
     pub authority: Signer<'info>,
@@ -538,4 +702,14 @@ pub struct RestrictionsLifted {
     pub lifted: bool,
     pub slot: u64,
     pub signer: Pubkey,
+}
+
+/// Nth-buy pot win (v2 mints). The program holds no funds: the keeper pays winners and logs each payout.
+#[event]
+pub struct PotWon {
+    pub mint: Pubkey,
+    pub owner: Pubkey,
+    pub token_account: Pubkey,
+    pub buy_index: u64,
+    pub slot: u64,
 }

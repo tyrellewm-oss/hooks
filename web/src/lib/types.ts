@@ -88,9 +88,17 @@ export interface SwitchEvent {
 export interface TokenMetadata { description: string; website: string | null; x: string | null; telegram: string | null; image: string | null; updatedAt: string }
 export interface MetadataInput { description: string; website: string; x: string; telegram: string; image?: { data: string } | null }
 
+/** The optional hooks a launch can turn on (sdk/buy_rules.ts). Shares are bps of supply; 0 = off. */
+export interface BuyRulesInput { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number }
+export interface PotWinner { owner: string; tokenAccount: string; buyIndex: string; slot: string }
+/** rulesView() in app/server.ts: the token's rules account, live */
+export interface RulesView extends BuyRulesInput { launchSlot: string; buyCount: string; wins: string; winners: PotWinner[] }
+
 export interface TokenView {
   status: TokenStatus;
   launch: LaunchRecord | null;
+  /** optional hooks; null = launched without them */
+  rules?: RulesView | null;
   metadata?: TokenMetadata | null;
   fee: FeeInfo | null;
   feeConfig: Record<string, unknown> | null;
@@ -157,5 +165,10 @@ export interface CreateRequest {
   thresholdSol: number;
   percentageSupplyOnMigration?: number;
   metadata?: MetadataInput;
+  /** optional hooks; omitted = none */
+  rules?: BuyRulesInput;
 }
 export interface CreateReply { mint: string; pool: string; registered: false; note: string }
+/** AC-21 studio launch: the server-built, co-signed launch tx the connected wallet signs (hex), plus what it creates */
+export interface BuiltLaunch { tx: string; mint: string; config: string; pool: string; createConfigSig: string; simulation: string; expiresInMs: number }
+export interface LaunchSubmitReply extends CreateReply { sig: string; link: string }
