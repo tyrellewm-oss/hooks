@@ -23,16 +23,24 @@ export function CapExplanation({ meta }: { meta: Meta }) {
 
   return (
     <div className="hook-cap-details">
-      <details className="hook-lifecycle">
-        <summary><span><b>Cap schedule</b><span className="small faint">{s.name} · {meta.cluster.toLowerCase()} default</span></span><span className="dd-chev" aria-hidden="true" /></summary>
+      <details className="hook-lifecycle hook-resource">
+        <summary>
+          <span className="hook-resource-icon"><IconRamp size={18} /></span>
+          <span className="hook-resource-copy"><b>Cap schedule</b><span>How the cap rises over time · {s.name} default</span></span>
+          <span className="dd-chev" aria-hidden="true" />
+        </summary>
         <div className="hook-lifecycle-body">
           <div className="card-head"><h3>Default schedule: {s.name}</h3><span className="right pill green">{s.label}</span></div>
           <div className="hook-cap-chart"><CapRamp steps={s.steps} uncappedAfter={s.uncappedAfter} /></div>
           <p className="small faint">Each token's schedule is frozen at launch and shown on its page. The anti-sniper fee and pool fee are set per launch; see each token page for its values.</p>
         </div>
       </details>
-      <details className="hook-lifecycle">
-        <summary><span><b>Full rule &amp; exceptions</b><span className="small faint">Selling, graduation and admin powers</span></span><span className="dd-chev" aria-hidden="true" /></summary>
+      <details className="hook-lifecycle hook-resource">
+        <summary>
+          <span className="hook-resource-icon"><IconShield size={18} /></span>
+          <span className="hook-resource-copy"><b>Full rule &amp; exceptions</b><span>Selling, graduation, admin powers and limits</span></span>
+          <span className="dd-chev" aria-hidden="true" />
+        </summary>
         <div className="hook-lifecycle-body cap-rule-body">
           <p className="cap-rule-intro small muted"><IconInfo size={16} /><span>One rule, enforced by a transfer hook while a token is on its bonding curve. Nothing else is restricted.</span></p>
           <div className="hook-cap-rules">

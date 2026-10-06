@@ -89,16 +89,18 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0; }
 /* ---------- app shell */
 .shell { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); min-height: 100vh; }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 18px 14px; gap: 22px; }
-.sidebar .logo { display: flex; align-items: center; gap: 10px; padding: 4px 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.02em; }
-.logo-mark { width: 28px; height: 28px; border-radius: 7px; background: var(--text); color: var(--bg); display: grid; place-items: center; }
+.sidebar .logo { display: flex; align-items: center; min-height: 58px; padding: 4px 10px; }
+.brand-lockup { position: relative; display: block; width: 170px; height: 42.5px; overflow: hidden; background: var(--bg); isolation: isolate; }
+/* Remove the export's review backdrop visually, retaining the hollow outlines. */
+.brand-lockup img { position: absolute; display: block; width: 188.7px; max-width: none; height: auto; left: -9.35px; }
+.brand-lockup--dark img { top: -7.65px; mix-blend-mode: screen; }
+.brand-lockup--light img { top: -23.8px; mix-blend-mode: multiply; }
 .side-nav { display: flex; flex-direction: column; gap: 2px; }
 .side-nav a { display: flex; align-items: center; gap: 14px; padding: 11px 12px; border-radius: var(--pill); color: var(--text-2); font-size: 15.5px; }
 .side-nav a svg { flex: none; opacity: 0.85; }
 .side-nav a:hover { color: var(--text); background: var(--hover); }
 .side-nav a.active { color: var(--text); font-weight: 600; }
 .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
-.side-card { background: var(--card); border: 1px solid var(--card-border); border-radius: var(--r-inner); padding: 10px 12px; font-size: 12px; color: var(--text-3); }
-.side-card .row { gap: 6px; }
 .theme-toggle { display: grid; grid-template-columns: 1fr 1fr; background: var(--panel); border-radius: var(--pill); padding: 3px; }
 .theme-toggle button { border: 0; background: transparent; color: var(--text-3); border-radius: var(--pill); padding: 6px 0; font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .theme-toggle button.on { background: var(--card); color: var(--text); box-shadow: 0 0 0 1px var(--card-border); }
