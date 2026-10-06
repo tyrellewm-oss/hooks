@@ -75,6 +75,7 @@ test('creator lock: whole percents 1-10 with a duration; bad values are CreatorL
   for (const bad of [
     { creatorLockPct: CREATOR_LOCK_PCT_MAX + 1, creatorLockSlots: 10 }, { creatorLockPct: 0.5, creatorLockSlots: 10 }, { creatorLockPct: -1, creatorLockSlots: 10 },
     { creatorLockPct: 5 }, { creatorLockPct: 5, creatorLockSlots: 0 }, { creatorLockPct: 5, creatorLockSlots: CREATOR_LOCK_SLOTS_MAX + 1 }, { creatorLockPct: 5, creatorLockSlots: 1.5 },
+    { creatorLockSlots: 216_000 },   // a duration without a percent is refused, never silently no lock
   ]) assert.throws(() => resolveCreatorLock(bad as any), CreatorLockRefusal, JSON.stringify(bad));
   // the DBC config carries the lock as all-at-cliff locked vesting of exactly pct% of supply, in slots after migration
   const p: any = curveConfigParams({ creatorLockPct: 5, creatorLockSlots: 216_000 });
