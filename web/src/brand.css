@@ -9,6 +9,7 @@ body {
   background-size: 24px 24px;
   background-attachment: fixed;
 }
+.sidebar { background: var(--bg); }
 
 /* ---------- the cut corner, clipped */
 :is(.card, .hero, .modal, .tcard, .strip-item, .tabs, .theme-toggle, .hook-view-switch, .notice, .banner, .side-nav a,
