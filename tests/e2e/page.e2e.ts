@@ -20,9 +20,16 @@ let mint = process.env.MINT;
 if (!mint) {
   await page.fill('#c-name', 'Trenches UI Test'); await page.fill('#c-sym', 'TUI');
   await page.click('#c-go');
-  await page.waitForURL(/\/token\//, { timeout: 120_000 });
-  mint = page.url().split('/token/')[1];
+  // 8.5b: new mints come back unregistered ("created <mint>: not registered ..."); registering is the operator's
+  // step, so do it here (LOCAL only) the way an operator would, then open the token page.
+  await page.waitForFunction(() => /created [1-9A-HJ-NP-Za-km-z]{32,44}/.test(document.querySelector('#c-out')?.textContent ?? ''), null, { timeout: 120_000 });
+  mint = (await page.textContent('#c-out'))!.match(/created ([1-9A-HJ-NP-Za-km-z]{32,44})/)![1];
   log('created', mint);
+  const { readFileSync, writeFileSync } = await import('node:fs');
+  const reg = JSON.parse(readFileSync('keeper/registry.json', 'utf8'));
+  if (!reg.local.includes(mint)) { reg.local.push(mint); writeFileSync('keeper/registry.json', JSON.stringify(reg, null, 2)); }
+  log('registered in keeper/registry.json (local)');
+  await page.goto(`${BASE}/token/${mint}`);
 } else await page.goto(`${BASE}/token/${mint}`);
 await page.waitForSelector('#ck-btn');
 const body = await page.textContent('body') ?? '';
@@ -45,7 +52,7 @@ log('buy under cap ->', await page.textContent('#t-out'));
 await page.fill('#t-amt', '6000000'); await page.click('#t-buy');
 await page.waitForFunction(() => /Why did my trade fail/.test(document.querySelector('#t-out')?.textContent ?? ''), null, { timeout: 60_000 });
 const out = await page.textContent('#t-out') ?? '';
-assert.match(out, /Wallet cap/); log('cap-hit explainer ->', out.slice(0, 300));
+assert.match(out, /Token account cap/); log('cap-hit explainer ->', out.slice(0, 300));
 await page.screenshot({ path: `${SHOTS}/token_cap_hit.png`, fullPage: true });
 await page.fill('#t-amt', '1000000'); await page.click('#t-sell');
 await page.waitForFunction(() => /OK:|Failed/.test(document.querySelector('#t-out')?.textContent ?? ''), null, { timeout: 60_000 });
