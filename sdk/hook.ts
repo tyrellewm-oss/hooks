@@ -17,7 +17,7 @@ export const DAMM_V2_POOL_AUTHORITY = PublicKey.findProgramAddressSync([Buffer.f
  *  - local (localhost URL + unknown genesis): HOOK_PROGRAM_ID must be set (local_validator.sh deploys the hook keypair's id).
  *  - unknown: refused.
  *  There is no fallback to the devnet id on any non-devnet class. */
-export const HOOK_PROGRAM_ID_DEVNET = 'FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz';
+export const HOOK_PROGRAM_ID_DEVNET = '4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y';
 export const HOOK_PROGRAM_ID_PINS: Readonly<Record<ClusterClass, string | null>> = Object.freeze({
   devnet: HOOK_PROGRAM_ID_DEVNET, mainnet: null, testnet: null, local: null, unknown: null,
 });

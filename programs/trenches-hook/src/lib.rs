@@ -35,7 +35,7 @@ use constants::*;
 use errors::HookError;
 use state::*;
 
-declare_id!("FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz");
+declare_id!("4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y");
 
 #[program]
 pub mod trenches_hook {
