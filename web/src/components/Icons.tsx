@@ -27,3 +27,4 @@ export const IconFlame = (p: { size?: number }) => <I {...p}><path d="M12 3c.8 3
 export const IconSwitch = (p: { size?: number }) => <I {...p}><rect x="3" y="7" width="18" height="10" rx="5" /><circle cx="16" cy="12" r="2.6" /></I>;
 export const IconLock = (p: { size?: number }) => <I {...p}><rect x="5" y="10.5" width="14" height="10" rx="2.5" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></I>;
 export const IconInfo = (p: { size?: number }) => <I {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 7.8v.2" /></I>;
+export const IconHome = (p: { size?: number }) => <I {...p}><path d="M4 11l8-6.5 8 6.5" /><path d="M6 9.5V19a1 1 0 0 0 1 1h3.5v-5.5h3V20H17a1 1 0 0 0 1-1V9.5" /></I>;
