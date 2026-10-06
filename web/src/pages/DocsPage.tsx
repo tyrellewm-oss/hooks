@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Meta } from '../lib/types';
 import { pageVars, pctOf, approxDuration } from '../lib/shared';
 import { hookList, optionalHookList, SNIPER_DEFAULT, FLYWHEEL_SPLIT, RULES_DEFAULT, ordinal, windowText } from '../lib/hookInfo';
-import { LifecycleDiagram, CapDiagram, SniperFeeDiagram, FlywheelDiagram, LiftDiagram, MaxBuyDiagram, SlotLimitDiagram, PotDiagram } from '../components/HookArt';
+import { LifecycleDiagram, CapDiagram, SniperFeeDiagram, FlywheelDiagram, LiftDiagram, MaxBuyDiagram, SlotLimitDiagram, PotDiagram, CooldownDiagram } from '../components/HookArt';
 import { RulesAndRisks } from '../components/Disclosures';
 import { Addr, Link } from '../components/bits';
 import { IconInfo } from '../components/Icons';
@@ -25,6 +25,7 @@ const SECTIONS: { id: string; label: string; group: string }[] = [
   { id: 'optional', label: 'Optional hooks', group: 'Optional hooks' },
   { id: 'maxbuy', label: 'Max single buy', group: 'Optional hooks' },
   { id: 'slot', label: 'Per-slot buy limit', group: 'Optional hooks' },
+  { id: 'cooldown', label: 'Slow mode', group: 'Optional hooks' },
   { id: 'pot', label: 'Buy pot', group: 'Optional hooks' },
   { id: 'graduation', label: 'Graduation', group: 'Using Hookd' },
   { id: 'trading', label: 'Trading', group: 'Using Hookd' },
@@ -89,7 +90,7 @@ export function DocsPage({ meta }: { meta: Meta }) {
         </header>
 
         <Section id="overview" title="What Hookd is">
-          <p>Hookd is a token launchpad on Solana where the rules are enforced on chain, not promised. Every token runs four hooks that are fixed at launch: a rising cap per token account, an anti-sniper fee, a switch that can only loosen the cap, and a bot that buys the token back and burns it after graduation. A launch can also turn on three optional hooks: a max single buy, a per-slot buy limit and a buy pot.</p>
+          <p>Hookd is a token launchpad on Solana where the rules are enforced on chain, not promised. Every token runs four hooks that are fixed at launch: a rising cap per token account, an anti-sniper fee, a switch that can only loosen the cap, and a bot that buys the token back and burns it after graduation. A launch can also turn on four optional hooks: a max single buy, a per-slot buy limit, a buy pot and slow mode; and set aside a creator share that stays locked until after graduation.</p>
           <div className="docs-cards">
             {[...hookList(meta), ...optionalHookList()].map((h) => (
               <a key={h.id} href={`/docs#${h.id}`} onClick={jump(h.id)} className={`docs-card tone-${h.tone}`}>
@@ -163,6 +164,10 @@ export function DocsPage({ meta }: { meta: Meta }) {
         <Section id="slot" title="Per-slot buy limit">
           <p>All buys in the same slot (about 0.4 seconds) are added up, across every wallet. A buy that would take the slot over the limit (by default <b>{pctOf(RULES_DEFAULT.maxPerSlotBps)}</b> of supply) fails; the next slot starts from zero. It applies for the same time as the max single buy.</p>
           <Figure caption="One shared limit per slot."><SlotLimitDiagram limitText={pctOf(RULES_DEFAULT.maxPerSlotBps)} /></Figure>
+        </Section>
+        <Section id="cooldown" title="Slow mode">
+          <p>After any curve buy lands, the next buy, from anyone, must wait a fixed gap (by default <b>{RULES_DEFAULT.cooldownSlots} slots</b>, about {Math.round(RULES_DEFAULT.cooldownSlots * 0.4)} seconds; at most 150). One shared timer for the whole token: a crew splitting a big position across wallets waits out the gap for every single buy. Selling is never limited, and in a busy opening an honest buy can fail for being second; trying again after the gap works.</p>
+          <Figure caption="One shared gap between buys."><CooldownDiagram gapText={`${RULES_DEFAULT.cooldownSlots}-slot`} /></Figure>
           <Callout>This limit is shared by everyone. In a busy opening an ordinary buy can fail too; trying again a moment later works.</Callout>
         </Section>
 
@@ -196,7 +201,7 @@ export function DocsPage({ meta }: { meta: Meta }) {
           <ol className="docs-steps">
             <li><b>Hooks</b>: see what the token will run.</li>
             <li><b>Cap schedule</b>: pick a preset or set your own steps.</li>
-            <li><b>Optional hooks</b>: switch on a max single buy, a per-slot buy limit or a buy pot, if you want them.</li>
+            <li><b>Optional hooks</b>: switch on a max single buy, a per-slot buy limit, a buy pot or slow mode, and a creator lock, if you want them.</li>
             <li><b>Token</b>: name, ticker and optional image, description and links.</li>
             <li><b>Graduation</b>: the SOL target and how much supply goes to the pool.</li>
             <li><b>Review</b>: check everything, then sign.</li>
@@ -227,7 +232,7 @@ export function DocsPage({ meta }: { meta: Meta }) {
           <Faq q="Can I always sell?">Yes. Selling back into the curve is never blocked by the cap.</Faq>
           <Faq q="What happens at graduation?">Liquidity moves to a locked DAMM v2 pool, the cap ends, and buyback and burn starts.</Faq>
           <Faq q="Where do the fees go?">{FLYWHEEL_SPLIT.devPct}% to the dev wallet, {FLYWHEEL_SPLIT.buybackPct}% to buying the token back and burning it. Every step is on the Transparency page.</Faq>
-          <Faq q="What are the optional hooks?">A max single buy, a per-slot buy limit and a buy pot. A launch can switch any of them on; they’re off by default. The token page shows which ones a token has.</Faq>
+          <Faq q="What are the optional hooks?">A max single buy, a per-slot buy limit, a buy pot and slow mode. A launch can switch any of them on; they’re off by default. A launch can also lock a creator share until after graduation. The token page shows which ones a token has.</Faq>
           <Faq q="Can anyone launch a token?">Not yet. Launching is limited to studio wallets during this test.</Faq>
         </Section>
       </article>

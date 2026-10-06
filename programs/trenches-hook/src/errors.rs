@@ -21,4 +21,6 @@ pub enum HookError {
     SlotBuyLimitExceeded,
     #[msg("Invalid buy rules (limits above supply, pot interval out of range, or no rule enabled)")]
     InvalidRules,
+    #[msg("Slow mode: this token allows one curve buy every few slots in the opening window; try again shortly")]
+    BuyCooldownActive,
 }

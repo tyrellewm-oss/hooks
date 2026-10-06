@@ -17,8 +17,10 @@ export interface HealthOpts {
   maxAgeMin: number;
   /** this many failed runs in a row (newest backwards) is an alert */
   maxConsecutiveFailures: number;
+  /** an unbroken streak of warm-up holds (hold_*) older than this is an alert; holds are not failures before that */
+  maxHoldMin: number;
 }
-export const DEFAULT_HEALTH: HealthOpts = { maxAgeMin: 20, maxConsecutiveFailures: 3 };
+export const DEFAULT_HEALTH: HealthOpts = { maxAgeMin: 20, maxConsecutiveFailures: 3, maxHoldMin: 60 };
 
 export interface KeeperHealth {
   name: string;
@@ -34,10 +36,16 @@ export interface KeeperHealth {
 
 /** A run counts as failed when its status says so ('failed_price', 'failed_swap', ...). 'logged' is a success;
  *  an unknown status is treated as failed, so a new failure mode can never read as healthy. */
-export const runFailed = (status: string) => status !== 'logged';
+export const runFailed = (status: string) => !RUN_OK.has(status) && !runHolding(status);
+/** Run statuses that mean the keeper is working as designed (sdk/flywheel/keeper.ts): it did its work (`logged`),
+ *  had nothing to do (`noop`, `noop_window_done`), is waiting for the main token to graduate
+ *  (`waiting_for_graduation`), or stopped itself mid-run (`paused_midrun`, reported through the paused flag). */
+export const RUN_OK: ReadonlySet<string> = new Set(['logged', 'noop', 'noop_window_done', 'waiting_for_graduation', 'paused_midrun']);
+/** A warm-up hold (ticket #5, `hold_*`): the price window is refilling. Not a failure, but a long streak is a problem. */
+export const runHolding = (status: string) => status.startsWith('hold_');
 
 export function keeperHealth(k: HealthInput, nowMs: number, opts: HealthOpts = DEFAULT_HEALTH): KeeperHealth {
-  if (!(opts.maxAgeMin > 0) || !(opts.maxConsecutiveFailures > 0)) throw new Error('health thresholds must be > 0');
+  if (!(opts.maxAgeMin > 0) || !(opts.maxConsecutiveFailures > 0) || !(opts.maxHoldMin > 0)) throw new Error('health thresholds must be > 0');
   const problems: string[] = [];
 
   if (k.paused) problems.push(`paused${k.pauseReason ? `: ${k.pauseReason}` : ''}`);
@@ -56,6 +64,16 @@ export function keeperHealth(k: HealthInput, nowMs: number, opts: HealthOpts = D
       ageMin = Math.trunc((nowMs - t) / 60_000);
       if (ageMin > opts.maxAgeMin) problems.push(`stale: newest run started ${ageMin} min ago (limit ${opts.maxAgeMin} min)`);
     }
+  }
+
+  // a warm-up hold streak (newest backwards) is fine until it has lasted longer than maxHoldMin
+  let holds = 0;
+  for (const r of k.runs) { if (runHolding(r.status)) holds++; else break; }
+  if (holds > 0) {
+    const oldest = k.runs[holds - 1];
+    const t0 = Date.parse(oldest.startedAt);
+    const heldMin = Number.isFinite(t0) ? Math.trunc((nowMs - t0) / 60_000) : null;
+    if (heldMin !== null && heldMin > opts.maxHoldMin) problems.push(`holding: ${holds} warm-up hold run${holds > 1 ? 's' : ''} in a row for ${heldMin} min (limit ${opts.maxHoldMin} min; newest: ${k.runs[0].status}${k.runs[0].reason ? ` - ${k.runs[0].reason}` : ''})`);
   }
 
   let fails = 0;

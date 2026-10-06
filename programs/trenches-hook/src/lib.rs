@@ -168,13 +168,13 @@ pub mod trenches_hook {
         let st = RulesState {
             mint: mint_key, bump: ctx.bumps.rules, launch_slot: cfg.launch_slot,
             max_buy_tokens: rules.max_buy_tokens, max_per_slot_tokens: rules.max_per_slot_tokens, window_slots: rules.window_slots,
-            pot_every: rules.pot_every, pot_min_tokens: rules.pot_min_tokens,
-            cur_slot: 0, bought_in_slot: 0, buy_count: 0, last_counted_slot: 0, wins: 0,
+            pot_every: rules.pot_every, pot_min_tokens: rules.pot_min_tokens, cooldown_slots: rules.cooldown_slots,
+            cur_slot: 0, bought_in_slot: 0, buy_count: 0, last_counted_slot: 0, wins: 0, last_buy_slot: 0,
             winners: [PotWin::default(); POT_WINNERS],
         };
         write_account(&a.rules, &st)?;
-        msg!("rules: mint={} max_buy={} max_per_slot={} window_slots={} pot_every={} pot_min={}",
-            mint_key, st.max_buy_tokens, st.max_per_slot_tokens, st.window_slots, st.pot_every, st.pot_min_tokens);
+        msg!("rules: mint={} max_buy={} max_per_slot={} window_slots={} pot_every={} pot_min={} cooldown={}",
+            mint_key, st.max_buy_tokens, st.max_per_slot_tokens, st.window_slots, st.pot_every, st.pot_min_tokens, st.cooldown_slots);
         Ok(())
     }
 
@@ -433,16 +433,22 @@ pub fn extra_metas_v2() -> Result<Vec<ExtraAccountMeta>> {
 
 pub fn validate_rules(r: &RulesArgs, supply: u64) -> Result<()> {
     let pot_ok = r.pot_every == 0 || (POT_EVERY_MIN..=POT_EVERY_MAX).contains(&r.pot_every);
-    let any = r.max_buy_tokens > 0 || r.max_per_slot_tokens > 0 || r.pot_every > 0;
+    let any = r.max_buy_tokens > 0 || r.max_per_slot_tokens > 0 || r.pot_every > 0 || r.cooldown_slots > 0;
     let ok = any && pot_ok
         && r.max_buy_tokens <= supply && r.max_per_slot_tokens <= supply && r.pot_min_tokens <= supply
-        && r.window_slots <= RULES_WINDOW_MAX;
+        && r.window_slots <= RULES_WINDOW_MAX && r.cooldown_slots <= COOLDOWN_MAX;
     if !ok {
-        msg!("InvalidRules: max_buy={} max_per_slot={} window={} pot_every={} pot_min={} supply={}",
-            r.max_buy_tokens, r.max_per_slot_tokens, r.window_slots, r.pot_every, r.pot_min_tokens, supply);
+        msg!("InvalidRules: max_buy={} max_per_slot={} window={} pot_every={} pot_min={} cooldown={} supply={}",
+            r.max_buy_tokens, r.max_per_slot_tokens, r.window_slots, r.pot_every, r.pot_min_tokens, r.cooldown_slots, supply);
         return err!(HookError::InvalidRules);
     }
     Ok(())
+}
+
+/// Slow mode (pure, host-tested): does a curve buy at `slot` run into the cooldown? The first buy
+/// (last_buy_slot 0) never does; after it, the next buy must wait `cooldown_slots` whole slots.
+pub fn cooldown_blocks(last_buy_slot: u64, slot: u64, cooldown_slots: u64) -> bool {
+    cooldown_slots > 0 && last_buy_slot != 0 && slot.saturating_sub(last_buy_slot) < cooldown_slots
 }
 
 /// A buy is a transfer out of a DBC pool vault (owner = DBC pool authority) to anyone but a pool authority
@@ -481,6 +487,14 @@ fn apply_rules(rules: &AccountInfo, mint: &Pubkey, source_owner: &Pubkey, dest_o
             return err!(HookError::SlotBuyLimitExceeded);
         }
         r.bought_in_slot = total;
+    }
+    if in_window && r.cooldown_slots > 0 {
+        if cooldown_blocks(r.last_buy_slot, slot, r.cooldown_slots) {
+            msg!("BuyCooldownActive: token_account={} owner={} slot={} last_buy_slot={} cooldown={}",
+                dest_token, dest_owner, slot, r.last_buy_slot, r.cooldown_slots);
+            return err!(HookError::BuyCooldownActive);
+        }
+        r.last_buy_slot = slot;
     }
     // Nth-buy pot: one count per slot at most (the first qualifying buy in a slot), never random.
     if r.pot_every > 0 && amount >= r.pot_min_tokens && slot != r.last_counted_slot {
@@ -712,4 +726,43 @@ pub struct PotWon {
     pub token_account: Pubkey,
     pub buy_index: u64,
     pub slot: u64,
+}
+
+#[cfg(test)]
+mod rule_tests {
+    use super::*;
+
+    fn rules(max_buy: u64, per_slot: u64, window: u64, pot_every: u32, pot_min: u64, cooldown: u64) -> RulesArgs {
+        RulesArgs { max_buy_tokens: max_buy, max_per_slot_tokens: per_slot, window_slots: window, pot_every, pot_min_tokens: pot_min, cooldown_slots: cooldown }
+    }
+
+    #[test]
+    fn validate_rules_cooldown() {
+        let supply = 1_000_000;
+        // cooldown alone is a valid rule set; the range is 1..=COOLDOWN_MAX
+        assert!(validate_rules(&rules(0, 0, 0, 0, 0, 1), supply).is_ok());
+        assert!(validate_rules(&rules(0, 0, 150, 0, 0, COOLDOWN_MAX), supply).is_ok());
+        assert!(validate_rules(&rules(0, 0, 0, 0, 0, COOLDOWN_MAX + 1), supply).is_err());
+        // no rule enabled is still refused
+        assert!(validate_rules(&rules(0, 0, 0, 0, 0, 0), supply).is_err());
+        // cooldown combines with the existing rules and their limits still hold
+        assert!(validate_rules(&rules(100, 200, 1500, 10, 1, 25), supply).is_ok());
+        assert!(validate_rules(&rules(supply + 1, 0, 0, 0, 0, 25), supply).is_err());
+    }
+
+    #[test]
+    fn cooldown_window() {
+        // first buy ever passes, whatever the cooldown
+        assert!(!cooldown_blocks(0, 5, 150));
+        // same slot and anything inside the gap is blocked
+        assert!(cooldown_blocks(100, 100, 10));
+        assert!(cooldown_blocks(100, 109, 10));
+        // exactly the gap, and anything after, passes
+        assert!(!cooldown_blocks(100, 110, 10));
+        assert!(!cooldown_blocks(100, 400, 10));
+        // off = never blocks
+        assert!(!cooldown_blocks(100, 100, 0));
+        // slot clocks never go backwards, but saturating_sub keeps a stale read safe (blocked, fail closed)
+        assert!(cooldown_blocks(100, 90, 10));
+    }
 }

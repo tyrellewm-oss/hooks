@@ -30,6 +30,7 @@ const rules: BuyRules = {
   windowSlots: 300n,                  // ~2 minutes
   potEvery: 10,                       // every 10th qualifying buy wins
   potMinTokens: pct(1n),              // a buy qualifies from 0.01% of supply
+  cooldownSlots: 0n,                  // slow mode off here (the pot loop buys once per slot); its own token below
 };
 // the same values as the launch form sends them (bps of supply), through the server's own conversion
 assert.deepEqual(parseBuyRules({ maxBuyBps: 30, maxPerSlotBps: 50, windowSlots: 300, potEvery: 10, potMinBps: 1 }), rules, "the site's conversion gives exactly these rules");
@@ -104,7 +105,7 @@ for (const w of after.winners.slice(0, Number(expectedWins))) {
 }
 log(`pot: ${counted} qualifying buys counted, ${after.wins - before.wins} winners recorded (buy #${after.winners.map((w) => w.buyIndex).join(', #')})`);
 // what the token page shows (app/server.ts rulesView: decodeRules + buyRulesBps) round-trips to the form's values
-assert.deepEqual(buyRulesBps(after), { maxBuyBps: 30, maxPerSlotBps: 50, windowSlots: '300', potEvery: 10, potMinBps: 1 }, 'the token page reads back the launch values');
+assert.deepEqual(buyRulesBps(after), { maxBuyBps: 30, maxPerSlotBps: 50, windowSlots: '300', potEvery: 10, potMinBps: 1, cooldownSlots: 0 }, 'the token page reads back the launch values');
 
 // 5. sells are never blocked
 const seller = buyers[0];
@@ -113,6 +114,37 @@ const sellTx = await (sim.dbc.pool as any).swap2WithTransferHook({ owner: seller
 const sell = sim.send(sellTx, [seller]);
 assert.ok(sell.ok, 'selling back into the curve works: ' + sell.logs.slice(-4).join(' | '));
 log('sell back into the curve: ok');
+
+// 6. slow mode (cooldown): its own token, one shared 5-slot gap between curve buys inside a 300-slot window
+const cd: BuyRules = { maxBuyTokens: 0n, maxPerSlotTokens: 0n, windowSlots: 300n, potEvery: 0, potMinTokens: 0n, cooldownSlots: 5n };
+assert.deepEqual(parseBuyRules({ cooldownSlots: 5, windowSlots: 300 }), cd, "the site's conversion gives exactly the slow-mode rules");
+const lc = await launchToken(sim, keys, { ...o, symbol: 'RULC', rules: cd });
+sim.warp(200n);
+const c1 = await buy(sim, lc, trader(sim), 50_000_000n);
+assert.ok(c1.ok, 'slow mode: the first buy lands: ' + c1.logs.slice(-4).join(' | '));
+const c2 = await buy(sim, lc, trader(sim), 50_000_000n);
+assert.ok(failsWith(c2, 'BuyCooldownActive'), 'a second buy in the same slot fails on the cooldown: ' + c2.logs.slice(-4).join(' | '));
+sim.warp(3n);
+const c3 = await buy(sim, lc, trader(sim), 50_000_000n);
+assert.ok(failsWith(c3, 'BuyCooldownActive'), 'a buy 3 slots later (gap 5) still fails');
+sim.warp(2n);
+const c4 = await buy(sim, lc, trader(sim), 50_000_000n);
+assert.ok(c4.ok, 'a buy exactly 5 slots after the last one lands');
+// selling is never in the cooldown
+sim.warp(5n);
+const cdSeller = trader(sim);
+const cbuy = await buy(sim, lc, cdSeller, 50_000_000n);
+assert.ok(cbuy.ok, 'setup buy for the sell lands');
+const cdHeld = tokenBalance(sim, lc.mint, cdSeller.publicKey);
+const cdSellTx = await (sim.dbc.pool as any).swap2WithTransferHook({ owner: cdSeller.publicKey, pool: lc.pool, swapBaseForQuote: true, referralTokenAccount: null, amountIn: new BN(cdHeld.toString()), minimumAmountOut: new BN(0), swapMode: 0 });
+const cdSell = sim.send(cdSellTx, [cdSeller]);
+assert.ok(cdSell.ok, 'selling during the cooldown window works (sells are never limited)');
+// after the window the cooldown is gone
+sim.warp(300n);
+const c5 = await buy(sim, lc, trader(sim), 50_000_000n);
+const c6 = await buy(sim, lc, trader(sim), 50_000_000n);
+assert.ok(c5.ok && c6.ok, 'after the window two buys in one slot land');
+log('slow mode: same-slot and in-gap buys refused, 5-slot gap honoured, sells free, window end respected');
 
 // v1 token on the same build: no rules account, behaves as before
 const v1 = await launchToken(sim, keys, { ...o, symbol: 'RUL1', rules: undefined });

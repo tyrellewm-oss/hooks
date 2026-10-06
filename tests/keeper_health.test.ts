@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { keeperHealth, runFailed, DEFAULT_HEALTH, type HealthInput } from '../sdk/keeper_health.ts';
+import { keeperHealth, runFailed, runHolding, RUN_OK, DEFAULT_HEALTH, type HealthInput } from '../sdk/keeper_health.ts';
 
 const NOW = Date.parse('2026-10-05T12:00:00Z');
 const at = (minAgo: number) => new Date(NOW - minAgo * 60_000).toISOString();
@@ -49,4 +49,26 @@ test('thresholds must be sane; the watcher is read-only (no keys, no chain, webh
   assert.match(w, /KEEPER_ALERT_WEBHOOK/, 'alert destination comes from the env');
   assert.match(w, /startsWith\('https:\/\/'\)/, 'webhook must be https');
   assert.match(w, /loadPublicKeepers\(cluster, registered\)/, 'same registry-gated loader as the transparency page');
+});
+
+test('normal keeper states are not failures: noop, window done, waiting for graduation, paused mid-run', () => {
+  for (const st of ['logged', 'noop', 'noop_window_done', 'waiting_for_graduation', 'paused_midrun']) assert.equal(runFailed(st), false, st);
+  assert.deepEqual([...RUN_OK].sort(), ['logged', 'noop', 'noop_window_done', 'paused_midrun', 'waiting_for_graduation']);
+  const h = keeperHealth(base({ runs: [run(1, 'waiting_for_graduation', 'main token DBC pool isMigrated = 0'), run(6, 'noop'), run(11, 'noop_window_done'), run(16, 'waiting_for_graduation')] }), NOW);
+  assert.deepEqual([h.healthy, h.problems, h.consecutiveFailures], [true, [], 0], 'a keeper waiting for graduation is healthy, not paged');
+  for (const st of ['failed_price', 'refuse_registry', 'burn_mismatch', 'claim_mismatch', 'reconcile_mismatch', 'unknown', '']) assert.equal(runFailed(st), true, st);
+});
+
+test('warm-up holds: not failures within the hold limit, one problem once the streak is older than it', () => {
+  assert.equal(runHolding('hold_twap_warmup'), true);
+  assert.equal(runFailed('hold_twap_warmup'), false, 'a hold is neither failed nor ok');
+  const short = keeperHealth(base({ runs: [run(1, 'hold_twap_warmup', '12 of 30 samples'), run(6, 'hold_twap_warmup'), run(11, 'hold_twap_warmup'), run(16)] }), NOW);
+  assert.deepEqual([short.healthy, short.problems, short.consecutiveFailures], [true, [], 0], 'three holds over 16 min: fine');
+  const long = keeperHealth(base({ runs: [run(1, 'hold_twap_warmup', '12 of 30 samples'), run(6, 'hold_twap_warmup'), run(DEFAULT_HEALTH.maxHoldMin + 1, 'hold_twap_warmup'), run(DEFAULT_HEALTH.maxHoldMin + 6)] }), NOW);
+  assert.equal(long.healthy, false);
+  assert.match(long.problems[0], /^holding: 3 warm-up hold runs in a row for 61 min \(limit 60 min; newest: hold_twap_warmup - 12 of 30 samples\)/);
+  assert.equal(long.consecutiveFailures, 0, 'holds never count as failures');
+  const mixed = keeperHealth(base({ runs: [run(1, 'failed_price'), run(6, 'hold_twap_warmup'), run(11, 'failed_price'), run(16, 'failed_price')] }), NOW);
+  assert.equal(mixed.consecutiveFailures, 1, 'a hold breaks a failure streak (it is not a failure)');
+  assert.throws(() => keeperHealth(base(), NOW, { ...DEFAULT_HEALTH, maxHoldMin: 0 }), /thresholds must be > 0/);
 });

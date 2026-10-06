@@ -43,7 +43,8 @@ describe('L-16: schedule name resolution', () => {
     assert.match(parse, /try \{ const sch = resolveSchedule\(b\.schedule, c\.name\);[^\n]*\}\s*catch \(e: any\) \{ return \{ error: e\.message \}; \}/);
     for (const route of ['/api/create', '/api/studio/launch/build']) {
       const r = src.slice(src.indexOf(`url.pathname === '${route}'`)).slice(0, 600);
-      assert.match(r, /const p = parseLaunchBody\(await body\(req\)\);\s*if \('error' in p\) return send\(res, 400, p\);/, route);
+      // /api/create parses the body inline; the wallet launch route reads it first (it also needs b.owner on an open studio)
+      assert.match(r, /const p = parseLaunchBody\((await body\(req\)|b)\);\s*if \('error' in p\) return send\(res, 400, p\);/, route);
     }
   });
 });
