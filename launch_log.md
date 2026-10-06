@@ -192,3 +192,14 @@ Three full launch→graduation→DAMM v2 loops, one per schedule, each `dbc_flow
 | Loose | `7outjK22UWGSv6Jxb3KB3gqFhUBjUEBLZLC4UF6daqNz` | full pass |
 
 **Follow-up:** make the demo's mid-ramp buy sizes schedule-aware so Strict doesn't mislabel a correct refusal as FAIL.
+
+## 2026-10-06 — B7: optional hooks live on devnet (browser launch + CLI rejection tests)
+
+**Browser path** (the real user flow): `$HKALL` mint `71EV12JUf4zpkupbo66v7CEZUMaQ3regLqmXSgf4E2k3` launched from the site wizard with a browser Phantom wallet (studio sign-in → 6-step form → wallet signature). Rules on-chain: max buy 0.5%, per-slot 1.5%, window 1500 slots, pot every 50th (min 0.01%). Token page shows all 7 hooks, pot card, phase, frozen schedule. In-platform buy/sell is intentionally not offered; trades come from outside and the hook enforces regardless of venue.
+
+**CLI rejection tests**: `$HKRUL` mint `2jgPeErJXC2ZrsnFYGFSs7GBjszVgJap4Btp6bTUqBg9` (pot every 10th for a fast winner):
+- buy 0.4% ok; buy 0.6% REJECTED on-chain by max single buy ✅
+- pot winner recorded at exactly buy #10 (rules PDA: buyCount 11, wins 1, winner owner+token account stored) ✅
+- per-slot limit not triggered live (two rapid buys landed in different slots — devnet latency); covered by the CI sim suite.
+
+RPC note: public devnet RPCs (api.devnet.solana.com, onfinality) rate-limit the token page's read burst; test day ran on a Helius free key (gitignored, `.devnet-keys/helius_rpc.txt`).
