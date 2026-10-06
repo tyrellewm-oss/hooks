@@ -1,24 +1,42 @@
 {
   "name": "devnet-tdt",
   "cluster": "devnet",
-  "main_mint": "3Ut8PuPt3G21GBth84SdqjWxMAoSp5yjSfQFKM9aMmtE",
+  "main_mint": "7qKe2VcMBYkRdtji6x9EzhFm1czHN5E2yVAC5TSvVy16",
   "main_decimals": 6,
   "main_token_program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
-  "main_dbc_pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK",
+  "main_dbc_pool": "BPLNeuzEMXNKfD9Wg2CUZU5u6anyK42wbEwTJtJY3mio",
   "route": "damm_v2_direct",
-  "route_pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr",
+  "route_pool": "63qUyzmjrqa1EKHabA52uM8wjsQyZCrJmo6G83EAKnHc",
   "sources": [
-    { "kind": "dbc", "pool": "6CXB1RQJNtLCkQZMKTRbZaAF6xYbzvfHJ71ZDUdJg8iK", "config": "5MRwHkx7nmEFWUHjBjb8Y4XLFPvmtr9nxZ6beHt3Ja1h", "base_mint": "3Ut8PuPt3G21GBth84SdqjWxMAoSp5yjSfQFKM9aMmtE" },
-    { "kind": "damm_v2", "pool": "BokKAyHoNp4NVgeECKrfnoXdL5f2LyKiSco1YE5qhPjr", "position": "Hres84VYhpqTnAiZToLx7g4tmTvZRZ7uY9yAW6bBQApm", "position_nft_mint": "FuCnASAbesuTS5gyKvz8yPCYQ3j6g31MUiNx1p6nfJFD" }
+    {
+      "kind": "dbc",
+      "pool": "BPLNeuzEMXNKfD9Wg2CUZU5u6anyK42wbEwTJtJY3mio",
+      "config": "5ds2kAD9aF4q5NSwByCUfuHkYknkBfKfzzSYbpgX92Vs",
+      "base_mint": "7qKe2VcMBYkRdtji6x9EzhFm1czHN5E2yVAC5TSvVy16"
+    },
+    {
+      "kind": "damm_v2",
+      "pool": "63qUyzmjrqa1EKHabA52uM8wjsQyZCrJmo6G83EAKnHc",
+      "position": "CcnqFAtDKPfdv6UuhtZj33W15ESPkaQ5DacdFpXkZA6Q",
+      "position_nft_mint": "4VY3SMXUmAKB61m47cQoV6FrcQ3dM5Ajn5oRnaZfwYXj"
+    }
   ],
-  "keys": { "claim_signer": "deployer", "treasury": "fw_treasury", "gas": "fw_gas" },
-  "pinned_pubkeys": { "claim_signer": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu", "treasury": "8NF4657Gtsmxj9skWsQP15jX62hTV4HfiaW1yXuSAvbL", "gas": "D7ZmAZ9dpVBVFkR268dMnu1uPVKFUF9ZFJDZdXzdCbGt" },
-  "dev_payout": "74KbNAK9d3GAKSMKqA7fVzkLGcTcJStS9T3jiKmDs4nn",
+  "keys": {
+    "claim_signer": "deployer",
+    "treasury": "fw_treasury",
+    "gas": "fw_gas"
+  },
+  "pinned_pubkeys": {
+    "claim_signer": "6KqYFdzKEFSvdjbNgC6T6MinFqEwt8XxiqGDTXHRkBdb",
+    "treasury": "BCo63HrVtH5wqd51JiCP9xvpasggYiMPRg8FfW4Bican",
+    "gas": "FYYkY3qCbBAiLs6cxK7JQwxFtFJvVT6u4n5S8hboDqja"
+  },
+  "dev_payout": "AtyHf5gRgJXHFFF4Yfmq9DmK1gkeiTqbftk378KNH5aL",
   "hook_program": "4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y",
-  "hook_upgrade_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
-  "hook_lift_authority": "9DVuoJSvxq97wyC9GmvB3GbAGfKywAvtK7VAXgiroFDu",
-  "hook_launch_authority": "ApupQ3hCMTqDoZTEmKz1N2AP6yw6zo6kq11V4QWmRPme",
-  "max_swap_lamports_per_run": "500000000",
+  "hook_upgrade_authority": "6KqYFdzKEFSvdjbNgC6T6MinFqEwt8XxiqGDTXHRkBdb",
+  "hook_lift_authority": "6KqYFdzKEFSvdjbNgC6T6MinFqEwt8XxiqGDTXHRkBdb",
+  "hook_launch_authority": "GgPYhJirhczeieikcNnbx4DiomW2pYfZkLS6xBuLD658",
+  "max_swap_lamports_per_run": "20000000",
   "max_slippage_bps": 100,
   "max_price_impact_bps": 200,
   "max_halvings": 3,
