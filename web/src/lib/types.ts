@@ -149,6 +149,9 @@ export interface PublicKeeper {
   claimedSol: string; devSol: string; spentSol: string; reserveSol: string;
   burnedTokens: string; supplyTokens: string; pctOfSupply: string;
   burns: { at: string; tokens: string; sol: string; sig: string; link: string }[];
+  /** buy pot: SOL paid to winners, SOL waiting for the next winner, and each payout with its tx (newest first) */
+  potSol?: string; potPendingSol?: string;
+  potPayouts?: { at: string; win: number; owner: string; sol: string; sig: string; link: string }[];
   runs: PublicRun[];
   pools: { dbc: string | null; route: string | null };
 }

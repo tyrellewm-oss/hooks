@@ -42,7 +42,7 @@ const fakeConn = (n: { connects: number }) => async () => { n.connects++; return
 const startable = (o: Partial<KeeperConfig> = {}): KeeperConfig => ({ ...clone(TDT), pinned_pubkeys: undefined, hook_upgrade_authority: UPG, hook_lift_authority: LIFT, hook_launch_authority: null, ...o });
 
 test('devnet keeper configs: signing keys only (no dev keypair path, no pinned dev), dev payout as a pubkey', () => {
-  for (const [c, dev] of [[TDT, '74KbNAK9d3GAKSMKqA7fVzkLGcTcJStS9T3jiKmDs4nn'], [FW15, 'Fyf3yL8DTiYR1ho2bdbUTro1Uq5d5Qss5KjYkqSgfVdP']] as const) {
+  for (const [c, dev] of [[TDT, 'AtyHf5gRgJXHFFF4Yfmq9DmK1gkeiTqbftk378KNH5aL'], [FW15, 'Fyf3yL8DTiYR1ho2bdbUTro1Uq5d5Qss5KjYkqSgfVdP']] as const) {
     assert.deepEqual(Object.keys(c.keys).sort(), [...KEEPER_KEY_ROLES].sort());
     assert.deepEqual(Object.keys(c.pinned_pubkeys ?? {}).sort(), [...KEEPER_KEY_ROLES].sort());
     assert.equal(c.dev_payout, dev);   // same dev wallet as before, now as a payout address

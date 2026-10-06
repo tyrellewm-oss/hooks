@@ -7,7 +7,7 @@ import { useWallet } from '../lib/wallet';
 import { pageVars, pctOf, tok, BPS_DENOM, approxDuration } from '../lib/shared';
 import { curveFeePctAt, elapsedSlots, estimateSlot, isGraduated, liveCap, liveNextChange, phaseOf } from '../lib/token';
 import { CapRamp } from '../components/CapRamp';
-import { hookList, optionalHookList, creatorLockInfo, FLYWHEEL_SPLIT, ordinal, windowText } from '../lib/hookInfo';
+import { hookList, optionalHookList, creatorLockInfo, FLYWHEEL_SPLIT, POT_SHARE_PCT, ordinal, windowText } from '../lib/hookInfo';
 import { Dropdown, RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
 import { Addr, CurveProgress, Guard, Link, PhasePill, PhaseStepper, Skeleton, Stat } from '../components/bits';
 import { TokenImage, TokenLinks, DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
@@ -131,7 +131,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
         {/* right: the token's hooks live, phases under it, then the stacked info sections */}
         <div className="sticky stack" style={{ marginTop: 0 }}>
           <LiveHooks meta={meta} capText={graduated ? 'ended' : capPct ?? 'no cap'} feeText={graduated ? 'ended' : feeNow === null ? 'n/a' : `~${feeNow}%`} switchUses={view.switchHistory.length} graduated={graduated} rules={view.rules ?? null} creatorLock={view.launch?.creatorLock ?? null} slot={slot} />
-          {view.rules && view.rules.potEvery > 0 && <PotCard rules={view.rules} graduated={graduated} />}
+          {view.rules && view.rules.potEvery > 0 && <PotCard mint={mint} rules={view.rules} graduated={graduated} />}
           <Dropdown title="Phase" aside={<PhasePill phase={phase} />} defaultOpen>
             <PhaseStepper phase={phase} />
           </Dropdown>
@@ -218,8 +218,13 @@ function LiveHooks({ meta, capText, feeText, switchUses, graduated, rules, creat
   );
 }
 
-/** Buy pot: the count so far, the next winning buy number, and the latest winners (on chain, last 16). */
-function PotCard({ rules: r, graduated }: { rules: RulesView; graduated: boolean }) {
+/** Buy pot: the count so far, the next winning buy number, the latest winners (on chain, last 16) and what the
+ *  keeper has paid each of them (its public log, matched by win number). */
+function PotCard({ mint, rules: r, graduated }: { mint: string; rules: RulesView; graduated: boolean }) {
+  const fw = usePoll(() => api.flywheel(), 60000, 'token:flywheel');
+  const keeper = fw.data?.keepers.find((k) => k.mint === mint);
+  const paid = new Map((keeper?.potPayouts ?? []).map((p) => [p.win, p]));
+  const sol = (s: string) => (s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s);
   const count = Number(r.buyCount), every = r.potEvery;
   const next = (Math.trunc(count / every) + 1) * every;
   const into = count % every;
@@ -241,11 +246,15 @@ function PotCard({ rules: r, graduated }: { rules: RulesView; graduated: boolean
       {r.winners.length
         ? <ol className="pot-winners" aria-label="Latest pot winners">
             {r.winners.map((w) => (
-              <li key={w.buyIndex}><span className="idx">#{Number(w.buyIndex).toLocaleString()}</span><Addr value={w.owner} n={5} /><span className="faint">slot {w.slot}</span></li>
+              <li key={w.buyIndex}><span className="idx">#{Number(w.buyIndex).toLocaleString()}</span><Addr value={w.owner} n={5} /><span className="faint">slot {w.slot}</span>
+                {(() => { const p = paid.get(Math.round(Number(w.buyIndex) / every)); return p ? <a className="link small" href={p.link} target="_blank" rel="noreferrer">paid {sol(p.sol)} SOL</a> : <span className="small faint">{keeper ? 'payout pending' : ''}</span>; })()}</li>
             ))}
           </ol>
         : <p className="small faint" style={{ margin: 0 }}>No winners yet.</p>}
-      <p className="small faint" style={{ margin: '10px 0 0' }}>Recorded on chain by the hook. Payouts aren’t switched on yet.</p>
+      <p className="small faint" style={{ margin: '10px 0 0' }}>
+        {keeper && <>Paid to winners: <b>{sol(keeper.potSol ?? '0')} SOL</b>{Number(keeper.potPendingSol ?? 0) > 0 && <> · waiting for the next winner: {sol(keeper.potPendingSol!)} SOL</>}. </>}
+        Winners are recorded on chain by the hook. {POT_SHARE_PCT}% of curve trading fees fill the pot, and the keeper pays new winners in SOL about every 5 min.
+      </p>
     </section>
   );
 }

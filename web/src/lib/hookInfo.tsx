@@ -8,6 +8,8 @@ import { IconFee, IconFlame, IconShield, IconSwitch, IconCeiling, IconBlocks, Ic
 
 export const SNIPER_DEFAULT = { startBps: 5000, endBps: 100, periods: 10, durationSlots: 150 };
 export const FLYWHEEL_SPLIT = { devPct: 15, buybackPct: 85 };
+/** Buy pot: % of a token's curve trading fees the keeper sets aside for pot winners (out of the buyback share). */
+export const POT_SHARE_PCT = 10;
 
 export type HookId = 'cap' | 'fee' | 'switch' | 'burn' | 'lock' | OptionalHookId;
 export type OptionalHookId = 'maxbuy' | 'slot' | 'pot' | 'cooldown';
@@ -174,19 +176,20 @@ export function optionalHookList(r: { maxBuyBps: number; maxPerSlotBps: number; 
     {
       id: 'pot', name: 'Buy pot', icon: <IconTrophy size={20} />, tone: 'amber', launch: 'optional',
       short: `Every ${ordinal(r.potEvery)} buy is a pot winner`,
-      when: 'Bonding curve', runs: 'Transfer hook program counts buys and records winners on chain',
+      when: 'Bonding curve', runs: 'Transfer hook records winners on chain; the keeper pays them in SOL',
       steps: [
         `The hook counts curve buys in order: the first buy in each slot that is at least ${pctOf(r.potMinBps)} of supply.`,
         `Every ${ordinal(r.potEvery)} counted buy is recorded on chain as a winner: wallet, buy number and slot.`,
-        'Winners are listed live on the token page.',
+        `The keeper pays new winners in SOL about every 5 min, from ${POT_SHARE_PCT}% of the token’s curve trading fees.`,
+        'Winners and their payouts are listed live on the token page.',
       ],
       settings: [
         { k: 'Winner every', v: `${r.potEvery} buys` },
         { k: 'Minimum buy', v: pctOf(r.potMinBps) },
         { k: 'Counted per slot', v: '1 buy' },
-        { k: 'Payouts', v: 'not live yet' },
+        { k: 'Payouts', v: `${POT_SHARE_PCT}% of curve fees, in SOL` },
       ],
-      limits: 'It is not random: anyone watching the count can try to time the winning buy. The hook only records winners; it cannot hold or send SOL, and payouts are not switched on yet.',
+      limits: 'It is not random: anyone watching the count can try to time the winning buy. The hook only records winners; the off chain keeper pays them, and winners since its last payout split the pot equally. The chain keeps the last 16 winners, so one pushed out before a payout is skipped and its share stays in the pot. At graduation, pot money with no winner left to pay goes to the buyback.',
       diagram: <PotDiagram every={r.potEvery} minText={pctOf(r.potMinBps)} />,
     },
     {

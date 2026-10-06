@@ -4,7 +4,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Meta } from '../lib/types';
 import { pageVars, pctOf, approxDuration } from '../lib/shared';
-import { hookList, optionalHookList, SNIPER_DEFAULT, FLYWHEEL_SPLIT, RULES_DEFAULT, ordinal, windowText } from '../lib/hookInfo';
+import { hookList, optionalHookList, SNIPER_DEFAULT, FLYWHEEL_SPLIT, POT_SHARE_PCT, RULES_DEFAULT, ordinal, windowText } from '../lib/hookInfo';
 import { LifecycleDiagram, CapDiagram, SniperFeeDiagram, FlywheelDiagram, LiftDiagram, MaxBuyDiagram, SlotLimitDiagram, PotDiagram, CooldownDiagram } from '../components/HookArt';
 import { RulesAndRisks } from '../components/Disclosures';
 import { Addr, Link } from '../components/bits';
@@ -142,7 +142,7 @@ export function DocsPage({ meta }: { meta: Meta }) {
         </Section>
 
         <Section id="burn" title="Buyback & burn">
-          <p>A keeper bot claims each token’s trading fees on a timer (about every 5 minutes). It sends {FLYWHEEL_SPLIT.devPct}% to the dev wallet and uses {FLYWHEEL_SPLIT.buybackPct}% to buy the token on its pool, then burns everything it bought. Fees build up while the token is on the curve; buybacks start after graduation.</p>
+          <p>A keeper bot claims each token’s trading fees on a timer (about every 5 minutes). It sends {FLYWHEEL_SPLIT.devPct}% to the dev wallet and uses {FLYWHEEL_SPLIT.buybackPct}% to buy the token on its pool, then burns everything it bought. Fees build up while the token is on the curve; buybacks start after graduation. A token with a buy pot puts {POT_SHARE_PCT}% of its curve fees in the pot instead, so those fees split {FLYWHEEL_SPLIT.devPct}% dev, {POT_SHARE_PCT}% pot, {FLYWHEEL_SPLIT.buybackPct - POT_SHARE_PCT}% buyback.</p>
           <Figure caption="Where trading fees go."><FlywheelDiagram {...FLYWHEEL_SPLIT} /></Figure>
           <p>Every claim, buy and burn is public and linked to its transaction on <Link to="/transparency" className="link">Transparency</Link>. Burning supply doesn’t set or support any price.</p>
         </Section>
@@ -177,7 +177,9 @@ export function DocsPage({ meta }: { meta: Meta }) {
           <ul className="docs-list">
             <li>Winners are picked by order, not at random. Anyone watching the count can try to time the winning buy.</li>
             <li>The hook only records winners: a transfer hook can approve or refuse a transfer, but it can’t hold or send SOL.</li>
-            <li>Payouts aren’t switched on yet. The token page shows the count, the next winning buy number and the latest winners.</li>
+            <li>{POT_SHARE_PCT}% of the token’s curve trading fees fill the pot. The keeper pays new winners in SOL about every 5 minutes; winners since its last payout split the pot equally, and with no new winner it carries over to the next one.</li>
+            <li>The chain keeps the last 16 winners. A winner pushed out before the keeper pays them is skipped, and their share stays in the pot.</li>
+            <li>After graduation there are no new winners: pot money with nobody left to pay goes to the buyback. The token page shows each winner and their payout.</li>
           </ul>
         </Section>
 
@@ -231,7 +233,7 @@ export function DocsPage({ meta }: { meta: Meta }) {
           <Faq q="Can the rules be changed after launch?">Only in one direction. The switch can raise or remove the cap; nothing can tighten it or add a new one.</Faq>
           <Faq q="Can I always sell?">Yes. Selling back into the curve is never blocked by the cap.</Faq>
           <Faq q="What happens at graduation?">Liquidity moves to a locked DAMM v2 pool, the cap ends, and buyback and burn starts.</Faq>
-          <Faq q="Where do the fees go?">{FLYWHEEL_SPLIT.devPct}% to the dev wallet, {FLYWHEEL_SPLIT.buybackPct}% to buying the token back and burning it. Every step is on the Transparency page.</Faq>
+          <Faq q="Where do the fees go?">{FLYWHEEL_SPLIT.devPct}% to the dev wallet, {FLYWHEEL_SPLIT.buybackPct}% to buying the token back and burning it (a token with a buy pot puts {POT_SHARE_PCT}% of its curve fees in the pot instead). Every step is on the Transparency page.</Faq>
           <Faq q="What are the optional hooks?">A max single buy, a per-slot buy limit, a buy pot and slow mode. A launch can switch any of them on; they’re off by default. A launch can also lock a creator share until after graduation. The token page shows which ones a token has.</Faq>
           <Faq q="Can anyone launch a token?">Not yet. Launching is limited to studio wallets during this test.</Faq>
         </Section>

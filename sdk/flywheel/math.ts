@@ -9,6 +9,54 @@ export function splitFees(claimed: bigint): { dev: bigint; buyback: bigint } {
   return { dev, buyback: claimed - dev };
 }
 
+/** Pot variant of the §4 split: dev = floor(claimed × 15 / 100) exactly as splitFees, pot = floor(potBase × potPct / 100)
+ *  where potBase is the part of `claimed` that came from bonding-curve fees (the pot is a curve-phase game), buyback =
+ *  the remainder (dust to buyback). potPct 0 gives splitFees' numbers with pot 0. */
+export function splitWithPot(claimed: bigint, potPct: bigint, potBase: bigint): { dev: bigint; pot: bigint; buyback: bigint } {
+  const { dev } = splitFees(claimed);
+  if (potPct < 0n || DEV_SHARE_PCT + potPct > 100n) throw new Error(`bad pot share ${potPct}`);
+  if (potBase < 0n || potBase > claimed) throw new Error(`pot base ${potBase} outside 0..${claimed}`);
+  const pot = (potBase * potPct) / 100n;
+  return { dev, pot, buyback: claimed - dev - pot };
+}
+
+/** One recorded pot win still visible in the 16-slot ring buffer (owner = the winning buyer's wallet). */
+export interface PotWin { win: number; owner: string }
+export interface PotPlan {
+  payouts: { win: number; owner: string; lamports: bigint }[];
+  /** unpaid wins pushed out of the ring before they could be paid (their share stays in the pot) */
+  overwritten: number;
+  /** pot left in the treasury for later winners after these payouts */
+  held: bigint;
+  /** pot moved to the buyback: only once the pot is closed (graduated), when no unpaid winner is left to pay */
+  release: bigint;
+  /** the paid cursor once every payout in this plan has landed */
+  paidThrough: bigint;
+  reason: 'none' | 'no_new_wins' | 'all_unpaid_overwritten' | 'pot_empty' | 'below_min';
+}
+/** Plan one run's pot payouts (pure). `wins` = wins recorded on chain, `paidWins` = the paid cursor, `ringWins` = wins
+ *  still visible in the ring. The pot splits equally among the unpaid wins still visible; dust stays in the pot.
+ *  Unpaid wins already pushed out of the ring are counted in `overwritten` and skipped; their share stays in the pot.
+ *  Open pot (curve still running): a share below `minPayout` pays nobody yet and the whole pot carries.
+ *  Closed pot (graduated: no new wins can happen): the minimum is waived, unpaid winners get whatever the pot holds,
+ *  and anything left over goes to the buyback instead of sitting in the treasury forever. */
+export function planPotPayouts(potPending: bigint, wins: bigint, paidWins: bigint, ringWins: PotWin[], minPayout: bigint, open = true): PotPlan {
+  if (potPending < 0n || wins < 0n || paidWins < 0n || minPayout < 0n) throw new Error('negative pot input');
+  if (paidWins > wins) throw new Error(`paid cursor ${paidWins} ahead of wins ${wins}`);
+  const unpaid = ringWins.filter(w => BigInt(w.win) > paidWins && BigInt(w.win) <= wins).sort((a, b) => a.win - b.win);
+  if (new Set(unpaid.map(w => w.win)).size !== unpaid.length) throw new Error('duplicate win numbers in the ring');
+  const overwritten = Number(wins - paidWins) - unpaid.length;
+  if (overwritten < 0) throw new Error('ring holds more unpaid wins than the chain counter');
+  const none = (reason: PotPlan['reason'], paidThrough: bigint): PotPlan =>
+    open ? { payouts: [], overwritten, held: potPending, release: 0n, paidThrough, reason } : { payouts: [], overwritten, held: 0n, release: potPending, paidThrough: wins, reason };
+  if (unpaid.length === 0) return none(wins === paidWins ? 'no_new_wins' : 'all_unpaid_overwritten', wins);
+  const share = potPending / BigInt(unpaid.length);
+  if (share === 0n) return none('pot_empty', paidWins);
+  if (open && share < minPayout) return none('below_min', paidWins);
+  const left = potPending - share * BigInt(unpaid.length);
+  return { payouts: unpaid.map(w => ({ win: w.win, owner: w.owner, lamports: share })), overwritten, held: open ? left : 0n, release: open ? 0n : left, paidThrough: wins, reason: 'none' };
+}
+
 /** §5: min_out = outRaw × (10,000 − slippage_bps) / 10,000 (floor). */
 export function minOut(outRaw: bigint, slippageBps: number): bigint {
   if (slippageBps < 0 || slippageBps >= 10_000) throw new Error('bad slippage');

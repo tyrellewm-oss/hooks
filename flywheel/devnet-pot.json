@@ -1,0 +1,154 @@
+{
+ "cluster": "devnet",
+ "mint": "7b1GqZ4ekNABzgbm3bLtHwuU7NsXDfvzEpKEmcEk3qMD",
+ "decimals": 6,
+ "live": true,
+ "paused": false,
+ "pause_reason": "",
+ "state": "waiting_for_graduation",
+ "claimedSol": "0.003165220",
+ "devSol": "0.000474783",
+ "potSol": "0.000316522",
+ "potPendingSol": "0.000000000",
+ "potReleasedSol": "0.000000000",
+ "spentSol": "0.000000000",
+ "reserveSol": "0.002373915",
+ "burnedTokens": "0.000000",
+ "supplyTokens": "1000000000.000000",
+ "pctOfSupply": "0.0000",
+ "totals_raw": {
+  "claimed_lamports": "3165220",
+  "dev_lamports": "474783",
+  "spent_lamports": "0",
+  "burned_raw": "0",
+  "gas_lamports": "30000",
+  "rent_refund_lamports": "0",
+  "pot_lamports": "316522",
+  "pot_released_lamports": "0",
+  "pending_lamports": "2373915",
+  "unsplit_lamports": "0",
+  "unburned_raw": "0",
+  "pot_pending_lamports": "0"
+ },
+ "burns": [],
+ "pot_payouts": [
+  {
+   "at": "2026-10-06T19:38:44.000Z",
+   "win": 1,
+   "owner": "4Dau3HynNLpxxov8u9zs4biRjBPw9MdbDXGeopRBighx",
+   "sol": "0.000316522",
+   "sig": "3PeAKxGgGvzXrRdUvb5RGsgDMpg3Nnr71oYfjo6U7k7wp6Y1baBxnksRh6HhVf8qtQ6K1je7GRw3xGskAdUzhEcL",
+   "run_id": "devnet-2026-10-06T19:35:00Z"
+  }
+ ],
+ "runs": [
+  {
+   "run_id": "devnet-2026-10-06T19:35:00Z",
+   "started_at": "2026-10-06T19:38:34.580Z",
+   "status": "reconcile_mismatch",
+   "reason": "reconciliation failed: {\"treasury_wsol_raw\":\"3829631\",\"expected_treasury_wsol_raw\":\"2373915\",\"treasury_main_raw\":\"0\",\"expected_treasury_main_raw\":\"0\",\"dev_wsol_raw\":\"765926\",\"expected_dev_wsol_raw\":\"765926\",\"treasury_native_lamports\":\"0\",\"supply_raw\":\"1000000000000000\",\"supply_drop_since_first_run\":\"0\",\"burned_raw_total\":\"0\",\"ok\":false}",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): hook upgrade authority and lift authority are the same key 6KqYâ€¦",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 6KqYâ€¦ is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 6KqYâ€¦ is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "gqE9TgfzdT6SVCbTzY7CswpzZiZxgcn1yMBWJ8pbyjZ",
+     "claimable_before": "3165220",
+     "claimed_lamports": "3165220",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "4zKK9crW31bL7axxpk5ucUee2rWNQA3ctdWCfS2UuoV9PehcSTXRqZHA9PjksBsbNnF6787jcgpJhYS6admf1wmK",
+     "claimable_after": "0"
+    }
+   ],
+   "dev_lamports": "474783",
+   "dev_sig": "2KpeUGdfeqFVmEE8pbbpuyKMZ51WLomPZwFp2NbGNuNigFbtfKGwUczEXLDtEtUvwcNHcSAY1HEgiJDZPGXXacM5",
+   "buyback_lamports": "2373915",
+   "carryover_lamports": "2373915",
+   "carryover_reason": "waiting_for_graduation",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "30000",
+   "txs": [
+    "4zKK9crW31bL7axxpk5ucUee2rWNQA3ctdWCfS2UuoV9PehcSTXRqZHA9PjksBsbNnF6787jcgpJhYS6admf1wmK",
+    "2KpeUGdfeqFVmEE8pbbpuyKMZ51WLomPZwFp2NbGNuNigFbtfKGwUczEXLDtEtUvwcNHcSAY1HEgiJDZPGXXacM5",
+    "3PeAKxGgGvzXrRdUvb5RGsgDMpg3Nnr71oYfjo6U7k7wp6Y1baBxnksRh6HhVf8qtQ6K1je7GRw3xGskAdUzhEcL"
+   ],
+   "pot_lamports": "316522",
+   "pot_payouts": [
+    {
+     "win": 1,
+     "owner": "4Dau3HynNLpxxov8u9zs4biRjBPw9MdbDXGeopRBighx",
+     "lamports": "316522",
+     "sig": "3PeAKxGgGvzXrRdUvb5RGsgDMpg3Nnr71oYfjo6U7k7wp6Y1baBxnksRh6HhVf8qtQ6K1je7GRw3xGskAdUzhEcL"
+    }
+   ],
+   "reconcile": {
+    "treasury_wsol_raw": "3829631",
+    "expected_treasury_wsol_raw": "2373915",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "765926",
+    "expected_dev_wsol_raw": "765926",
+    "treasury_native_lamports": "0",
+    "supply_raw": "1000000000000000",
+    "supply_drop_since_first_run": "0",
+    "burned_raw_total": "0",
+    "ok": false
+   },
+   "finished_at": "2026-10-06T19:38:47.815Z",
+   "test_knobs": []
+  },
+  {
+   "run_id": "devnet-2026-10-06T19:40:00Z",
+   "started_at": "2026-10-06T19:43:35.431Z",
+   "status": "waiting_for_graduation",
+   "reason": "main token DBC pool isMigrated = 0: no swap, buyback held",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): hook upgrade authority and lift authority are the same key 6KqY…",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 6KqY… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 6KqY… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "gqE9TgfzdT6SVCbTzY7CswpzZiZxgcn1yMBWJ8pbyjZ",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "2373915",
+   "carryover_reason": "waiting_for_graduation",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "reconcile": {
+    "treasury_wsol_raw": "2373915",
+    "expected_treasury_wsol_raw": "2373915",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "474783",
+    "expected_dev_wsol_raw": "474783",
+    "treasury_native_lamports": "0",
+    "supply_raw": "1000000000000000",
+    "supply_drop_since_first_run": "0",
+    "burned_raw_total": "0",
+    "ok": true
+   },
+   "finished_at": "2026-10-06T19:43:38.740Z",
+   "test_knobs": []
+  }
+ ],
+ "current_run": null,
+ "route_pool": null,
+ "main_dbc_pool": "gqE9TgfzdT6SVCbTzY7CswpzZiZxgcn1yMBWJ8pbyjZ"
+}

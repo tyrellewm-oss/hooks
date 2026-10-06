@@ -1,14 +1,16 @@
-// Flywheel keeper (spec v1.2.1): claim → split 15/85 → graduation gate → DAMM v2 swap → Token-2022 BurnChecked → log.
+// Flywheel keeper (spec v1.2.1): claim → split 15/85 (15/10/75 on curve fees with a buy pot) → pot payouts → graduation gate →
+// DAMM v2 swap → Token-2022 BurnChecked → log.
 // DEVNET ONLY in this build. Every tx: fee payer = gas wallet, SPL memo `flywheel:<run_id>:<stage>`, journaled as
 // pending (with its signature) BEFORE it is sent, resolved on restart, never re-sent once landed.
 import BN from 'bn.js';
-import { Connection, Keypair, PublicKey, Transaction, TransactionInstruction, ComputeBudgetProgram, type ParsedTransactionWithMeta } from '@solana/web3.js';
-import { NATIVE_MINT, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync, createTransferCheckedInstruction, createBurnCheckedInstruction, unpackAccount, getMint } from '@solana/spl-token';
+import { randomBytes } from 'node:crypto';
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, ComputeBudgetProgram, type ParsedTransactionWithMeta } from '@solana/web3.js';
+import { NATIVE_MINT, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, ACCOUNT_SIZE, getAssociatedTokenAddressSync, createTransferCheckedInstruction, createBurnCheckedInstruction, createInitializeAccount3Instruction, createCloseAccountInstruction, unpackAccount, getMint } from '@solana/spl-token';
 import { CpAmm, CP_AMM_PROGRAM_ID, derivePositionNftAccount, getUnClaimLpFee } from '@meteora-ag/cp-amm-sdk';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { utils as anchorUtils } from '@coral-xyz/anchor';
 const bs58 = anchorUtils.bytes.bs58;
-import { splitFees, minOut, spotOutBtoA, deviationBps, planSwap, runIdFor, historyWarning, fmtSol, fmtTokens, pctOf } from './math.js';
+import { splitWithPot, planPotPayouts, minOut, spotOutBtoA, deviationBps, planSwap, runIdFor, historyWarning, fmtSol, fmtTokens, pctOf } from './math.js';
 import { checkKeyConfig, KEEPER_KEY_ROLES, type KeeperConfig, type KeeperKeyRole, type Source, type SourceDbc, type SourceDamm } from './config.js';
 import { Store, durableWrite, ser } from './store.js';
 import { keeperStartChecks, KeyRuleRefusal } from '../keyrules.js';
@@ -17,7 +19,7 @@ import { classifyCluster } from '../cluster.js';
 import { loadRegistry, assertRegistryMint, assertRegistryPoolPair, RegistryRefusal, RegistryPairRefusal, REGISTRY_PATH } from '../registry.js';
 import { checkPriceConfig, computeTwap, checkSpotVsTwap, checkIndepVsTwap, fetchIndependent, anchoredMinOut, readSamples, samplesPath, devBps, PriceRefusal, PriceConfigRefusal, warmupCeilingS, indepApiKey, type HttpGet } from './price_source.js';
 import { redactSecrets } from '../redact.js';   // ticket #5: secrets in failure reasons
-import { readHookAuthorities, resolveHookProgramId, type HookProgramResolution } from '../hook.js';
+import { readHookAuthorities, resolveHookProgramId, decodeRules, type HookProgramResolution, type RulesAcc } from '../hook.js';
 import { assertMintHook, graduationPhase, mintHookAuthorityFor, MintHookRefusal } from '../mint_hook.js';
 import { redactPaths, redactDeep } from '../redact.js';
 /** FW-17: every line the keeper prints or publishes goes through this (console output ends up in pasted logs). */
@@ -34,6 +36,8 @@ export interface ClaimLog { source: 'dbc' | 'damm_v2'; pool: string; claimable_b
 export interface RunLog {
   run_id: string; started_at: string; finished_at?: string; status: string; reason: string; overrides: string[]; warnings: string[];
   claims: ClaimLog[]; dev_lamports: string; dev_sig: string; buyback_lamports: string; carryover_lamports: string; carryover_reason: string;
+  /** pot share carved from this run's claims, and the pot payouts this run sent (one tx per winner) */
+  pot_lamports?: string; pot_payouts?: { win: number; owner: string; lamports: string; sig: string }[];
   rent_refund_lamports: string;
   swap?: { route: string; pool: string; in_lamports: string; min_out_raw: string; out_raw: string; quote_out_raw: string; spot_out_raw: string; slippage_bps: number; price_impact_bps: number; spot_deviation_bps: number; halvings: number; forced_fail: boolean; sig: string; status: string };
   burn?: { burned_raw: string; tx_supply_change_raw: string; token_delta_raw: string; supply_before: string; supply_after: string; verified: boolean; sig: string };
@@ -47,7 +51,14 @@ export interface RunLog {
 export interface KeeperState {
   version: 1; name: string; cluster: string; mint: string; decimals: number;
   pending_lamports: string; unsplit_lamports: string; unburned_raw: string;
-  totals: { claimed_lamports: string; dev_lamports: string; spent_lamports: string; burned_raw: string; gas_lamports: string; rent_refund_lamports: string };
+  /** the part of unsplit_lamports that came from bonding-curve (DBC) claims: the only fees the pot takes a share of */
+  unsplit_curve_lamports?: string;
+  /** pot share of claims not yet paid out (sits in the treasury wSOL account alongside pending/unsplit) */
+  pot_pending_lamports?: string;
+  /** wins paid (or skipped as overwritten) so far: the keeper only pays wins above this cursor, never twice */
+  pot_paid_wins?: string;
+  pot_payouts?: { at: string; win: number; owner: string; sol: string; lamports: string; sig: string; run_id: string }[];
+  totals: { claimed_lamports: string; dev_lamports: string; spent_lamports: string; burned_raw: string; gas_lamports: string; rent_refund_lamports: string; pot_lamports?: string; pot_released_lamports?: string };
   dev_baseline_raw: string | null; first_supply_raw: string | null; last_supply_raw: string | null;
   consecutive_failures: number; paused: boolean; pause_reason: string;
   /** ticket #5: chain slot/time of the first run that saw graduation (samples before it never count); cleared if the pool reads as not graduated */
@@ -60,8 +71,8 @@ export interface KeeperState {
 }
 export const initState = (cfg: KeeperConfig): KeeperState => ({
   version: 1, name: cfg.name, cluster: cfg.cluster, mint: cfg.main_mint, decimals: cfg.main_decimals,
-  pending_lamports: '0', unsplit_lamports: '0', unburned_raw: '0',
-  totals: { claimed_lamports: '0', dev_lamports: '0', spent_lamports: '0', burned_raw: '0', gas_lamports: '0', rent_refund_lamports: '0' },
+  pending_lamports: '0', unsplit_lamports: '0', unburned_raw: '0', unsplit_curve_lamports: '0', pot_pending_lamports: '0', pot_paid_wins: '0', pot_payouts: [],
+  totals: { claimed_lamports: '0', dev_lamports: '0', spent_lamports: '0', burned_raw: '0', gas_lamports: '0', rent_refund_lamports: '0', pot_lamports: '0', pot_released_lamports: '0' },
   dev_baseline_raw: null, first_supply_raw: null, last_supply_raw: null, consecutive_failures: 0, paused: false, pause_reason: '',
   price_history_x1e9: [], burns: [], current: null, runs: [],
 });
@@ -334,8 +345,11 @@ export class Keeper {
       this.save(s);
       // 1. claims
       for (const src of sources) await this.claim(s, run, src);
-      // 2. split
-      await this.split(s, run);
+      // 2. split (a pot share is carved only when the token's rules account runs a pot, and only from curve fees)
+      const pot = await this.readPot();
+      await this.split(s, run, pot ? BigInt(this.cfg.pot!.share_pct) : 0n);
+      // 2b. pot payouts: native SOL to the winners recorded on chain
+      if (pot) await this.potPayout(s, run, pot);
       // 3. gate
       const main: any = await dbcPool(this.dbc, new PublicKey(this.cfg.main_dbc_pool));
       if (!main.isMigrated) {
@@ -406,17 +420,34 @@ export class Keeper {
       const rent = this.lamportDelta(tx, this.keys.treasury.publicKey); // treasury native lamports: 0 with pre-created ATAs (FW-20)
       if (stage === 'claim_dbc' && claimed !== B(it.max_quote)) throw new FailClosed('claim_mismatch', `claim_dbc moved ${claimed} != max ${it.max_quote}`, true);
       s.unsplit_lamports = add(s.unsplit_lamports, claimed); s.totals.claimed_lamports = add(s.totals.claimed_lamports, claimed);
+      if (stage === 'claim_dbc') s.unsplit_curve_lamports = add(s.unsplit_curve_lamports ?? '0', claimed);
       s.totals.rent_refund_lamports = add(s.totals.rent_refund_lamports, rent); run.rent_refund_lamports = add(run.rent_refund_lamports, rent);
       const c = run.claims.find(x => x.source === it.source && x.pool === it.pool)!;
       c.claimed_lamports = claimed.toString(); c.claimed_vs_read_lamports = (claimed - B(c.claimable_before)).toString(); c.rent_refund_lamports = rent.toString(); c.sig = st.sig;
       this.confirm(s, run, stage, { claimed_lamports: claimed.toString(), rent_refund_lamports: rent.toString(), slot: tx.slot });
     } else if (stage === 'dev') {
-      const dev = B(it.dev), bb = B(it.buyback);
+      const dev = B(it.dev), pot = B(it.pot), bb = B(it.buyback);
       const dDelta = this.tokenDelta(tx, this.dWsol), tDelta = this.tokenDelta(tx, this.tWsol);
       if (dDelta !== dev || tDelta !== -dev) throw new FailClosed('reconcile_mismatch', `dev transfer deltas dev=${dDelta} treasury=${tDelta} expected ±${dev}`, true);
-      s.totals.dev_lamports = add(s.totals.dev_lamports, dev); s.pending_lamports = add(s.pending_lamports, bb); s.unsplit_lamports = (B(s.unsplit_lamports) - dev - bb).toString();
-      run.dev_lamports = dev.toString(); run.buyback_lamports = bb.toString(); run.dev_sig = st.sig;
-      this.confirm(s, run, stage, { dev, buyback: bb });
+      s.totals.dev_lamports = add(s.totals.dev_lamports, dev); s.pending_lamports = add(s.pending_lamports, bb); s.pot_pending_lamports = add(s.pot_pending_lamports ?? '0', pot);
+      s.unsplit_lamports = (B(s.unsplit_lamports) - dev - pot - bb).toString();
+      const curveLeft = B(s.unsplit_curve_lamports) - B(it.pot_base); s.unsplit_curve_lamports = (curveLeft > 0n ? curveLeft : 0n).toString();
+      run.dev_lamports = dev.toString(); run.buyback_lamports = bb.toString(); run.dev_sig = st.sig; run.pot_lamports = pot.toString();
+      this.confirm(s, run, stage, { dev, pot, buyback: bb });
+    } else if (stage.startsWith('pot_w')) {
+      // `rent` is only in intents from the first payout build, which closed the temporary account to the winner
+      const amt = B(it.lamports), rent = B(it.rent), owner = new PublicKey(it.owner);
+      const tDelta = this.tokenDelta(tx, this.tWsol), wDelta = this.lamportDelta(tx, owner), gDelta = this.lamportDelta(tx, this.keys.gas.publicKey);
+      const fee = BigInt(tx.meta?.fee ?? 0);
+      if (tDelta !== -amt || wDelta !== amt + rent || gDelta !== -fee - rent)
+        throw new FailClosed('reconcile_mismatch', `${stage}: treasury wSOL ${tDelta}, winner ${wDelta}, gas ${gDelta}; expected -${amt}, +${amt + rent}, -${fee + rent}`, true);
+      s.pot_pending_lamports = (B(s.pot_pending_lamports) - amt).toString();
+      s.totals.pot_lamports = add(s.totals.pot_lamports ?? '0', amt);
+      const win = Number(it.win);
+      if (win > Number(B(s.pot_paid_wins ?? '0'))) s.pot_paid_wins = String(win);
+      (s.pot_payouts ??= []).push({ at: new Date((tx.blockTime ?? Date.now() / 1000) * 1000).toISOString(), win, owner: it.owner, sol: fmtSol(amt), lamports: amt.toString(), sig: st.sig, run_id: run.run_id });
+      (run.pot_payouts ??= []).push({ win, owner: it.owner, lamports: amt.toString(), sig: st.sig });
+      this.confirm(s, run, stage, { win, owner: it.owner, lamports: amt.toString() });
     } else if (stage === 'swap') {
       const inL = B(it.in_lamports);
       const w = this.tokenDelta(tx, this.tWsol), out = this.tokenDelta(tx, this.tMain);
@@ -495,16 +526,74 @@ export class Keeper {
     });
   }
 
-  private async split(s: KeeperState, run: RunLog) {
+  private async split(s: KeeperState, run: RunLog, potPct = 0n) {
     if (run.stages.dev?.status === 'confirmed') return;
     const unsplit = B(s.unsplit_lamports);
     if (unsplit === 0n) return;
-    const { dev, buyback } = splitFees(unsplit);
-    if (dev === 0n) { s.pending_lamports = add(s.pending_lamports, buyback); s.unsplit_lamports = '0'; run.buyback_lamports = buyback.toString(); this.save(s); return; }
+    const curve = B(s.unsplit_curve_lamports), potBase = curve < unsplit ? curve : unsplit;
+    const { dev, pot, buyback } = splitWithPot(unsplit, potPct, potBase);
+    if (dev === 0n) {
+      s.pending_lamports = add(s.pending_lamports, buyback); s.pot_pending_lamports = add(s.pot_pending_lamports ?? '0', pot); s.unsplit_lamports = '0'; s.unsplit_curve_lamports = '0';
+      run.buyback_lamports = buyback.toString(); run.pot_lamports = pot.toString(); this.save(s); return;
+    }
     if (run.stages.dev && run.stages.dev.status !== 'pending') delete run.stages.dev;
     const ix = createTransferCheckedInstruction(this.tWsol, NATIVE_MINT, this.dWsol, this.keys.treasury.publicKey, dev, 9, [], TOKEN_PROGRAM_ID);
-    const tx = await this.sendStage(s, run, 'dev', [ix], [this.keys.treasury], { dev: dev.toString(), buyback: buyback.toString(), unsplit: unsplit.toString() });
+    const tx = await this.sendStage(s, run, 'dev', [ix], [this.keys.treasury], { dev: dev.toString(), pot: pot.toString(), pot_base: potBase.toString(), buyback: buyback.toString(), unsplit: unsplit.toString() });
     this.applyEffect(s, run, 'dev', tx);
+  }
+
+  /** This token's pot, when the run applies one: cfg.pot set AND the token's rules account exists with potEvery > 0.
+   *  Open while the main DBC pool has not migrated (wins can still happen); closed after graduation. */
+  private async readPot(): Promise<{ rules: RulesAcc; open: boolean } | null> {
+    if (!this.cfg.pot) return null;
+    const hook = new PublicKey(this.cfg.hook_program);
+    const [pda] = PublicKey.findProgramAddressSync([Buffer.from('rules'), this.mint.toBuffer()], hook);
+    const ai = await this.conn.getAccountInfo(pda, 'confirmed');
+    if (!ai) return null;
+    if (!ai.owner.equals(hook)) throw new FailClosed('mismatch_rules', `rules account ${pda.toBase58()} is owned by ${ai.owner.toBase58()}, not the hook program`, true);
+    const rules = decodeRules(ai.data);
+    if (rules.potEvery === 0) return null;
+    const main: any = await dbcPool(this.dbc, new PublicKey(this.cfg.main_dbc_pool));
+    return { rules, open: !main.isMigrated };
+  }
+  /** Pay the pot to the winners the rules account records, in native SOL, one tx per winner (stage pot_w<n>). The prize
+   *  is unwrapped through a temporary wSOL account that gas funds and gets back in the same tx, so the winner needs no
+   *  token account and receives exactly the prize, and gas pays only the fee. */
+  private async potPayout(s: KeeperState, run: RunLog, pot: { rules: RulesAcc; open: boolean }) {
+    const { rules, open } = pot;
+    const pending = B(s.pot_pending_lamports);
+    const ringWins = rules.winners.map((w, i) => ({ win: Number(rules.wins) - i, owner: w.owner.toBase58() }));
+    const plan = planPotPayouts(pending, rules.wins, B(s.pot_paid_wins), ringWins, B(this.cfg.pot!.min_payout_lamports), open);
+    const note = (m: string) => { if (!run.warnings.includes(m)) { run.warnings.push(m); this.log(`[${run.run_id}] ${m}`); } };
+    if (plan.overwritten > 0) note(`pot: ${plan.overwritten} unpaid win(s) left the 16-slot ring before payout; their share stays in the pot`);
+    if (plan.reason === 'below_min') note(`pot: ${fmtSol(pending)} SOL is below the minimum payout per winner; held for the next run`);
+    const rent = plan.payouts.length ? BigInt(await this.conn.getMinimumBalanceForRentExemption(ACCOUNT_SIZE)) : 0n;
+    const T = this.keys.treasury.publicKey, G = this.keys.gas.publicKey;
+    for (const p of plan.payouts) {
+      const stage = `pot_w${p.win}`;
+      if (run.stages[stage]?.status === 'confirmed') continue;
+      if (run.stages[stage] && run.stages[stage].status !== 'pending') delete run.stages[stage];
+      // a fresh random seed: nobody can learn the temporary account's address in advance and pre-fund it to block the payout
+      const seed = `pot${randomBytes(12).toString('hex')}`;
+      const aux = await PublicKey.createWithSeed(T, seed, TOKEN_PROGRAM_ID);
+      const ixs = [
+        SystemProgram.createAccountWithSeed({ fromPubkey: G, basePubkey: T, seed, newAccountPubkey: aux, lamports: Number(rent), space: ACCOUNT_SIZE, programId: TOKEN_PROGRAM_ID }),
+        createInitializeAccount3Instruction(aux, NATIVE_MINT, T, TOKEN_PROGRAM_ID),
+        createTransferCheckedInstruction(this.tWsol, NATIVE_MINT, aux, T, p.lamports, 9, [], TOKEN_PROGRAM_ID),
+        createCloseAccountInstruction(aux, G, T, [], TOKEN_PROGRAM_ID),
+        SystemProgram.transfer({ fromPubkey: G, toPubkey: new PublicKey(p.owner), lamports: p.lamports }),
+      ];
+      const tx = await this.sendStage(s, run, stage, ixs, [this.keys.treasury], { win: String(p.win), owner: p.owner, lamports: p.lamports.toString(), seed });
+      this.applyEffect(s, run, stage, tx);
+    }
+    if (B(s.pot_paid_wins) < plan.paidThrough) s.pot_paid_wins = plan.paidThrough.toString();
+    if (plan.release > 0n) {
+      s.pot_pending_lamports = (B(s.pot_pending_lamports) - plan.release).toString();
+      s.pending_lamports = add(s.pending_lamports, plan.release);
+      s.totals.pot_released_lamports = add(s.totals.pot_released_lamports ?? '0', plan.release);
+      note(`pot: closed at graduation; ${fmtSol(plan.release)} SOL with no winner left to pay moved to the buyback`);
+    }
+    this.save(s);
   }
 
   /** Quote via the SDK on a fresh pool read; spot from an independent fresh read immediately before (hard check). */
@@ -537,8 +626,8 @@ export class Keeper {
       this.applyEffect(s, run, 'swap', tx);
       return;
     }
-    const unspent = (await this.tokenAmt(this.tWsol)) - B(s.unsplit_lamports);
-    if (unspent < 0n) throw new FailClosed('reconcile_mismatch', `treasury wSOL is below the unsplit claims (${unspent}) before the swap retry`, true);
+    const unspent = (await this.tokenAmt(this.tWsol)) - B(s.unsplit_lamports) - B(s.pot_pending_lamports);
+    if (unspent < 0n) throw new FailClosed('reconcile_mismatch', `treasury wSOL is below the unsplit claims and the pot (${unspent}) before the swap retry`, true);
     // only on-chain <= stored retries (amount = min(stored, on-chain) = on-chain). More on chain than stored (later
     // claims or stray wSOL) fails closed before any quote, build or send; the stage and the stored amount stay as they are.
     const stored = B(s.pending_lamports), amt = unspent < stored ? unspent : stored;
@@ -683,7 +772,7 @@ export class Keeper {
     const tw = await this.tokenAmt(this.tWsol), tm = await this.tokenAmt(this.tMain, this.mainProg), dw = await this.tokenAmt(this.dWsol);
     const tNative = BigInt(await this.conn.getBalance(this.keys.treasury.publicKey, 'confirmed'));
     const supply = await this.supply();
-    const expT = B(s.pending_lamports) + B(s.unsplit_lamports), expM = B(s.unburned_raw), expD = B(s.dev_baseline_raw) + B(s.totals.dev_lamports);
+    const expT = B(s.pending_lamports) + B(s.unsplit_lamports) + B(s.pot_pending_lamports), expM = B(s.unburned_raw), expD = B(s.dev_baseline_raw) + B(s.totals.dev_lamports);
     const supplyDrop = B(s.first_supply_raw) - supply;
     const r = {
       treasury_wsol_raw: tw.toString(), expected_treasury_wsol_raw: expT.toString(), treasury_main_raw: tm.toString(), expected_treasury_main_raw: expM.toString(),
@@ -745,10 +834,11 @@ export function publicLog(s: KeeperState, cfg: KeeperConfig) {
   return redactDeep({
     cluster: s.cluster, mint: s.mint, decimals: s.decimals, live: !s.paused, paused: s.paused, pause_reason: redact(s.pause_reason),
     state: s.paused ? 'paused' : s.runs.at(-1)?.status === 'waiting_for_graduation' ? 'waiting_for_graduation' : 'active',
-    claimedSol: fmtSol(B(s.totals.claimed_lamports)), devSol: fmtSol(B(s.totals.dev_lamports)), spentSol: fmtSol(B(s.totals.spent_lamports)), reserveSol: fmtSol(B(s.pending_lamports)),
+    claimedSol: fmtSol(B(s.totals.claimed_lamports)), devSol: fmtSol(B(s.totals.dev_lamports)), potSol: fmtSol(B(s.totals.pot_lamports)), potPendingSol: fmtSol(B(s.pot_pending_lamports)), potReleasedSol: fmtSol(B(s.totals.pot_released_lamports)), spentSol: fmtSol(B(s.totals.spent_lamports)), reserveSol: fmtSol(B(s.pending_lamports)),
     burnedTokens: fmtTokens(B(s.totals.burned_raw), s.decimals), supplyTokens: fmtTokens(supply, s.decimals), pctOfSupply: pctOf(B(s.totals.burned_raw), B(s.first_supply_raw)),
-    totals_raw: { ...s.totals, pending_lamports: s.pending_lamports, unsplit_lamports: s.unsplit_lamports, unburned_raw: s.unburned_raw },
+    totals_raw: { ...s.totals, pending_lamports: s.pending_lamports, unsplit_lamports: s.unsplit_lamports, unburned_raw: s.unburned_raw, pot_pending_lamports: s.pot_pending_lamports ?? '0' },
     burns: s.burns.map(b => ({ at: b.at, tokens: b.tokens, sol: b.sol, sig: b.sig, run_id: b.run_id })),
+    pot_payouts: (s.pot_payouts ?? []).map(p => ({ at: p.at, win: p.win, owner: p.owner, sol: p.sol, sig: p.sig, run_id: p.run_id })),
     runs: s.runs.map(strip), current_run: s.current ? strip(s.current) : null, route_pool: cfg.route_pool, main_dbc_pool: cfg.main_dbc_pool,
   }, redact);
 }

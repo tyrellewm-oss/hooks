@@ -35,6 +35,10 @@ export interface KeeperConfig {
   price_source: PriceSourceConfig;
   /** devnet-only: scripted trades between unattended runs (lamports bought then sold back on route_pool). */
   test_trades_between_runs?: string;
+  /** Pot payouts: `share_pct`% of each bonding-curve fee claim (taken from the buyback share; dev keeps 15%) goes to a
+   *  pot paid in native SOL to the winners the token's rules account records. Omitted = no pot stage; a token whose
+   *  rules account has no pot (potEvery 0) never accrues one either way. */
+  pot?: { share_pct: number; min_payout_lamports: string };
 }
 
 /** The keys the keeper loads and signs with. Every one of them goes through the §12a key-separation checks. */
@@ -61,6 +65,13 @@ export function checkKeyConfig(cfg: KeeperConfig): void {
   if (typeof d !== 'string' || d === '') throw new KeyRuleRefusal('refusing: dev_payout (the dev wallet pubkey) is missing');
   let pk: PublicKey; try { pk = new PublicKey(d); } catch { throw new KeyRuleRefusal(`refusing: dev_payout is not a valid address: ${d}`); }
   if (!PublicKey.isOnCurve(pk.toBytes())) throw new KeyRuleRefusal(`refusing: dev_payout ${d} is off-curve (a PDA); it must be a wallet address`);
+  const pot = (cfg as any).pot;
+  if (pot !== undefined) {
+    if (typeof pot !== 'object' || pot === null) throw new KeyRuleRefusal('refusing: pot must be an object { share_pct, min_payout_lamports }');
+    if (!Number.isInteger(pot.share_pct) || pot.share_pct < 1 || pot.share_pct > 50) throw new KeyRuleRefusal(`refusing: pot.share_pct must be an integer 1..50 (got ${String(pot.share_pct)})`);
+    let min: bigint; try { min = BigInt(pot.min_payout_lamports); } catch { throw new KeyRuleRefusal('refusing: pot.min_payout_lamports must be a lamport amount string'); }
+    if (min < 100_000n) throw new KeyRuleRefusal(`refusing: pot.min_payout_lamports ${min} is below 100000 (0.0001 SOL); a payout that small is mostly transaction fee`);
+  }
 }
 
 /** `--dev-payout <pubkey>` for setup scripts (scripts/flywheel_fw15.ts): required, and validated like `dev_payout`

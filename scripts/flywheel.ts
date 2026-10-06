@@ -239,8 +239,9 @@ async function tradeOne(c: Connection, side: 'buy' | 'sell', amount: bigint) {
     const claimed = log.runs.reduce((a: bigint, r: any) => a + r.claims.reduce((x: bigint, cl: any) => x + BigInt(cl.claimed_lamports), 0n), 0n);
     const dev = sum(r => r.dev_lamports), spent = log.runs.reduce((a: bigint, r: any) => a + (r.swap?.status === 'confirmed' ? BigInt(r.swap.in_lamports) : 0n), 0n);
     const burned = log.runs.reduce((a: bigint, r: any) => a + (r.burn?.verified ? BigInt(r.burn.burned_raw) : 0n), 0n);
+    const potPaid = log.runs.reduce((a: bigint, r: any) => a + (r.pot_payouts ?? []).reduce((x: bigint, p: any) => x + BigInt(p.lamports), 0n), 0n);
     const t = log.totals_raw;
-    const out = { sigs: arr.length, unresolved: bad, claimed_ok: claimed.toString() === t.claimed_lamports, dev_ok: dev.toString() === t.dev_lamports, spent_ok: spent.toString() === t.spent_lamports, burned_ok: burned.toString() === t.burned_raw,
+    const out = { sigs: arr.length, unresolved: bad, claimed_ok: claimed.toString() === t.claimed_lamports, dev_ok: dev.toString() === t.dev_lamports, spent_ok: spent.toString() === t.spent_lamports, burned_ok: burned.toString() === t.burned_raw, pot_ok: potPaid.toString() === (t.pot_lamports ?? '0'),
       burns_paired_with_swap: log.runs.filter((r: any) => r.burn?.sig).every((r: any) => r.swap?.status === 'confirmed'), totals: t };
     say(out, 1); ev({ kind: 'verify', ...out }); return;
   }

@@ -1,0 +1,62 @@
+{
+  "name": "devnet-rul",
+  "cluster": "devnet",
+  "main_mint": "2jgPeErJXC2ZrsnFYGFSs7GBjszVgJap4Btp6bTUqBg9",
+  "main_decimals": 6,
+  "main_token_program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "main_dbc_pool": "95AJg4HjR2XmsRXGUUGRvUAV3EvJKznGfZth4fFepGAq",
+  "route": "damm_v2_direct",
+  "route_pool": null,
+  "sources": [
+    {
+      "kind": "dbc",
+      "pool": "95AJg4HjR2XmsRXGUUGRvUAV3EvJKznGfZth4fFepGAq",
+      "config": "5QkVS2daaU5VNR9kgrPmmLjs7t2PPHvzwiPQmP6UadUz",
+      "base_mint": "2jgPeErJXC2ZrsnFYGFSs7GBjszVgJap4Btp6bTUqBg9"
+    }
+  ],
+  "keys": {
+    "claim_signer": "deployer",
+    "treasury": "fw_treasury",
+    "gas": "fw_gas"
+  },
+  "pinned_pubkeys": {
+    "claim_signer": "6KqYFdzKEFSvdjbNgC6T6MinFqEwt8XxiqGDTXHRkBdb",
+    "treasury": "BCo63HrVtH5wqd51JiCP9xvpasggYiMPRg8FfW4Bican",
+    "gas": "FYYkY3qCbBAiLs6cxK7JQwxFtFJvVT6u4n5S8hboDqja"
+  },
+  "dev_payout": "AtyHf5gRgJXHFFF4Yfmq9DmK1gkeiTqbftk378KNH5aL",
+  "hook_program": "4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y",
+  "hook_upgrade_authority": "6KqYFdzKEFSvdjbNgC6T6MinFqEwt8XxiqGDTXHRkBdb",
+  "hook_lift_authority": "6KqYFdzKEFSvdjbNgC6T6MinFqEwt8XxiqGDTXHRkBdb",
+  "hook_launch_authority": "GgPYhJirhczeieikcNnbx4DiomW2pYfZkLS6xBuLD658",
+  "max_swap_lamports_per_run": "20000000",
+  "max_slippage_bps": 100,
+  "max_price_impact_bps": 200,
+  "max_halvings": 3,
+  "price_band_pct": 10,
+  "price_source": {
+    "sample_interval_s": 15,
+    "twap_window_s": 1800,
+    "min_coverage_pct": 80,
+    "max_sample_gap_s": 60,
+    "max_latest_sample_age_s": 30,
+    "max_spot_twap_dev_bps": 300,
+    "max_indep_twap_dev_bps": 500,
+    "indep_max_age_slots": 150,
+    "require_independent": true,
+    "min_post_grad_age_s": 1800,
+    "indep_price_url": "https://api.jup.ag/price/v3",
+    "indep_timeout_ms": 5000
+  },
+  "min_claim_lamports": "1000000",
+  "cadence_seconds": 300,
+  "auto_pause_after_failures": 3,
+  "gas_min_lamports": "10000000",
+  "state_dir": ".flywheel/devnet-rul",
+  "public_log": "flywheel/devnet-rul.json",
+  "pot": {
+    "share_pct": 10,
+    "min_payout_lamports": "150000"
+  }
+}

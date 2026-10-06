@@ -220,3 +220,22 @@ Launched **$HKSLW** `7RPuuTJXGtgwkc9rwRMeZp7byrckXQfnwc6To5hEDZA4` (pool `22mRva
 - Token page API for the mint shows `cooldownSlots: 50` and `creatorLock {pct 5, slots 216000}`, so the Slow mode and Creator lock cards render on /token. Registered in keeper/registry.json (devnet).
 
 With this, **all 9 hooks are proven working live on devnet** (pot *payouts* remain a separate, not-yet-built feature; recording works).
+
+## Devnet — buy pot payouts built and proven live (Oct 6, 2026)
+
+The keeper now pays buy-pot winners. Per keeper config: `pot: { share_pct: 10, min_payout_lamports }`.
+- **Funding**: 10% of each bonding-curve (DBC) fee claim goes to the pot, taken from the buyback share: curve fees split 15% dev / 10% pot / 75% buyback. Post-graduation LP fees stay 15/85. Tokens without a pot are untouched.
+- **Payout**: every run (~5 min) the keeper reads the token's rules account; winners since the last payout split the pot equally and are paid in native SOL, one tx per winner. With no new winner the pot carries over. A share below `min_payout_lamports` waits for the pot to grow.
+- **Exactness**: the prize is unwrapped through a temporary wSOL account that gas funds and gets back in the same tx, so the winner receives exactly the prize and gas pays only the fee. The temp account uses a random seed so nobody can pre-fund its address to block a payout.
+- **Never twice**: a paid cursor (`pot_paid_wins`) plus the keeper's journaled stages; a pause or crash mid-payout resumes without paying anyone twice (tested).
+- **Ring limit**: the chain keeps the last 16 winners. A win pushed out before the keeper pays it is skipped with a warning; its share stays in the pot.
+- **Graduation**: no new wins can happen, so the minimum is waived for any unpaid winners, and pot money with nobody left to pay moves to the buyback instead of sitting in the treasury.
+- Reconciliation and `verify` (new `pot_ok`) include the pot. Also fixed: the expired-swap retry now leaves pot money out of the unspent amount, so it wouldn't fail closed whenever a pot balance existed.
+
+**Live, devnet**
+- `$HKRUL` `2jgPeErJXC2ZrsnFYGFSs7GBjszVgJap4Btp6bTUqBg9`: first build. Claim 1,940,954 → dev 291,143 / pot 194,095 / reserve 1,455,716; win #1 (buy #10, buyer A) paid 194,095 (tx `XUhAyLgT…`). That first build also passed the temp account's rent to the winner at gas's expense, which the second build fixes.
+- `$HKPOT` `7b1GqZ4ekNABzgbm3bLtHwuU7NsXDfvzEpKEmcEk3qMD` (pool `gqE9TgfzdT6SVCbTzY7CswpzZiZxgcn1yMBWJ8pbyjZ`, pot every 10th buy): 11 counted buys, win #1 = buy #10 by buyer B. Claim 3,165,220 → dev 474,783 / pot 316,522 / reserve 2,373,915. Buyer B 359,047,714 → **359,364,236** lamports: +316,522, exactly the prize (tx `3PeAKxGgGvzXrRdUvb5RGsgDMpg3Nnr71oYfjo6U7k7wp6Y1baBxnksRh6HhVf8qtQ6K1je7GRw3xGskAdUzhEcL`).
+- Reconciliation then failed closed and paused the HKPOT keeper: its config was cloned from HKRUL's and shared the same treasury and dev wallet, so it saw HKRUL's 1,455,716 reserve. Fixed by giving HKPOT its own treasury (`KUZe3AXKYVCGM67pM8KzZxzemsTtA5xEF6wDHCaZbkc`) and dev wallet (`2a868n5xvhK3R5n5NX7roA2zxKDkUFEJqms2joEueKZC`), moving its exact balances there (txs `PdEo35Jj…`, `3zM9zC7v…`) and setting its dev baseline to the new wallet's 0. Both keepers now reconcile and pass `verify` (pot_ok).
+- The token page lists each winner's payout ("paid 0.000316522 SOL", linked) and the pot totals; the Transparency page lists pot payout txs per run.
+- **Operational rule**: every keeper (token) needs its own treasury and dev payout wallet; reconciliation assumes it owns their whole balances.
+- Side note: the first HKPOT launch attempt was refused by the pre-send simulation (deployer out of SOL after the day's launches); refilled 0.7 devnet SOL from the test buyers.
