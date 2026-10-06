@@ -124,7 +124,7 @@ button.hk-item { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto;
 .hook-focus-art-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .hook-focus-art-head .hook-sub { margin: 0; }
 .hook-view-switch { display: inline-flex; gap: 3px; padding: 3px; background: var(--bg); border: 1px solid var(--card-border); border-radius: var(--r-inner); }
-.hook-view-switch button { padding: 5px 8px; font-size: 11px; border: 0; border-radius: 4px; background: transparent; color: var(--text-2); }
+.hook-view-switch button { padding: 5px 8px; font-size: 11px; border: 0; background: transparent; color: var(--text-2); }
 .hook-view-switch button[aria-pressed='true'] { background: var(--panel-2); color: var(--text); }
 .hook-diagram-stage { display: grid; place-items: center; flex: 1; padding: 16px 0; min-height: 220px; background-image: radial-gradient(var(--line) .6px, transparent .6px); background-size: 16px 16px; }
 .hook-diagram-stage .hd { max-width: 540px; }

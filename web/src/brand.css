@@ -26,7 +26,7 @@ body {
 :where(button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, .icon-btn, button.opt-teaser, button.cap-rule-choice) { position: relative; }
 
 /* the diagonal edges of a bordered cut shape */
-:is(.card, .hero, .modal, .tcard, .strip-item, button.small:not(.ghost), button:not([class]), .wallet-btn:not(.primary), .wiz-reset, .icon-btn, button.cap-rule-choice)::before {
+:is(.card, .hero, .modal, .tcard, .strip-item, .tabs:not(.page-tabs), .hook-view-switch, button.small:not(.ghost), button:not([class]), .wallet-btn:not(.primary), .wiz-reset, .icon-btn, button.cap-rule-choice)::before {
   content: '';
   position: absolute;
   inset: -1px;
@@ -37,6 +37,12 @@ body {
     linear-gradient(135deg, transparent calc(50% - 1.1px), var(--bd) calc(50% - 1.1px), var(--bd) calc(50% + 0.1px), transparent calc(50% + 0.1px)) 100% 100% / var(--c) var(--c) no-repeat;
 }
 :is(.card, .hero, .modal, .tcard, .strip-item) { --bd: var(--card-border); }
+:is(.tabs:not(.page-tabs), .hook-view-switch) { position: relative; --bd: var(--card-border); }
+/* the selected tab echoes the cut of its strip */
+:is(.tabs:not(.page-tabs) button.on, .hook-view-switch button[aria-pressed='true']) {
+  --c: 5px;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+}
 :is(button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, .icon-btn, button.cap-rule-choice) { --bd: var(--line); }
 
 /* ---------- type: labels and controls speak mono */
