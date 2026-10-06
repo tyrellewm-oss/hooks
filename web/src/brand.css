@@ -110,7 +110,8 @@ a.link:hover, .link-inline:hover { text-decoration-color: var(--brand); }
 }
 .duo { fill: currentColor; stroke: none; opacity: 0.26; }
 
-/* ---------- bracket lock: hook cards. The cut shape is painted (no clip) so the brackets can sit outside it. */
+/* ---------- bracket lock: hook cards. The cut shape is painted (no clip) so the brackets can sit outside it.
+   !important on the painted background: the generic `button:hover:not(:disabled)` background is more specific. */
 :is(.hook-selector .hook-choice, button.hk-item, .opt-hook) {
   --cut: 12px;
   --cf: var(--card);
@@ -124,10 +125,10 @@ a.link:hover, .link-inline:hover { text-decoration-color: var(--brand); }
     linear-gradient(var(--cb), var(--cb)) 100% 0 / 1px calc(100% - var(--cut)) no-repeat border-box,
     linear-gradient(var(--cb), var(--cb)) 0 100% / calc(100% - var(--cut)) 1px no-repeat border-box,
     linear-gradient(var(--cb), var(--cb)) 0 var(--cut) / 1px calc(100% - var(--cut)) no-repeat border-box,
-    linear-gradient(135deg, transparent calc(var(--cut) * 0.7071), var(--cf) calc(var(--cut) * 0.7071), var(--cf) calc(100% - var(--cut) * 0.7071), transparent calc(100% - var(--cut) * 0.7071)) border-box;
+    linear-gradient(135deg, transparent calc(var(--cut) * 0.7071), var(--cf) calc(var(--cut) * 0.7071), var(--cf) calc(100% - var(--cut) * 0.7071), transparent calc(100% - var(--cut) * 0.7071)) border-box !important;
 }
 button.hk-item { --cf: var(--panel); }
-:is(.hook-selector .hook-choice, button.hk-item, .opt-hook):is(:hover, :focus-visible) { --cb: var(--line-strong); }
+:is(.hook-selector .hook-choice, button.hk-item, .opt-hook):is(:hover, :focus-visible) { --cb: var(--tone); --cf: color-mix(in srgb, var(--tone) 6%, var(--card)); }
 :is(.hook-selector .hook-choice[aria-pressed='true'], button.hk-item.on, .opt-hook.on) {
   --cb: var(--tone);
   --cf: color-mix(in srgb, var(--tone) 10%, var(--card));
@@ -145,8 +146,8 @@ button.hk-item { --cf: var(--panel); }
     linear-gradient(var(--bc), var(--bc)) 100% 0 / 1.5px 12px no-repeat,
     linear-gradient(var(--bc), var(--bc)) 0 100% / 12px 1.5px no-repeat,
     linear-gradient(var(--bc), var(--bc)) 0 100% / 1.5px 12px no-repeat,
-    linear-gradient(135deg, transparent calc(50% - 0.9px), var(--bc) calc(50% - 0.9px), var(--bc) calc(50% + 0.6px), transparent calc(50% + 0.6px)) 4.5px 4.5px / 10px 10px no-repeat,
-    linear-gradient(135deg, transparent calc(50% - 0.9px), var(--bc) calc(50% - 0.9px), var(--bc) calc(50% + 0.6px), transparent calc(50% + 0.6px)) right 4.5px bottom 4.5px / 10px 10px no-repeat;
+    linear-gradient(135deg, transparent calc(50% - 0.9px), var(--bc) calc(50% - 0.9px), var(--bc) calc(50% + 0.6px), transparent calc(50% + 0.6px)) 1.75px 1.75px / 12px 12px no-repeat,
+    linear-gradient(135deg, transparent calc(50% - 0.9px), var(--bc) calc(50% - 0.9px), var(--bc) calc(50% + 0.6px), transparent calc(50% + 0.6px)) right 1.75px bottom 1.75px / 12px 12px no-repeat;
   transition: inset 0.42s cubic-bezier(0.2, 1.5, 0.4, 1), opacity 0.2s;
 }
 :is(.hook-selector .hook-choice, button.hk-item, .opt-hook):is(:hover, :focus-visible, [aria-pressed='true'], .on)::after { inset: -6px; opacity: 1; }
