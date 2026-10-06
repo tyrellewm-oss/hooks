@@ -208,6 +208,7 @@ pnpm dev:fixtures            # simulated data, no backend or validator needed  -
 pnpm page -- --cluster devnet   # (repo root) backend on :5175, then in web/:
 pnpm dev                     # new UI against the real backend (proxies /api)  -> http://127.0.0.1:5176
 ```
+- Windows: `scripts\dev-sync.cmd` (double-click, or add `-Live` for `pnpm dev`) runs `pnpm dev:fixtures` and pulls the current branch from GitHub every 15 s, so pushed changes show up in the open page without a manual pull. It only fast-forwards: local commits or edits in the way are reported, never overwritten.
 - Binds 127.0.0.1 only, like the backend. Studio launches are signed in the connected browser wallet (AC-21; the server co-signs with the 8.3 launch key). With no wallet connected, the server-signed test path is used (LOCAL, or a studio session on devnet).
 - The AC-23 banner and the DEVNET badge show on every page. In fixture mode nothing is chain data and no transaction is sent.
 - `scripts/ci.sh` covers it: forbidden words and the mainnet grep include `web/src`, and `web/` is type-checked when `web/node_modules` exists. Pure page logic is tested in `tests/web_token_logic.test.ts`.
