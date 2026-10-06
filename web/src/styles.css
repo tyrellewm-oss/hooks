@@ -136,8 +136,6 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0; }
 .pop-item:hover { background: var(--hover); }
 .icon-btn { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; background: transparent; border: 1px solid var(--line); color: var(--text-2); }
 .menu-btn { display: none; }
-.banner { margin: 0 var(--page-gutter); padding: 8px 14px; border-radius: var(--r-inner); background: var(--amber-soft); color: var(--amber-text); font-size: 12.5px; text-align: center; }
-.banner.sim { margin-top: 8px; background: var(--sim-soft); color: var(--sim); }
 main { width: 100%; padding: 22px var(--page-gutter) 48px; overflow-wrap: anywhere; }
 footer { width: 100%; overflow-wrap: anywhere; color: var(--text-4); font-size: 11.5px; padding: 18px var(--page-gutter) 28px; text-align: center; }
 
@@ -150,7 +148,6 @@ footer { width: 100%; overflow-wrap: anywhere; color: var(--text-4); font-size: 
   .main-col { border-left: 0; }
   .menu-btn { display: grid; }
   main { padding-block: 16px 40px; }
-  .badge { font-size: 10px; padding: 4px 8px; }
   .hide-sm { display: none !important; }
 }
 
@@ -249,7 +246,6 @@ dl.kv > :nth-last-child(-n + 2) { border-bottom: 0; }
 .pill.sim { color: var(--sim); background: var(--sim-soft); }
 .pill.ember { color: var(--ember); background: var(--ember-soft); }
 .pill.cyan { color: var(--cyan); background: var(--cyan-soft); }
-.badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; background: var(--amber-soft); color: var(--amber-text); white-space: nowrap; }
 .notice { border-radius: var(--r-inner); padding: 11px 13px; font-size: 13px; background: var(--panel); color: var(--text-2); }
 .notice b { color: var(--text); font-weight: 600; }
 .notice.amber { background: var(--amber-soft); color: var(--amber-text); }

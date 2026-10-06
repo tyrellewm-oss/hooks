@@ -2,9 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { api } from './lib/api';
 import { navigate, usePath, usePoll } from './lib/hooks';
 import { setQuery, setTheme, useQuery, useTheme } from './lib/ui';
-import { CONTENT } from './lib/shared';
+import { HOOKD_X_URL, hookdChartUrl } from './lib/links';
 import { Guard, Link, Skeleton } from './components/bits';
-import { IconBook, IconEye, IconGrid, IconHome, IconHook, IconMenu, IconMoon, IconPlus, IconSearch, IconSun } from './components/Icons';
+import { IconBook, IconChart, IconEye, IconGrid, IconHome, IconHook, IconMenu, IconMoon, IconPlus, IconSearch, IconSun, IconX } from './components/Icons';
 import { TokensPage } from './pages/TokensPage';
 import { HomePage } from './pages/HomePage';
 import { WalletButton } from './components/WalletButton';
@@ -83,7 +83,8 @@ export function App() {
             <input placeholder="Search name, ticker or mint" value={q} onChange={(e) => { setQuery(e.target.value); if (path !== '/tokens') navigate('/tokens'); }} />
           </label>
           <div className="actions">
-            <span className="badge">{CONTENT.devnet_label}</span>
+            <TopLink href={HOOKD_X_URL} label="Hookd on X"><IconX size={15} /></TopLink>
+            <TopLink href={hookdChartUrl} label="Chart on GMGN"><IconChart size={18} /></TopLink>
             <button className="primary hide-sm" onClick={() => navigate('/create')}>Launch</button>
             <WalletButton />
           </div>
@@ -92,4 +93,11 @@ export function App() {
       </div>
     </div>
   );
+}
+
+/** A top-bar icon link that opens in a new tab; disabled ("coming soon") while its address is not set yet. */
+function TopLink({ href, label, children }: { href: string; label: string; children: ReactNode }) {
+  return href
+    ? <a className="icon-btn" href={href} target="_blank" rel="noreferrer" aria-label={label} title={label}>{children}</a>
+    : <button type="button" className="icon-btn" disabled aria-label={`${label}: coming soon`} title={`${label}: coming soon`}>{children}</button>;
 }

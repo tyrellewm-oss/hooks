@@ -30,3 +30,6 @@ export const IconCeiling = (p: { size?: number }) => <I {...p}><rect className="
 export const IconBlocks = (p: { size?: number }) => <I {...p}><rect className="duo" x="8.5" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /><rect x="8.5" y="4" width="7" height="7" rx="1.5" /></I>;
 export const IconClock = (p: { size?: number }) => <I {...p}><circle className="duo" cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></I>;
 export const IconTrophy = (p: { size?: number }) => <I {...p}><path className="duo" d="M8 4h8v5a4 4 0 0 1-8 0V4z" /><path d="M8 4h8v5a4 4 0 0 1-8 0V4z" /><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v3.5M8.5 20h7M10 16.5h4" /></I>;
+/** The X (Twitter) mark, filled like the original. */
+export const IconX = (p: { size?: number }) => <I {...p}><path fill="currentColor" stroke="none" d="M18.24 2.25h3.31l-7.23 8.26 8.5 11.24h-6.65l-5.21-6.82-5.97 6.82H1.68l7.73-8.84L1.25 2.25h6.83l4.71 6.23zm-1.16 17.52h1.83L7.08 4.13H5.12z" /></I>;
+export const IconChart = (p: { size?: number }) => <I {...p}><path d="M4 4v16h16" /><path d="M7.5 15l3.5-4 3 2.5 5-6.5" /><path d="M15.5 7h3.5v3.5" /></I>;
