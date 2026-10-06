@@ -130,8 +130,8 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0; }
 .studio-session { justify-content: flex-end; flex-wrap: wrap; margin-bottom: 10px; gap: 8px; }
 .wallet-btn { gap: 8px; }
 .wallet-btn img { border-radius: 4px; }
-.wallet-pop { position: absolute; right: 0; top: calc(100% + 8px); min-width: 250px; background: var(--card); border: 1px solid var(--card-border); border-radius: 8px; padding: 8px; z-index: 40; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35); }
-.pop-item { display: flex; width: 100%; align-items: center; gap: 10px; justify-content: flex-start; border: 0; border-radius: 6px; padding: 9px 10px; font-size: 14px; color: var(--text); background: transparent; text-decoration: none; }
+.wallet-pop { position: absolute; right: 0; top: calc(100% + 8px); min-width: 250px; background: var(--card); border: 1px solid var(--card-border); border-radius: var(--r-card); padding: 8px; z-index: 40; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35); }
+.pop-item { display: flex; width: 100%; align-items: center; gap: 10px; justify-content: flex-start; border: 0; border-radius: var(--r-inner); padding: 9px 10px; font-size: 14px; color: var(--text); background: transparent; text-decoration: none; }
 .pop-item:hover { background: var(--hover); }
 .icon-btn { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; background: transparent; border: 1px solid var(--line); color: var(--text-2); }
 .menu-btn { display: none; }

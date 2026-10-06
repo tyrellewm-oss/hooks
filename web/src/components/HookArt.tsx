@@ -1,7 +1,7 @@
 // Diagrams for the hooks page and the launch tool. Plain inline SVG themed through CSS classes (.hd-*) so both themes
 // work. Every number drawn here comes from the caller (studio defaults or a token's own config), never invented.
 // Layout rules: nodes in a row share one height and centre line, connectors are straight or right-angled.
-// Brand style: solid cut-corner blocks with depth (light top, coloured front, dark side). The rule diagrams loop a
+// Brand style: solid blocks with depth (light top, coloured front, dark side). The rule diagrams loop a
 // 6 s story (buys arrive, the refused one hits the rule, shakes and is pulled back); keyframes live in brand.css and
 // stop under prefers-reduced-motion, leaving every element in its resting place.
 import { createContext, useContext, useId, type CSSProperties, type ReactNode } from 'react';
@@ -25,18 +25,18 @@ function Frame({ w, h, label, children }: { w: number; h: number; label: string;
   );
 }
 
-/** One cut-corner block with depth. kind picks the colour (brand.css .hd-blk.*); `bad` is hazard-striped. Depth equals
- *  the cut, so the cut corners line up with the depth direction and the outline stays clean. */
+/** One block with depth: a square front face, a light top and a dark right side. kind picks the colour
+ *  (brand.css .hd-blk.*); `bad` is hazard-striped. The cut corner is for the UI, not the diagrams: on a 3D block it
+ *  made the face stop short of the back edges. */
 type Kind = 'buy' | 'held' | 'ok' | 'bad' | 'cyan' | 'amber' | 'node' | 'hook' | 'okn' | 'badn' | 'embern';
-function Block({ x, y, w, h, kind, d = 6, tl = true, br = true, anim, origin, style, children }: {
-  x: number; y: number; w: number; h: number; kind: Kind; d?: number; tl?: boolean; br?: boolean;
+function Block({ x, y, w, h, kind, d = 6, anim, origin, style, children }: {
+  x: number; y: number; w: number; h: number; kind: Kind; d?: number;
   anim?: string; origin?: 'up' | 'rt'; style?: CSSProperties; children?: ReactNode;
 }) {
   const hz = useContext(Hazard);
-  const a = tl ? d : 0, b = br ? d : 0;
-  const front = `${x + a},${y} ${x + w},${y} ${x + w},${y + h - b} ${x + w - b},${y + h} ${x},${y + h} ${x},${y + a}`;
-  const top = `${x + a},${y} ${x + w},${y} ${x + w + d},${y - d} ${x + a + d},${y - d}`;
-  const side = `${x + w},${y} ${x + w + d},${y - d} ${x + w + d},${y + h - b - d} ${x + w},${y + h - b}`;
+  const front = `${x},${y} ${x + w},${y} ${x + w},${y + h} ${x},${y + h}`;
+  const top = `${x},${y} ${x + w},${y} ${x + w + d},${y - d} ${x + d},${y - d}`;
+  const side = `${x + w},${y} ${x + w + d},${y - d} ${x + w + d},${y + h - d} ${x + w},${y + h}`;
   const cls = `hd-blk ${kind}${anim ? ' hd-anim' : ''}${origin ? ` hd-${origin}` : ''}`;
   return (
     <g className={cls} style={anim ? { animationName: anim, ...style } : style}>
@@ -55,15 +55,15 @@ const Lbl = ({ x, y, anim, cls, anchor = 'middle', children }: { x: number; y: n
 function Shelf({ x, y, w, h, flash }: { x: number; y: number; w: number; h: number; flash?: string }) {
   return (
     <g>
-      <Block x={x} y={y} w={w} h={h} kind="node" d={6} tl={false} br={false} />
-      {flash && <g className="hd-anim hd-flash" style={{ animationName: flash }}><Block x={x} y={y} w={w} h={h} kind="bad" d={6} tl={false} br={false} /></g>}
+      <Block x={x} y={y} w={w} h={h} kind="node" d={6} />
+      {flash && <g className="hd-anim hd-flash" style={{ animationName: flash }}><Block x={x} y={y} w={w} h={h} kind="bad" d={6} /></g>}
     </g>
   );
 }
 
 type Tone = '' | 'ok' | 'bad' | 'hook' | 'ember';
 const nodeKind: Record<Tone, Kind> = { '': 'node', ok: 'okn', bad: 'badn', hook: 'hook', ember: 'embern' };
-/** A node: a cut block with depth; optional 18px glyph on top, title, optional sub line - the stack centred. */
+/** A node: a block with depth; optional 18px glyph on top, title, optional sub line - the stack centred. */
 function Node({ x, y, w, h, title, sub, tone = '', icon }: { x: number; y: number; w: number; h: number; title: string; sub?: string; tone?: Tone; icon?: ReactNode }) {
   const cx = x + w / 2;
   const stack = (icon ? 26 : 0) + 14 + (sub ? 15 : 0);   // glyph + gap, title, sub
@@ -123,10 +123,10 @@ export function CapGauge({ capPct = 1 }: { capPct?: number }) {
       </g>
       <g className="hd-cyc">
         <Block x={xs[0]} y={lv(0.5)} w={w} h={base - lv(0.5)} kind="buy" d={8} anim="hdC1" origin="up" />
-        <Block x={xs[1]} y={lv(0.5)} w={w} h={base - lv(0.5)} kind="held" d={8} tl={false} anim="hdC2h" />
-        <Block x={xs[1]} y={lv(0.88)} w={w} h={lv(0.5) - lv(0.88) - 3} kind="buy" d={8} br={false} anim="hdC2" origin="up" />
-        <Block x={xs[2]} y={lv(0.88)} w={w} h={base - lv(0.88)} kind="held" d={8} tl={false} anim="hdC3h" />
-        <Block x={xs[2]} y={lv(1.3)} w={w} h={lv(0.88) - lv(1.3) - 3} kind="bad" d={8} br={false} anim="hdCx" origin="up" />
+        <Block x={xs[1]} y={lv(0.5)} w={w} h={base - lv(0.5)} kind="held" d={8} anim="hdC2h" />
+        <Block x={xs[1]} y={lv(0.88)} w={w} h={lv(0.5) - lv(0.88) - 3} kind="buy" d={8} anim="hdC2" origin="up" />
+        <Block x={xs[2]} y={lv(0.88)} w={w} h={base - lv(0.88)} kind="held" d={8} anim="hdC3h" />
+        <Block x={xs[2]} y={lv(1.3)} w={w} h={lv(0.88) - lv(1.3) - 3} kind="bad" d={8} anim="hdCx" origin="up" />
         <Shelf x={50} y={capY - 1.5} w={322} h={3} flash="hdFlashC" />
         <text x={386} y={capY - 2} className="hd-t small">cap</text>
         <text x={386} y={capY + 12} className="hd-s">{capPct}%</text>
@@ -276,8 +276,8 @@ export function MaxBuyDiagram({ maxText }: { maxText: string }) {
         {['Buy A', 'Buy B', 'Buy C'].map((t, i) => <text key={t} x={L - 10} y={ys[i] + bh / 2 + 4} textAnchor="end" className="hd-s">{t}</text>)}
         <Block x={L} y={ys[0]} w={x(0.42) - L} h={bh} kind="buy" anim="hdBa" origin="rt" />
         <Block x={L} y={ys[1]} w={x(0.86) - L} h={bh} kind="buy" anim="hdBb" origin="rt" />
-        <Block x={L} y={ys[2]} w={M - L} h={bh} kind="buy" br={false} anim="hdBc" origin="rt" />
-        <Block x={M + 1} y={ys[2]} w={x(1.45) - M - 1} h={bh} kind="bad" tl={false} anim="hdBo" origin="rt" />
+        <Block x={L} y={ys[2]} w={M - L} h={bh} kind="buy" anim="hdBc" origin="rt" />
+        <Block x={M + 1} y={ys[2]} w={x(1.45) - M - 1} h={bh} kind="bad" anim="hdBo" origin="rt" />
         <Shelf x={M - 1.5} y={34} w={3} h={150} flash="hdFlashB" />
         <Lbl x={414} y={ys[0] + bh / 2 + 4} anchor="end" cls="hd-s strong ok" anim="hdLa">✓ lands</Lbl>
         <Lbl x={414} y={ys[1] + bh / 2 + 4} anchor="end" cls="hd-s strong ok" anim="hdLb">✓ lands</Lbl>
@@ -297,9 +297,9 @@ export function SlotLimitDiagram({ limitText }: { limitText: string }) {
   return (
     <Frame w={420} h={196} label={`All buys in one slot share a ${limitText} limit: A and B land, C would go over and fails, then lands in the next slot`}>
       <g className="hd-cyc">
-        <Block x={n} y={aT} w={w} h={base - aT} kind="buy" tl={false} anim="hdSa" origin="up" />
-        <Block x={n} y={bT} w={w} h={aT - 2 - bT} kind="held" tl={false} br={false} anim="hdSb" origin="up" />
-        <Block x={n} y={cT} w={w} h={bT - 2 - cT} kind="bad" br={false} anim="hdSx" origin="up" />
+        <Block x={n} y={aT} w={w} h={base - aT} kind="buy" anim="hdSa" origin="up" />
+        <Block x={n} y={bT} w={w} h={aT - 2 - bT} kind="held" anim="hdSb" origin="up" />
+        <Block x={n} y={cT} w={w} h={bT - 2 - cT} kind="bad" anim="hdSx" origin="up" />
         <Block x={n1} y={lv(0.38)} w={w} h={base - lv(0.38)} kind="buy" anim="hdSc" />
         <Shelf x={n} y={capY - 1.5} w={n1 + w - n + 10} h={3} flash="hdFlashS" />
         <text x={n - 8} y={(aT + base) / 2 + 4} textAnchor="end" className="hd-s strong">A</text>
@@ -357,7 +357,7 @@ export function CooldownDiagram({ gapText }: { gapText: string }) {
   return (
     <Frame w={420} h={196} label={`Curve buys share one ${gapText} gap: A lands, B inside the gap fails, C after the gap lands`}>
       <g className="hd-cyc">
-        <Block x={L} y={ty} w={R - L} h={10} kind="node" d={6} tl={false} br={false} />
+        <Block x={L} y={ty} w={R - L} h={10} kind="node" d={6} />
         <rect x={xa + c} y={ty + 1} width={xc - xa - c} height={8} className="hd-timer hd-anim hd-rt" style={{ animationName: 'hdTm', animationTimingFunction: 'linear' }} />
         <Block x={xa} y={ty - c} w={c} h={c} kind="cyan" anim="hdDa" />
         <Block x={xb} y={ty - c} w={c} h={c} kind="bad" anim="hdDb" />
