@@ -189,7 +189,7 @@ export function FlywheelDiagram({ devPct, buybackPct }: { devPct: number; buybac
 
 /** 4 · Lift-only switch: a scale from "tighter" to "no cap"; the switch can only move the cap up. */
 export function LiftDiagram() {
-  const tx = 30, tw = 24, T = 26, B = 176, knob = 104;
+  const tx = 30, tw = 24, T = 26, B = 176, knob = 104, m = 4;
   const row = (y: number, ok: boolean, title: string) => (
     <g key={title} className={`hd-opt ${ok ? 'ok' : 'bad'}`}>
       <Block x={124} y={y - 16} w={284} h={32} kind="node" d={6} />
@@ -203,10 +203,13 @@ export function LiftDiagram() {
     <Frame w={420} h={200} label="The admin switch can raise or remove the cap but can never tighten it or add a new one">
       <text x={tx + tw / 2} y={T - 13} textAnchor="middle" className="hd-s">no cap</text>
       <text x={tx + tw / 2} y={B + 17} textAnchor="middle" className="hd-s">tighter</text>
-      {/* the track: the striped part below the knob is where the switch can never go; bottom first, so it stacks */}
+      {/* the track runs through the knob; the striped part below it is where the switch can never go. The knob is a
+          collar m wider than the track on every side, front and back too: its front face sits m nearer, which in this
+          projection is m left and m down, so it reads centred. Drawn bottom up: the lower track, the knob, then the
+          upper track, which rises out of the knob's top face. */}
       <Block x={tx} y={knob} w={tw} h={B - knob} kind="bad" />
-      <Block x={tx} y={T} w={tw} h={knob - T} kind="okn" />
-      <Block x={tx - 7} y={knob - 6} w={tw + 14} h={12} kind="knob" />
+      <Block x={tx - 2 * m} y={knob - 6 + m} w={tw + 2 * m} h={12} d={6 + 2 * m} kind="knob" />
+      <Block x={tx} y={T} w={tw} h={knob - 6 - T} kind="okn" />
       <Arrow d={`M${tx + tw + 22} ${knob - 12} V${T + 4}`} cls="ok" />
       <Arrow d={`M${tx + tw + 22} ${knob + 12} V${B - 4}`} cls="bad dashed" />
       <text x={tx + tw + 30} y={knob + 4} className="hd-s strong">now</text>
