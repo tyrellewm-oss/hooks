@@ -8,7 +8,7 @@ import { DEVNET_RPC_DEFAULT, assertNotMainnet } from '../../sdk/cluster.js';
 const BPF_UPGRADEABLE = new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111');
 export const SIM_DIR = '.sim-programs';
 export const DBC_PROGRAM = new PublicKey('dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN');
-export const HOOK_PROGRAM = new PublicKey('FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz');
+export const HOOK_PROGRAM = new PublicKey('4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y');
 
 /** ELF bytes of an upgradeable program (ProgramData header is 45 bytes). Cached by program id. */
 export async function programBytes(id: PublicKey, rpc = process.env.DEVNET_RPC ?? DEVNET_RPC_DEFAULT): Promise<Buffer> {

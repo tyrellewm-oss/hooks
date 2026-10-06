@@ -6,11 +6,11 @@
 ## What it is
 A launchpad prototype on Solana **devnet**:
 - **Meteora Dynamic Bonding Curve (DBC)** pools for Token-2022 tokens, with a **transfer hook** attached while the token is on the curve.
-- The transfer-hook program (`programs/trenches-hook`, program id `FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz`) enforces one rule on the curve: **each receiving token account can hold at most X% of supply, and X only rises** (it can't be tightened, only lifted).
+- The transfer-hook program (`programs/trenches-hook`, program id `4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y`) enforces one rule on the curve: **each receiving token account can hold at most X% of supply, and X only rises** (it can't be tightened, only lifted).
 - A minimal launch page (`app/`) with a pre-trade checklist, a rules-and-risks block and a "Why did my trade fail?" explainer, plus an SDK (`sdk/`), scripts and tests.
 
 ## Status (as of 2026-10-04 ICT)
-- **DEVNET LIVE** (2026-10-04 ICT): the program is deployed on devnet at [`FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz`](https://explorer.solana.com/address/FieaXjJUpe5JiAbEzCddWGXHCYWvVPi7UwaYTVsWQTz?cluster=devnet) (devnet only, throwaway upgrade key). One test launch ran on devnet from launch to DAMM v2 migration: cap hit, sells, graduation, post-migration buy. Every tx is linked in [`launch_log.md`](launch_log.md).
+- **DEVNET LIVE** (2026-10-04 ICT): the program is deployed on devnet at [`4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y`](https://explorer.solana.com/address/4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y?cluster=devnet) (devnet only, throwaway upgrade key). One test launch ran on devnet from launch to DAMM v2 migration: cap hit, sells, graduation, post-migration buy. Every tx is linked in [`launch_log.md`](launch_log.md).
 - Devnet program sha256: `02d402bc2e2db90d69c6eb7155483364d7afca1cc500c010a90e5de36927bead` (release build of commit `f8803e8`; the program dumped from devnet has the same sha256).
 - Other results (replay, litesvm, local validator) are LOCAL.
 - **`solana-verify` has not been run** (its Docker build image does not fit this box's disk); see "Verifiable build" below.

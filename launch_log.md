@@ -178,3 +178,17 @@ Screenshots of the devnet page (home, migrated token page): `artifacts/screens/d
 - **The "independent" price was a local stand-in** (`scripts/devnet_price_standin.ts`) because Jupiter has no devnet prices. It reads the same DAMM v2 pool, so it tested the keeper's HTTP, freshness and deviation path, not an independent market.
 - The pool had no other trades during the window, so spot = TWAP (0 bps). A pump-before-run on the live pool wasn't run.
 - The devnet upgrade / lift authority is still one throwaway key, `9DVu…` (accepted devnet exception).
+
+## 2026-10-06 — Our fork's devnet deploy + three full launch loops (test day §4 B)
+
+**Program deploy (our fork).** Program `4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y` deployed to devnet at slot 508144038, deploy tx [5XTWc9sX…](https://explorer.solana.com/tx/5XTWc9sXJ52Rg4t6aeiCPpPNpTdRMJe2qDNoJ2VGHLnj9cXJzfApDawmugEC8ayTiNzPXiaBQKRLZuxfhYxFxc3P?cluster=devnet). Release build sha256 `5b8eeec4443ab7fc7b1538512245051f09bff04445f8329dd9b4869f61d0dbd1`; upgrade/lift authority = deployer `6KqYFd…` (devnet throwaway). RPC: api.devnet.solana.com (onfinality public RPC rate-limited and its websocket is broken — avoid).
+
+Three full launch→graduation→DAMM v2 loops, one per schedule, each `dbc_flow.ts demo --cluster devnet --threshold 0.2 --wallet-sol 0.3`. All three mints verified with `qa-schedule`: deployed bytes == release build (test-slots OFF), REAL slot offsets.
+
+| Schedule | Mint | Result |
+|---|---|---|
+| Balanced (King-approved) | `7qKe2VcMBYkRdtji6x9EzhFm1czHN5E2yVAC5TSvVy16` | full pass: caps enforced at 1%/2%, sells mid-ramp, uncapped buy, graduation, DAMM v2 migration |
+| Strict | `D3VYrvE814XnmzxZT27SkkZLzjjCnwaAzvvbx1voMUK4` | pass; note: the demo's "+150 → 2%" buy is sized for Balanced, so under Strict (1% at +150) it was correctly refused by the hook — script label said FAIL, chain behaved right |
+| Loose | `7outjK22UWGSv6Jxb3KB3gqFhUBjUEBLZLC4UF6daqNz` | full pass |
+
+**Follow-up:** make the demo's mid-ramp buy sizes schedule-aware so Strict doesn't mislabel a correct refusal as FAIL.
