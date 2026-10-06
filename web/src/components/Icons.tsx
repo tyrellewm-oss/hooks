@@ -17,9 +17,6 @@ export const IconBack = (p: { size?: number }) => <I {...p}><path d="M15 6l-6 6 
 export const IconCopy = (p: { size?: number }) => <I {...p}><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></I>;
 export const IconCheck = (p: { size?: number }) => <I {...p}><path d="M5 12.5l4.5 4.5L19 7.5" /></I>;
 export const IconArrow = (p: { size?: number }) => <I {...p}><path d="M5 12h14M13 6l6 6-6 6" /></I>;
-export const LogoMark = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 18h4.5v-5H13V8h7" /></svg>
-);
 export const IconHook = (p: { size?: number }) => <I {...p}><circle cx="14" cy="4.5" r="1.8" /><path d="M14 6.3v8.2a4.8 4.8 0 0 1-9.6 0V12l-1.6 1.6" /></I>;
 export const IconShield = (p: { size?: number }) => <I {...p}><path className="duo" d="M12 3l7 2.8v5.6c0 4.5-3 7.4-7 8.6-4-1.2-7-4.1-7-8.6V5.8L12 3z" /><path d="M12 3l7 2.8v5.6c0 4.5-3 7.4-7 8.6-4-1.2-7-4.1-7-8.6V5.8L12 3z" /><path d="M8.8 12l2.2 2.2 4.2-4.4" /></I>;
 export const IconFee = (p: { size?: number }) => <I {...p}><circle className="duo" cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="8.5" /><path d="M9 15l6-6" /><circle cx="9.3" cy="9.3" r="1" /><circle cx="14.7" cy="14.7" r="1" /></I>;
