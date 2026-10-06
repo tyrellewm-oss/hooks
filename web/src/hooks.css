@@ -52,14 +52,6 @@
 .hd-grid { stroke: var(--line); stroke-dasharray: 2 4; }
 .hd-axis { stroke: var(--line-strong); }
 .hd-band { fill: var(--panel); }
-.hd-area.amber { fill: var(--amber-soft); }
-.hd path.hd-line { fill: none; stroke-width: 2; stroke-linejoin: round; }
-.hd path.hd-line.amber { stroke: var(--amber); }
-.hd path.hd-line.dashed { stroke-dasharray: 5 4; }
-.hd-dot.amber { fill: var(--amber); }
-.hd-zone.ok { fill: var(--green-soft); stroke: var(--green); stroke-width: 1; }
-.hd-zone.bad { fill: var(--red-soft); stroke: var(--red); stroke-width: 1; stroke-dasharray: 3 3; }
-.hd-knob { fill: var(--text); }
 .hd-opt rect { fill: var(--card); stroke: var(--card-border); }
 .hd-opt.ok circle { fill: var(--green-soft); stroke: var(--green); }
 .hd-opt.bad circle { fill: var(--red-soft); stroke: var(--red); }

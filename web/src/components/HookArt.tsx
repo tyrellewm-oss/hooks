@@ -28,7 +28,7 @@ function Frame({ w, h, label, children }: { w: number; h: number; label: string;
 /** One block with depth: a square front face, a light top and a dark right side. kind picks the colour
  *  (brand.css .hd-blk.*); `bad` is hazard-striped. The cut corner is for the UI, not the diagrams: on a 3D block it
  *  made the face stop short of the back edges. */
-type Kind = 'buy' | 'held' | 'ok' | 'bad' | 'cyan' | 'amber' | 'node' | 'hook' | 'okn' | 'badn' | 'embern';
+type Kind = 'buy' | 'held' | 'ok' | 'bad' | 'cyan' | 'amber' | 'knob' | 'node' | 'hook' | 'okn' | 'badn' | 'embern';
 function Block({ x, y, w, h, kind, d = 6, anim, origin, style, children }: {
   x: number; y: number; w: number; h: number; kind: Kind; d?: number;
   anim?: string; origin?: 'up' | 'rt'; style?: CSSProperties; children?: ReactNode;
@@ -139,29 +139,25 @@ export function CapGauge({ capPct = 1 }: { capPct?: number }) {
   );
 }
 
-/** 2 · Anti-sniper fee: a falling step schedule from startBps to endBps over durationSlots in `periods` steps, then
- *  flat at endBps until graduation. */
+/** 2 · Anti-sniper fee: a falling staircase of blocks from startBps to endBps over durationSlots in `periods` steps,
+ *  then a low slab at endBps until graduation. */
 export function SniperFeeDiagram({ startBps, endBps, periods, durationSlots, durationText }: { startBps: number; endBps: number; periods: number; durationSlots: number; durationText: string }) {
   const L = 48, R = 318, END = 408, T = 20, B = 156;
   const y = (bps: number) => B - ((B - T) * bps) / startBps;
   const x = (i: number) => L + ((R - L) * i) / periods;
   const step = (startBps - endBps) / periods;
-  let d = `M${L} ${y(startBps)}`;
-  for (let i = 1; i <= periods; i++) d += ` H${x(i)} V${y(startBps - step * i)}`;
   const pct = (b: number) => `${+(b / 100).toFixed(1)}%`;
   return (
     <Frame w={420} h={196} label={`Curve fee starts at ${pct(startBps)} and falls in ${periods} steps to ${pct(endBps)} over ${durationText}, then stays at ${pct(endBps)}`}>
       <rect x={R} y={T - 6} width={END - R} height={B - T + 6} className="hd-band" />
       {[1, 0.5].map((f) => <line key={f} x1={L} x2={END} y1={y(startBps * f)} y2={y(startBps * f)} className="hd-grid" />)}
-      <path d={`${d} V${B} H${L} Z`} className="hd-area amber" />
-      <path d={`M${R} ${y(endBps)} H${END}`} className="hd-line amber dashed" />
-      <path d={d} className="hd-line amber" />
-      <rect x={L - 4} y={y(startBps) - 4} width="8" height="8" className="hd-dot amber" />
-      <rect x={R - 4} y={y(endBps) - 4} width="8" height="8" className="hd-dot amber" />
+      {/* left to right, so each step's top and front cover the hidden part of the side of the step before it */}
+      {Array.from({ length: periods }, (_, i) => <Block key={i} x={x(i)} y={y(startBps - step * i)} w={x(i + 1) - x(i)} h={B - y(startBps - step * i)} kind="amber" />)}
+      <Block x={R} y={y(endBps)} w={END - R - 6} h={B - y(endBps)} kind="amber" />
       <text x={L - 8} y={y(startBps) + 4} textAnchor="end" className="hd-s">{pct(startBps)}</text>
       <text x={L - 8} y={y(startBps / 2) + 4} textAnchor="end" className="hd-s">{pct(startBps / 2)}</text>
       <text x={L - 8} y={B + 4} textAnchor="end" className="hd-s">0%</text>
-      <text x={(R + END) / 2} y={y(endBps) - 12} textAnchor="middle" className="hd-t small">stays {pct(endBps)}</text>
+      <text x={(R + END) / 2} y={y(endBps) - 16} textAnchor="middle" className="hd-t small">stays {pct(endBps)}</text>
       <text x={(R + END) / 2} y={T + 12} textAnchor="middle" className="hd-s">until</text>
       <text x={(R + END) / 2} y={T + 26} textAnchor="middle" className="hd-s">graduation</text>
       <line x1={L} x2={END} y1={B} y2={B} className="hd-axis" />
@@ -205,11 +201,12 @@ export function LiftDiagram() {
   );
   return (
     <Frame w={420} h={200} label="The admin switch can raise or remove the cap but can never tighten it or add a new one">
-      <text x={tx + tw / 2} y={T - 9} textAnchor="middle" className="hd-s">no cap</text>
+      <text x={tx + tw / 2} y={T - 13} textAnchor="middle" className="hd-s">no cap</text>
       <text x={tx + tw / 2} y={B + 17} textAnchor="middle" className="hd-s">tighter</text>
-      <rect x={tx} y={T} width={tw} height={knob - T} className="hd-zone ok" />
-      <rect x={tx} y={knob} width={tw} height={B - knob} className="hd-zone bad" />
-      <rect x={tx - 7} y={knob - 6} width={tw + 14} height={12} className="hd-knob" />
+      {/* the track: the striped part below the knob is where the switch can never go; bottom first, so it stacks */}
+      <Block x={tx} y={knob} w={tw} h={B - knob} kind="bad" />
+      <Block x={tx} y={T} w={tw} h={knob - T} kind="okn" />
+      <Block x={tx - 7} y={knob - 6} w={tw + 14} h={12} kind="knob" />
       <Arrow d={`M${tx + tw + 22} ${knob - 12} V${T + 4}`} cls="ok" />
       <Arrow d={`M${tx + tw + 22} ${knob + 12} V${B - 4}`} cls="bad dashed" />
       <text x={tx + tw + 30} y={knob + 4} className="hd-s strong">now</text>

@@ -157,7 +157,7 @@ button.hk-item { --cf: var(--panel); }
   :is(.hook-selector .hook-choice, button.hk-item, .opt-hook)::after, .tcard, .tcard::after { transition: none; }
 }
 
-/* ---------- diagrams: cut blocks with depth (components/HookArt.tsx Block). --bf is the front colour; the top is
+/* ---------- diagrams: blocks with depth (components/HookArt.tsx Block). --bf is the front colour; the top is
    lit, the side is shaded. Data blocks are bright; surface blocks (nodes, shelves, the track) stay quiet. */
 .hd-blk polygon { stroke: var(--bg); stroke-width: 1; stroke-linejoin: round; }
 .hd-blk .f { fill: var(--bf); }
@@ -168,6 +168,7 @@ button.hk-item { --cf: var(--panel); }
 .hd-blk.ok { --bf: var(--green); }
 .hd-blk.cyan { --bf: var(--cyan); }
 .hd-blk.amber { --bf: var(--amber); }
+.hd-blk.knob { --bf: color-mix(in srgb, var(--text) 78%, var(--bg)); }
 .hd-blk:is(.node, .hook, .okn, .badn, .embern) .t { fill: color-mix(in srgb, var(--bf) 82%, #fff); }
 .hd-blk:is(.node, .hook, .okn, .badn, .embern) .r { fill: color-mix(in srgb, var(--bf) 55%, #000); }
 .hd-blk.node { --bf: var(--card); }
