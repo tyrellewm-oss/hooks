@@ -1,0 +1,273 @@
+/* Hookd brand v1: Blueprint x Chamfer, terminal green. Loaded last, over the base theme (styles.css and friends).
+   Corners are sharp everywhere and cut on cards, buttons, chips and icon tiles. Cut corners are clip-path; the
+   diagonal edge a clip removes from a 1px border is drawn back by ::before. Components that show something outside
+   their own box (the bracket lock) paint their cut shape instead, so nothing clips the brackets. */
+
+:root, [data-theme='dark'] {
+  --brand: #39ff7a; --brand-ink: #03150a; --brand-soft: rgba(57, 255, 122, 0.1);
+  --green: #39ff7a; --green-soft: rgba(57, 255, 122, 0.09);
+  --ember: #ff8a3c; --ember-soft: rgba(255, 138, 60, 0.12);
+  --cyan: #4fd8eb; --cyan-soft: rgba(79, 216, 235, 0.11);
+  --pill-bg: var(--brand); --pill-fg: var(--brand-ink);
+  --grid: rgba(57, 255, 122, 0.035);
+}
+[data-theme='light'] {
+  --brand: #097a38; --brand-ink: #ffffff; --brand-soft: rgba(9, 122, 56, 0.09);
+  --green: #097a38; --green-soft: rgba(9, 122, 56, 0.09);
+  --ember: #b9520c; --ember-soft: rgba(185, 82, 12, 0.09);
+  --cyan: #087f91; --cyan-soft: rgba(8, 127, 145, 0.09);
+  --pill-bg: var(--brand); --pill-fg: #ffffff;
+  --grid: rgba(9, 122, 56, 0.05);
+}
+:root { --r-card: 0px; --r-inner: 0px; --pill: 0px; }
+
+body {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-attachment: fixed;
+}
+
+/* ---------- the cut corner, clipped */
+:is(.card, .hero, .modal, .tcard, .strip-item, .tabs, .theme-toggle, .seg, .hook-view-switch, .notice, .banner, .side-nav a,
+    button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, button.icon-btn, button.opt-teaser, button.cap-rule-choice) {
+  --c: 9px;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+}
+:is(.card, .hero, .modal, .tcard, .strip-item) { --c: 14px; }
+:is(.notice, .banner, .tabs, .theme-toggle, .seg, .hook-view-switch, .side-nav a) { --c: 7px; }
+:where(.card, .modal, .tcard, .strip-item) { position: relative; }
+:where(button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, button.icon-btn, button.opt-teaser, button.cap-rule-choice) { position: relative; }
+
+/* the diagonal edges of a bordered cut shape */
+:is(.card, .hero, .modal, .tcard, .strip-item, button.small:not(.ghost), button:not([class]), .wallet-btn:not(.primary), .wiz-reset, button.icon-btn, button.cap-rule-choice)::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, transparent calc(50% - 0.1px), var(--bd) calc(50% - 0.1px), var(--bd) calc(50% + 1.1px), transparent calc(50% + 1.1px)) 0 0 / var(--c) var(--c) no-repeat,
+    linear-gradient(135deg, transparent calc(50% - 1.1px), var(--bd) calc(50% - 1.1px), var(--bd) calc(50% + 0.1px), transparent calc(50% + 0.1px)) 100% 100% / var(--c) var(--c) no-repeat;
+}
+:is(.card, .hero, .modal, .tcard, .strip-item) { --bd: var(--card-border); }
+:is(button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, button.icon-btn, button.cap-rule-choice) { --bd: var(--line); }
+
+/* ---------- type: labels and controls speak mono */
+:is(button.primary, .btn.primary, button.small, button.ghost, button:not([class]), .wallet-btn, .wiz-reset,
+    .tabs button, .seg button, .theme-toggle button, .hook-view-switch button, .page-tabs button) {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+button.block { font-size: 13.5px; }
+:is(.eyebrow, .wiz-kicker, .hook-sub, .hook-art-label, .hook-group-head, .stat .label, th, .section-head h2, .card-head h2, .dd-sum h2) {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+:is(.card-head h2, .dd-sum h2, .section-head h2) { font-size: 12.5px; font-weight: 600; }
+:is(.pill, .badge, .chip, .hk-state) {
+  --c: 5px;
+  border-radius: 0;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.pill::before { border-radius: 0; width: 5px; height: 5px; }
+.chip .d { border-radius: 0; }
+
+/* ---------- buttons */
+:is(button.primary, .btn.primary) { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+:is(button.primary, .btn.primary):hover:not(:disabled) { background: var(--brand); opacity: 1; filter: brightness(1.08); --c: 14px; }
+:is(button.small:not(.ghost), button:not([class]), .wallet-btn:not(.primary), .wiz-reset, button.icon-btn, button.cap-rule-choice):hover:not(:disabled) {
+  --bd: var(--brand); border-color: var(--brand); color: var(--brand); background: var(--brand-soft); --c: 13px;
+}
+button.ghost:hover:not(:disabled) { color: var(--brand); background: transparent; }
+:is(button.primary, .btn.primary, button.small:not(.ghost), button:not([class]), .wallet-btn, .wiz-reset, button.icon-btn, button.cap-rule-choice) {
+  transition: clip-path 0.25s cubic-bezier(0.2, 0.9, 0.2, 1), background-color 0.2s, color 0.2s, border-color 0.2s, filter 0.2s;
+}
+:is(button, .btn):focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--brand); }
+:is(button.primary, .btn.primary):focus-visible { box-shadow: inset 0 0 0 2px var(--brand-ink); }
+a:focus-visible { outline-color: var(--brand); }
+.icon-btn { border-radius: 0; }
+
+/* ---------- surfaces */
+.tcard:hover, .strip-item:hover { --bd: var(--line-strong); }
+.tcard { transition: border-color 0.15s ease, transform 0.18s ease-out; }
+.tcard::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  background: linear-gradient(115deg, transparent calc(var(--sx, 50%) - 22%), rgba(255, 255, 255, 0.09) var(--sx, 50%), transparent calc(var(--sx, 50%) + 22%));
+}
+.tcard.tilting::after { opacity: 1; }
+.notice.red { box-shadow: none; background: repeating-linear-gradient(-45deg, var(--red-soft) 0 6px, transparent 6px 12px), var(--red-soft); }
+.notice.green { box-shadow: none; }
+input:focus, select:focus, textarea:focus { border-color: var(--brand); }
+.tgl, .tgl::after { border-radius: 0; }
+
+/* ---------- shell */
+.logo-mark {
+  border-radius: 0;
+  background: var(--brand);
+  color: var(--brand-ink);
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+.sidebar .logo { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.22em; font-size: 15px; }
+.side-nav a { font-family: var(--mono); font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.08em; }
+.side-nav a.active { color: var(--brand); background: var(--brand-soft); }
+.side-nav a.active svg { opacity: 1; }
+a.link:hover, .link-inline:hover { text-decoration-color: var(--brand); }
+
+/* ---------- launch wizard */
+.wiz-step.now .wiz-line, .wiz-now-dot { background: var(--text); }
+.wiz-step.done .wiz-line { background: var(--brand); }
+
+/* ---------- hook tones and icons */
+.tone-ember { --tone: var(--ember); --tone-soft: var(--ember-soft); }
+.tone-cyan { --tone: var(--cyan); --tone-soft: var(--cyan-soft); }
+.hook-tile, .hook-ico {
+  border-radius: 0 !important;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+.duo { fill: currentColor; stroke: none; opacity: 0.26; }
+.hook-n { border-radius: 0; }
+
+/* ---------- bracket lock: hook cards. The cut shape is painted (no clip) so the brackets can sit outside it. */
+:is(.hook-selector .hook-choice, button.hk-item, .opt-hook) {
+  --cut: 12px;
+  --cf: var(--card);
+  --cb: var(--card-border);
+  position: relative;
+  border-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  background:
+    linear-gradient(135deg, transparent calc(50% - 0.6px), var(--cb) calc(50% - 0.6px), var(--cb) calc(50% + 0.6px), transparent calc(50% + 0.6px)) 0 0 / var(--cut) var(--cut) no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - 0.6px), var(--cb) calc(50% - 0.6px), var(--cb) calc(50% + 0.6px), transparent calc(50% + 0.6px)) 100% 100% / var(--cut) var(--cut) no-repeat border-box,
+    linear-gradient(var(--cb), var(--cb)) var(--cut) 0 / calc(100% - var(--cut)) 1px no-repeat border-box,
+    linear-gradient(var(--cb), var(--cb)) 100% 0 / 1px calc(100% - var(--cut)) no-repeat border-box,
+    linear-gradient(var(--cb), var(--cb)) 0 100% / calc(100% - var(--cut)) 1px no-repeat border-box,
+    linear-gradient(var(--cb), var(--cb)) 0 var(--cut) / 1px calc(100% - var(--cut)) no-repeat border-box,
+    linear-gradient(135deg, transparent calc(var(--cut) * 0.7071), var(--cf) calc(var(--cut) * 0.7071), var(--cf) calc(100% - var(--cut) * 0.7071), transparent calc(100% - var(--cut) * 0.7071)) border-box !important;
+}
+button.hk-item { --cf: var(--panel); }
+:is(.hook-selector .hook-choice, button.hk-item, .opt-hook):is(:hover, :focus-visible) { --cb: var(--line-strong); }
+:is(.hook-selector .hook-choice[aria-pressed='true'], button.hk-item.on, .opt-hook.on) {
+  --cb: var(--tone);
+  --cf: color-mix(in srgb, var(--tone) 10%, var(--card));
+  box-shadow: none;
+}
+:is(.hook-selector .hook-choice, button.hk-item, .opt-hook)::after {
+  content: '';
+  position: absolute;
+  inset: -18px;
+  pointer-events: none;
+  opacity: 0;
+  --bc: var(--tone, var(--brand));
+  background:
+    linear-gradient(var(--bc), var(--bc)) 100% 0 / 12px 1.5px no-repeat,
+    linear-gradient(var(--bc), var(--bc)) 100% 0 / 1.5px 12px no-repeat,
+    linear-gradient(var(--bc), var(--bc)) 0 100% / 12px 1.5px no-repeat,
+    linear-gradient(var(--bc), var(--bc)) 0 100% / 1.5px 12px no-repeat,
+    linear-gradient(135deg, transparent calc(50% - 0.9px), var(--bc) calc(50% - 0.9px), var(--bc) calc(50% + 0.6px), transparent calc(50% + 0.6px)) 0 0 / 19px 19px no-repeat,
+    linear-gradient(135deg, transparent calc(50% - 0.9px), var(--bc) calc(50% - 0.9px), var(--bc) calc(50% + 0.6px), transparent calc(50% + 0.6px)) 100% 100% / 19px 19px no-repeat;
+  transition: inset 0.42s cubic-bezier(0.2, 1.5, 0.4, 1), opacity 0.2s;
+}
+:is(.hook-selector .hook-choice, button.hk-item, .opt-hook):is(:hover, :focus-visible, [aria-pressed='true'], .on)::after { inset: -6px; opacity: 1; }
+:is(.hook-selector .hook-choice, button.hk-item):focus-visible { box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.hook-selector .hook-choice, button.hk-item, .opt-hook)::after, .tcard, .tcard::after { transition: none; }
+}
+
+/* ---------- diagrams: cut blocks with depth (components/HookArt.tsx Block). --bf is the front colour; the top is
+   lit, the side is shaded. Data blocks are bright; surface blocks (nodes, shelves, the track) stay quiet. */
+.hd-blk polygon { stroke: var(--bg); stroke-width: 1; stroke-linejoin: round; }
+.hd-blk .f { fill: var(--bf); }
+.hd-blk .t { fill: color-mix(in srgb, var(--bf) 55%, #fff); }
+.hd-blk .r { fill: color-mix(in srgb, var(--bf) 50%, #000); }
+.hd-blk.buy { --bf: var(--accent); }
+.hd-blk.held { --bf: color-mix(in srgb, var(--accent) 42%, var(--bg)); }
+.hd-blk.ok { --bf: var(--green); }
+.hd-blk.cyan { --bf: var(--cyan); }
+.hd-blk.amber { --bf: var(--amber); }
+.hd-blk:is(.node, .hook, .okn, .badn, .embern) .t { fill: color-mix(in srgb, var(--bf) 82%, #fff); }
+.hd-blk:is(.node, .hook, .okn, .badn, .embern) .r { fill: color-mix(in srgb, var(--bf) 55%, #000); }
+.hd-blk.node { --bf: var(--card); }
+.hd-blk.node .f { stroke: var(--line-strong); }
+.hd-blk.hook { --bf: color-mix(in srgb, var(--accent) 20%, var(--card)); }
+.hd-blk.hook .f { stroke: var(--accent); }
+.hd-blk.okn { --bf: color-mix(in srgb, var(--green) 16%, var(--card)); }
+.hd-blk.okn .f { stroke: var(--green); }
+.hd-blk.badn { --bf: color-mix(in srgb, var(--red) 16%, var(--card)); }
+.hd-blk.badn .f { stroke: var(--red); }
+.hd-blk.embern { --bf: color-mix(in srgb, var(--ember) 18%, var(--card)); }
+.hd-blk.embern .f { stroke: var(--ember); }
+.hd-node.ember text.hd-t, .hd-node.ember .hd-ico { fill: var(--ember); color: var(--ember); }
+.hd-blk.bad .f { stroke: var(--red); stroke-width: 1.3; }
+.hd-blk.bad .t { fill: color-mix(in srgb, var(--red) 42%, transparent); stroke: var(--red); stroke-dasharray: 3 2; }
+.hd-blk.bad .r { fill: color-mix(in srgb, var(--red) 16%, transparent); stroke: var(--red); stroke-dasharray: 3 2; }
+.hd-hz-bg { fill: color-mix(in srgb, var(--red) 12%, transparent); }
+.hd-hz-fg { fill: color-mix(in srgb, var(--red) 48%, transparent); }
+.hd-key.buy { fill: var(--accent); }
+.hd-key.held { fill: color-mix(in srgb, var(--accent) 42%, var(--bg)); }
+.hd-key.bad { fill: color-mix(in srgb, var(--red) 35%, transparent); stroke: var(--red); stroke-dasharray: 2 2; }
+.hd-timer { fill: color-mix(in srgb, var(--cyan) 50%, transparent); }
+.hd-opt.ok rect.hd-optmark { fill: var(--green-soft); stroke: var(--green); }
+.hd-opt.bad rect.hd-optmark { fill: var(--red-soft); stroke: var(--red); }
+.hd-pot.win text.hd-t { fill: #1a1204; }
+.hd-bar.ember { fill: var(--ember-soft); stroke: var(--ember); }
+.hd-flash { opacity: 0; }
+
+/* the 6 s loop: buys arrive in order, the refused one hits the rule, shakes and is pulled back, then a short fade */
+.hd-anim { transform-box: fill-box; animation-duration: 6s; animation-iteration-count: infinite; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); animation-fill-mode: both; }
+.hd-up { transform-origin: 50% 100%; }
+.hd-rt { transform-origin: 0% 50%; }
+.hd-cyc { animation: hdCyc 6s linear infinite; }
+@keyframes hdCyc { 0%, 88% { opacity: 1; } 96%, 100% { opacity: 0; } }
+/* cap per account */
+@keyframes hdC1 { 0% { transform: scaleY(0); } 8%, 100% { transform: scaleY(1); } }
+@keyframes hdC2h { 0%, 17% { opacity: 0; } 19%, 100% { opacity: 1; } }
+@keyframes hdC2 { 0%, 19% { transform: scaleY(0); } 28%, 100% { transform: scaleY(1); } }
+@keyframes hdC3h { 0%, 37% { opacity: 0; } 39%, 100% { opacity: 1; } }
+@keyframes hdCx { 0%, 39% { transform: scaleY(0); } 50% { transform: scaleY(1); } 52% { transform: scaleY(1) translateX(-4px); } 54% { transform: scaleY(1) translateX(4px); } 56% { transform: scaleY(1) translateX(-3px); } 58% { transform: scaleY(1); } 67%, 100% { transform: scaleY(0); } }
+@keyframes hdFlashC { 0%, 47% { opacity: 0; } 50%, 62% { opacity: 1; } 67%, 100% { opacity: 0; } }
+@keyframes hdL1 { 0%, 8% { opacity: 0; } 11%, 100% { opacity: 1; } }
+@keyframes hdL2 { 0%, 28% { opacity: 0; } 31%, 100% { opacity: 1; } }
+@keyframes hdLx { 0%, 61% { opacity: 0; } 65%, 100% { opacity: 1; } }
+/* max single buy */
+@keyframes hdBa { 0% { transform: scaleX(0); } 8%, 100% { transform: scaleX(1); } }
+@keyframes hdBb { 0%, 15% { transform: scaleX(0); } 25%, 100% { transform: scaleX(1); } }
+@keyframes hdBc { 0%, 32% { transform: scaleX(0); } 42% { transform: scaleX(1); } 50% { transform: scaleX(1) translateX(-4px); } 52% { transform: scaleX(1) translateX(4px); } 54%, 62% { transform: scaleX(1); } 70%, 100% { transform: scaleX(0); } }
+@keyframes hdBo { 0%, 42% { transform: scaleX(0); } 48% { transform: scaleX(1); } 50% { transform: scaleX(1) translateX(-4px); } 52% { transform: scaleX(1) translateX(4px); } 54% { transform: scaleX(1); } 60%, 100% { transform: scaleX(0); } }
+@keyframes hdFlashB { 0%, 45% { opacity: 0; } 48%, 58% { opacity: 1; } 63%, 100% { opacity: 0; } }
+@keyframes hdLa { 0%, 9% { opacity: 0; } 12%, 100% { opacity: 1; } }
+@keyframes hdLb { 0%, 25% { opacity: 0; } 28%, 100% { opacity: 1; } }
+@keyframes hdLc { 0%, 62% { opacity: 0; } 66%, 100% { opacity: 1; } }
+/* per-slot limit */
+@keyframes hdSa { 0% { transform: scaleY(0); } 8%, 100% { transform: scaleY(1); } }
+@keyframes hdSb { 0%, 14% { transform: scaleY(0); } 22%, 100% { transform: scaleY(1); } }
+@keyframes hdSx { 0%, 30% { transform: scaleY(0); } 40% { transform: scaleY(1); } 42% { transform: scaleY(1) translateX(-4px); } 44% { transform: scaleY(1) translateX(4px); } 46%, 48% { transform: scaleY(1); } 56%, 100% { transform: scaleY(0); } }
+@keyframes hdSc { 0%, 62% { opacity: 0; transform: translateY(-20px); } 70%, 100% { opacity: 1; transform: none; } }
+@keyframes hdFlashS { 0%, 38% { opacity: 0; } 41%, 50% { opacity: 1; } 54%, 100% { opacity: 0; } }
+@keyframes hdLs1 { 0%, 54% { opacity: 0; } 58%, 100% { opacity: 1; } }
+@keyframes hdLs2 { 0%, 70% { opacity: 0; } 74%, 100% { opacity: 1; } }
+/* slow mode */
+@keyframes hdDa { 0% { transform: translateY(-30px); opacity: 0; } 6%, 100% { transform: none; opacity: 1; } }
+@keyframes hdTm { 0%, 8% { transform: scaleX(0); } 70%, 100% { transform: scaleX(1); } }
+@keyframes hdDb { 0%, 25% { transform: translateY(-30px); opacity: 0; } 30% { transform: none; opacity: 1; } 34% { transform: translateY(-14px); opacity: 1; } 40%, 100% { transform: translateY(-14px); opacity: 0.5; } }
+@keyframes hdDc { 0%, 69% { transform: translateY(-30px); opacity: 0; } 75%, 100% { transform: none; opacity: 1; } }
+@keyframes hdLd1 { 0%, 6% { opacity: 0; } 9%, 100% { opacity: 1; } }
+@keyframes hdLd2 { 0%, 33% { opacity: 0; } 37%, 100% { opacity: 1; } }
+@keyframes hdLd3 { 0%, 75% { opacity: 0; } 78%, 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .hd-anim, .hd-cyc { animation: none !important; } }
