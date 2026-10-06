@@ -61,7 +61,7 @@ export class StudioLaunchRelay {
     this.sweep();
     const h = msgHash(tx.serializeMessage());
     const p = this.pending.get(h);
-    if (!p) throw new LaunchUserRefusal('refusing: this is not a launch this server built (unknown or expired message)');
+    if (!p) throw new LaunchUserRefusal('refusing: this is not a launch this server built — the signing window (90 s) has likely expired. Nothing was sent; press Launch again to rebuild');
     this.pending.delete(h);   // one use, also on failure below
     if (!tx.feePayer || tx.feePayer.toBase58() !== p.owner) throw new LaunchUserRefusal('refusing: the fee payer is not the wallet this launch was built for');
     if (tx.signatures.some((s) => s.signature === null)) throw new LaunchUserRefusal('refusing: the launch tx is missing a signature');
@@ -137,8 +137,20 @@ export async function submitUserLaunch(lp: Launchpad, relay: StudioLaunchRelay, 
   let sig: string;
   try { sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: false }); }
   catch (e: any) { throw new LaunchUserRefusal(`the launch tx was not accepted: ${String(e?.message ?? e).slice(0, 300)}`); }
-  const conf = await conn.confirmTransaction({ signature: sig, blockhash: tx.recentBlockhash!, lastValidBlockHeight: p.lastValidBlockHeight }, 'confirmed');
-  if (conf.value.err) throw new LaunchUserRefusal(`the launch tx failed on chain: ${JSON.stringify(conf.value.err)} (${sig})`);
+  let confErr: unknown = null;
+  try {
+    const conf = await conn.confirmTransaction({ signature: sig, blockhash: tx.recentBlockhash!, lastValidBlockHeight: p.lastValidBlockHeight }, 'confirmed');
+    confErr = conf.value.err;
+  } catch (e) {
+    // confirmation can time out or the subscription can drop while the tx still lands; one direct status
+    // check decides, so a landed launch is recorded instead of orphaned
+    const st = await conn.getSignatureStatuses([sig]).catch(() => null);
+    const s = st?.value?.[0];
+    if (s && !s.err && (s.confirmationStatus === 'confirmed' || s.confirmationStatus === 'finalized')) confErr = null;
+    else if (s?.err) confErr = s.err;
+    else throw new LaunchUserRefusal(`the launch was sent but not confirmed in time (${String((e as any)?.message ?? e).slice(0, 200)}). It may still land — check ${explorerTx(sig, lp.c.name)} before launching again`);
+  }
+  if (confErr) throw new LaunchUserRefusal(`the launch tx failed on chain: ${JSON.stringify(confErr)} (${sig})`);
 
   const o = p.opts;
   const rec: LaunchRecord = {

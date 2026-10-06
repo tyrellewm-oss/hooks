@@ -31,6 +31,8 @@ interface Row { offset: string; pct: string }
 interface Extras { on: Record<OptionalHookId, boolean>; maxBuyPct: string; perSlotPct: string; windowSlots: string; potEvery: string; potMinPct: string; cooldownSlots: string; lockOn: boolean; lockPct: string; lockSlots: string }
 const pctStr = (bps: number) => String(bps / 100);
 const emptyExtras = (): Extras => ({ on: { maxbuy: false, slot: false, pot: false, cooldown: false }, maxBuyPct: pctStr(RULES_DEFAULT.maxBuyBps), perSlotPct: pctStr(RULES_DEFAULT.maxPerSlotBps), windowSlots: RULES_DEFAULT.windowSlots, potEvery: String(RULES_DEFAULT.potEvery), potMinPct: pctStr(RULES_DEFAULT.potMinBps), cooldownSlots: String(RULES_DEFAULT.cooldownSlots), lockOn: false, lockPct: String(CREATOR_LOCK_DEFAULT.pct), lockSlots: String(CREATOR_LOCK_DEFAULT.slots) });
+/** Some wallets reject with a string or a plain object instead of an Error; always show the user something. */
+const errText = (e: unknown): string => (e instanceof Error && e.message) || (typeof e === 'string' && e) || 'Something went wrong in the wallet. Nothing was launched — try again.';
 /** percent of supply (up to 2 decimals) -> bps, or null if it isn't one */
 const toBps = (v: string, min: number) => { const t = v.trim(); if (!/^\d+(\.\d{1,2})?$/.test(t)) return null; const b = Math.round(Number(t) * 100); return b >= min && b <= 10_000 ? b : null; };
 /** Same limits as the server (sdk/buy_rules.ts) and the program (validate_rules). */
@@ -131,13 +133,13 @@ export function CreatePage({ meta }: { meta: Meta }) {
         setStep('Approve the launch in your wallet…');
         let signed: Uint8Array;
         try { signed = await signTransaction(hexToBytes(built.tx)); }
-        catch (e) { setError(/reject|denied|cancel/i.test((e as Error).message) ? 'You declined in the wallet. Nothing was launched.' : (e as Error).message); return; }
+        catch (e) { const m = errText(e); setError(/reject|denied|cancel/i.test(m) ? 'You declined in the wallet. Nothing was launched.' : m); return; }
         setStep('Sending…');
         setResult(await api.launchSubmit(bytesToHex(signed)));
       } else {
         setResult(await api.create(req));   // server-signed test path (no wallet connected)
       }
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError(errText(e)); }
     finally { setBusy(false); setStep(''); }
   }
 
@@ -258,6 +260,11 @@ export function CreatePage({ meta }: { meta: Meta }) {
                 <ReviewRow k="Signed by" v={bw.address ? `your wallet (${bw.address.slice(0, 4)}…${bw.address.slice(-4)}) + the ${meta.cluster.toLowerCase()} launch key` : `the server's throwaway ${meta.cluster.toLowerCase()} keys (connect a wallet to sign it yourself)`} />
               </div>
               {blocking >= 0 && <div className="notice red small" style={{ marginTop: 14 }}>Step {blocking + 1} ({STEPS[blocking].label}) needs attention: {STEPS[blocking].err}</div>}
+              {studioRequired && studioSession && bw.address && studioSession.wallet !== bw.address && (
+                <div className="notice amber small" style={{ marginTop: 14 }}>
+                  Your wallet is on a different account ({bw.address.slice(0, 4)}…{bw.address.slice(-4)}) than the one signed in to the studio ({studioSession.wallet.slice(0, 4)}…{studioSession.wallet.slice(-4)}). The launch is built for the signed-in wallet — switch back to it in your wallet, or sign in again with this one.
+                </div>
+              )}
               <button className="primary block" style={{ marginTop: 16 }} disabled={busy || !!formErr || 'err' in check || !!extrasCheck.err} onClick={create}>{busy ? step || 'Creating… (2 transactions)' : `Launch on ${meta.cluster.toLowerCase()}`}</button>
               {error && <div className="notice red small" style={{ marginTop: 12 }}>{error}</div>}
               {result && (

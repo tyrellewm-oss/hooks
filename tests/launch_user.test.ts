@@ -60,7 +60,7 @@ test('relay: entries expire after the TTL', () => {
   relay.issue(tx.serializeMessage(), pendingFor(owner));
   now += LAUNCH_BUILD_TTL_MS + 1;
   const signed = wire(tx); signed.partialSign(owner);
-  assert.throws(() => relay.take(signed), /unknown or expired/);
+  assert.throws(() => relay.take(signed), /not a launch this server built/);
 });
 
 test('build/submit wiring: 8.3 checks before any build, simulation before co-signing, secrets never in the reply, routes studio-gated', () => {
@@ -80,6 +80,17 @@ test('build/submit wiring: 8.3 checks before any build, simulation before co-sig
     assert.match(r.slice(0, 300), /studioCheck\(req\)/, `${route} is studio-gated`);
   }
   assert.match(srv, /const owner = studio\.open \? walletKey\(b\.owner\) : walletKey\(who\.wallet\);/, 'with sign-in required the launch is built for the signed-in studio wallet, never a body field; only an open studio (LOCAL, no allowlist, no session wallet) takes the connected wallet from the request');
+});
+
+test('routing: the studio sign-in block does not swallow the launch routes with its catch-all 404', () => {
+  // regression: `startsWith('/api/studio')` matched /api/studio/launch/* too and 404ed before the launch
+  // handlers below it could run, so every browser-wallet launch died with "not found"
+  const srv = readFileSync('app/server.ts', 'utf8');
+  const gate = srv.indexOf("url.pathname.startsWith('/api/studio')");
+  assert.ok(gate >= 0, 'the studio sign-in block exists');
+  const cond = srv.slice(gate, srv.indexOf('{', gate));
+  assert.match(cond, /!url\.pathname\.startsWith\('\/api\/studio\/launch\/'\)/, 'the sign-in block excludes /api/studio/launch/* so the build/submit handlers are reachable');
+  assert.ok(gate < srv.indexOf("'/api/studio/launch/build'"), 'the sign-in block (with its 404) still comes before the launch routes it must exclude');
 });
 
 test('confirmation uses the lastValidBlockHeight of the blockhash in the tx (from the pre-send check), not a second fetch', () => {

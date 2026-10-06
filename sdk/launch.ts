@@ -146,7 +146,10 @@ export interface CreatorLock { pct: number; slots: number }
 /** Validate the creator lock (undefined/null/0 pct -> none). Throws CreatorLockRefusal, never guesses. */
 export function resolveCreatorLock(o: { creatorLockPct?: number | null; creatorLockSlots?: number | null }): CreatorLock | null {
   const pct = o.creatorLockPct ?? 0;
-  if (pct === 0) return null;
+  if (pct === 0) {
+    if (o.creatorLockSlots) throw new CreatorLockRefusal('creator lock duration given without creatorLockPct; set both or neither');
+    return null;
+  }
   if (typeof pct !== 'number' || !Number.isInteger(pct) || pct < 1 || pct > CREATOR_LOCK_PCT_MAX)
     throw new CreatorLockRefusal(`creator lock must be a whole percent of supply, 1 to ${CREATOR_LOCK_PCT_MAX} (got ${String(o.creatorLockPct)})`);
   const slots = o.creatorLockSlots ?? 0;

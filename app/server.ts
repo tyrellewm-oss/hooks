@@ -222,7 +222,9 @@ http.createServer(async (req, res) => {
       try { return send(res, 200, await submitSigned(c, relay, Buffer.from(b.tx, 'base64'))); }
       catch (e: any) { if (e instanceof WalletTxRefusal) return send(res, 400, { error: e.message }); throw e; }
     }
-    if (url.pathname.startsWith('/api/studio')) {   // studio sign-in: status, challenge, session, sign-out
+    // studio sign-in: status, challenge, session, sign-out. The launch routes also live under /api/studio/ and are
+    // handled below, so they must be excluded here — this block 404s every other /api/studio path.
+    if (url.pathname.startsWith('/api/studio') && !url.pathname.startsWith('/api/studio/launch/')) {
       try {
         if (url.pathname === '/api/studio' && req.method === 'GET') { let wallet: string | null = null; try { wallet = studio.require(req.headers['x-studio-session']); } catch {} return send(res, 200, { ...studio.status(), wallet }); }
         if (url.pathname === '/api/studio/challenge' && req.method === 'GET') return send(res, 200, studio.challenge(url.searchParams.get('wallet')));
