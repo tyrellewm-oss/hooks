@@ -191,15 +191,15 @@ export function optionalHookList(r: { maxBuyBps: number; maxPerSlotBps: number; 
     },
     {
       id: 'cooldown', name: 'Slow mode', icon: <IconClock size={20} />, tone: 'green', launch: 'optional',
-      short: `One curve buy every ${r.cooldownSlots} slots (~${slotSecs(r.cooldownSlots)})`,
+      short: `One curve buy every ${r.cooldownSlots} slots (${slotSecs(r.cooldownSlots)})`,
       when: `Curve \u00b7 ${win}`, runs: 'Transfer hook program, one shared timer for the whole token',
       steps: [
         'After any curve buy lands, a shared timer starts for the whole token.',
-        `The next buy, from anyone, must wait ${r.cooldownSlots} slots (~${slotSecs(r.cooldownSlots)}). A buy inside the gap fails and nothing moves.`,
+        `The next buy, from anyone, must wait ${r.cooldownSlots} slots (${slotSecs(r.cooldownSlots)}). A buy inside the gap fails and nothing moves.`,
         'A crew splitting across many wallets waits out the gap for every single buy, so taking a large share takes a long time.',
       ],
       settings: [
-        { k: 'Gap between buys', v: `${r.cooldownSlots} slots \u00b7 ~${slotSecs(r.cooldownSlots)}` },
+        { k: 'Gap between buys', v: `${r.cooldownSlots} slots \u00b7 ${slotSecs(r.cooldownSlots)}` },
         { k: 'Applies', v: Win },
         { k: 'Counts', v: 'all buyers together' },
         { k: 'Selling', v: 'never limited' },
@@ -218,16 +218,16 @@ export function creatorLockInfo(pct: number, slots: number): HookInfo {
   const dur = approxDuration(String(slots));
   return {
     id: 'lock', name: 'Creator lock', icon: <IconLock size={20} />, tone: 'accent', launch: 'optional',
-    short: `${pct}% of supply locked for the creator until ~${dur} after graduation`,
-    when: `From launch until ~${dur} after graduation`, runs: 'Meteora DBC locked vesting, set at launch',
+    short: `${pct}% of supply locked for the creator until ${dur} after graduation`,
+    when: `From launch until ${dur} after graduation`, runs: 'Meteora DBC locked vesting, set at launch',
     steps: [
       `${pct}% of the supply is set aside for the creator at launch, locked on chain.`,
       'It stays locked through the whole bonding curve and through graduation.',
-      `It unlocks in one piece ~${dur} after the token migrates to the pool. Until then the creator cannot sell any of it.`,
+      `It unlocks in one piece ${dur} after the token migrates to the pool. Until then the creator cannot sell any of it.`,
     ],
     settings: [
       { k: 'Creator share', v: `${pct}% of supply` },
-      { k: 'Unlocks', v: `~${dur} after graduation` },
+      { k: 'Unlocks', v: `${dur} after graduation` },
       { k: 'Unlock shape', v: 'all at once' },
       { k: 'Changeable later', v: 'no' },
     ],
@@ -237,7 +237,7 @@ export function creatorLockInfo(pct: number, slots: number): HookInfo {
 }
 
 /** Every hook: the four each token runs, then the optional ones. */
-export const allHooks = (meta: Meta): HookInfo[] => [...hookList(meta), ...optionalHookList()];
+export const allHooks = (meta: Meta): HookInfo[] => [...hookList(meta), ...optionalHookList(), creatorLockInfo(CREATOR_LOCK_DEFAULT.pct, CREATOR_LOCK_DEFAULT.slots)];
 
 export function ordinal(n: number): string {
   const t = n % 100, o = n % 10;

@@ -148,7 +148,7 @@ export function DocsPage({ meta }: { meta: Meta }) {
         </Section>
 
         <Section id="optional" title="Optional hooks">
-          <p>Three more rules a launch can switch on. They are off by default, chosen in the launch’s <b>Optional hooks</b> step and, like everything else, fixed at launch. All three run in the same transfer hook as the cap, only on buys from the bonding curve: selling and wallet-to-wallet transfers are never touched, and they end at graduation when the hook is removed.</p>
+          <p>Four more rules a launch can switch on. They are off by default, chosen in the launch’s <b>Optional hooks</b> step and, like everything else, fixed at launch. All four run in the same transfer hook as the cap, only on buys from the bonding curve: selling and wallet-to-wallet transfers are never touched, and they end at graduation when the hook is removed.</p>
           <p>Each token page lists the optional hooks that token launched with, live.</p>
         </Section>
 

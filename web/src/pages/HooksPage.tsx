@@ -39,7 +39,7 @@ export function HooksPage({ meta }: { meta: Meta }) {
       <section className="hero hooks-explorer-hero">
         <div>
           <h1>The rules every token runs</h1>
-          <p>Four rules every token runs, plus three a launch can add. All fixed at launch. Explore what each does, when it runs and where its limits are.</p>
+          <p>Four rules every token runs, plus {hooks.length - 4} a launch can add. All fixed at launch. Explore what each does, when it runs and where its limits are.</p>
         </div>
         <span className="hero-line" />
       </section>
