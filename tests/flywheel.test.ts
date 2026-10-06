@@ -180,7 +180,7 @@ test('FW-22 (devnet side): force_fail_swap allowed on devnet only; test knobs re
   const k = keys(); const shared = k.claim.publicKey.toBase58();
   assert.doesNotThrow(() => preflightOffline(cfgWith({ cluster: 'devnet', force_fail_swap: true, hook_upgrade_authority: shared, hook_lift_authority: shared }), k));
   const { cfg, overrides } = applyOverrides(base, { FW_FORCE_FAIL_SWAP: '1', FW_MAX_SWAP_LAMPORTS: '1000000' } as any);
-  assert.equal(cfg.force_fail_swap, true); assert.equal(cfg.max_swap_lamports_per_run, '1000000'); assert.equal(base.max_swap_lamports_per_run, '500000000');
+  assert.equal(cfg.force_fail_swap, true); assert.equal(cfg.max_swap_lamports_per_run, '1000000'); assert.equal(base.max_swap_lamports_per_run, '20000000');
   assert.deepEqual(overrides, ['FW_MAX_SWAP_LAMPORTS=1000000', 'FW_FORCE_FAIL_SWAP=1']);
 });
 test('FW-17: public log has addresses/sigs only — no key arrays, no internal paths', () => {
@@ -628,7 +628,7 @@ test('8.5 retry rule 3: a negative re-read unspent amount (treasury wSOL below t
   const s = m.state(); s.current!.stages.dev = { status: 'confirmed', sig: 'devSig' } as any; s.unsplit_lamports = '2000000'; m.k.store.saveState(s);   // split already done this run, so the claims stay unsplit
   const r = await m.k.runOnce(T0 + 2 * W);
   const st = m.state();
-  assert.equal(r.status, 'reconcile_mismatch'); assert.match(r.reason ?? '', /below the unsplit claims \(-1000000\)/);
+  assert.equal(r.status, 'reconcile_mismatch'); assert.match(r.reason ?? '', /below the unsplit claims and the pot \(-1000000\)/);
   assert.equal(st.paused, true); assert.match(st.pause_reason ?? '', /^reconcile_mismatch/);
   assert.equal(m.builds.length, 0, 'no swap built'); assert.deepEqual(m.sent, [], 'nothing sent'); assert.equal(st.pending_lamports, s.pending_lamports, 'stored amount untouched');
 });

@@ -17,15 +17,15 @@
   ],
   "keys": {
     "claim_signer": "deployer",
-    "treasury": "fw_treasury",
+    "treasury": "fw_rul_treasury",
     "gas": "fw_gas"
   },
   "pinned_pubkeys": {
     "claim_signer": "6KqYFdzKEFSvdjbNgC6T6MinFqEwt8XxiqGDTXHRkBdb",
-    "treasury": "BCo63HrVtH5wqd51JiCP9xvpasggYiMPRg8FfW4Bican",
-    "gas": "FYYkY3qCbBAiLs6cxK7JQwxFtFJvVT6u4n5S8hboDqja"
+    "gas": "FYYkY3qCbBAiLs6cxK7JQwxFtFJvVT6u4n5S8hboDqja",
+    "treasury": "FPJDZpAZ1CLLHmxGwoBrW1MKBLvj37TeBxe1bYh1gkX7"
   },
-  "dev_payout": "AtyHf5gRgJXHFFF4Yfmq9DmK1gkeiTqbftk378KNH5aL",
+  "dev_payout": "7wMKuHWMprM7DexBA37QuLNURgQ1arZkNka4SbhX2A3R",
   "hook_program": "4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y",
   "hook_upgrade_authority": "6KqYFdzKEFSvdjbNgC6T6MinFqEwt8XxiqGDTXHRkBdb",
   "hook_lift_authority": "6KqYFdzKEFSvdjbNgC6T6MinFqEwt8XxiqGDTXHRkBdb",
