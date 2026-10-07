@@ -97,3 +97,5 @@
 {"at":"2026-10-06T20:04:48.323Z","config":"devnet-rul","kind":"error","cmd":"run","error":"fetch failed"}
 {"at":"2026-10-06T20:06:15.149Z","config":"devnet-rul","kind":"error","cmd":"verify","error":"fetch failed"}
 {"at":"2026-10-06T23:59:03.149Z","config":"devnet-rul","kind":"verify","sigs":3,"unresolved":[],"claimed_ok":true,"dev_ok":true,"spent_ok":true,"burned_ok":true,"pot_ok":true,"burns_paired_with_swap":true,"totals":{"claimed_lamports":"1940954","dev_lamports":"291143","spent_lamports":"0","burned_raw":"0","gas_lamports":"30000","rent_refund_lamports":"0","pot_lamports":"194095","pending_lamports":"1455716","unsplit_lamports":"0","unburned_raw":"0","pot_pending_lamports":"0"}}
+{"at":"2026-10-06T23:59:42.108Z","config":"devnet-rul","kind":"run","run_id":"devnet-2026-10-06T23:55:00Z","status":"waiting_for_graduation","reason":"main token DBC pool isMigrated = 0: no swap, buyback held","txs":[],"overrides":[]}
+{"at":"2026-10-06T23:59:52.334Z","config":"devnet-pot","kind":"run","run_id":"devnet-2026-10-06T23:55:00Z","status":"waiting_for_graduation","reason":"main token DBC pool isMigrated = 0: no swap, buyback held","txs":[],"overrides":[]}

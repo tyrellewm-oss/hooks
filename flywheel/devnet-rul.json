@@ -145,6 +145,52 @@
    },
    "finished_at": "2026-10-06T19:44:20.372Z",
    "test_knobs": []
+  },
+  {
+   "run_id": "devnet-2026-10-06T23:55:00Z",
+   "started_at": "2026-10-06T23:59:39.068Z",
+   "status": "waiting_for_graduation",
+   "reason": "main token DBC pool isMigrated = 0: no swap, buyback held",
+   "warnings": [
+    "WARNING three-key rule (accepted throwaway exception on devnet): hook upgrade authority and lift authority are the same key 6KqY…",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 6KqY… is the hook upgrade authority",
+    "WARNING three-key rule (accepted throwaway exception on devnet): keeper key 'claim_signer' 6KqY… is the hook lift authority"
+   ],
+   "claims": [
+    {
+     "source": "dbc",
+     "pool": "95AJg4HjR2XmsRXGUUGRvUAV3EvJKznGfZth4fFepGAq",
+     "claimable_before": "0",
+     "claimed_lamports": "0",
+     "claimed_vs_read_lamports": "0",
+     "rent_refund_lamports": "0",
+     "sig": "",
+     "skipped": "below minimum (0 < 1000000)"
+    }
+   ],
+   "dev_lamports": "0",
+   "dev_sig": "",
+   "buyback_lamports": "0",
+   "carryover_lamports": "1455716",
+   "carryover_reason": "waiting_for_graduation",
+   "rent_refund_lamports": "0",
+   "gas_lamports": "0",
+   "txs": [],
+   "reconcile": {
+    "treasury_wsol_raw": "1455716",
+    "expected_treasury_wsol_raw": "1455716",
+    "treasury_main_raw": "0",
+    "expected_treasury_main_raw": "0",
+    "dev_wsol_raw": "291143",
+    "expected_dev_wsol_raw": "291143",
+    "treasury_native_lamports": "0",
+    "supply_raw": "1000000000000000",
+    "supply_drop_since_first_run": "0",
+    "burned_raw_total": "0",
+    "ok": true
+   },
+   "finished_at": "2026-10-06T23:59:42.084Z",
+   "test_knobs": []
   }
  ],
  "current_run": null,
