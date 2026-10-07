@@ -5,14 +5,13 @@
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { buildSync } from 'esbuild';
 import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { resolveCluster, parseClusterArg, explorerAddr, explorerTx, assertNotMainnet } from '../sdk/cluster.js';
 import { defaultSchedule, scheduleJson, resolveSchedule } from '../sdk/schedules.js';
 import { loadOrCreate, deployerName } from '../sdk/keys.js';
 import { Launchpad, listLaunches, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration, resolveCreatorLock, CreatorLockRefusal, dammV2MigrationConfigFor, type CreatorLock } from '../sdk/launch.js';
 import { validate, RELEASE_LIMITS, type Step } from '../sdk/capMath.js';
-import { parseRestrictionsLifted, decodeRules, type BuyRules } from '../sdk/hook.js';
+import { parseRestrictionsLifted, decodeRules, readHookAuthorities, type BuyRules } from '../sdk/hook.js';
 import { parseBuyRules, buyRulesBps, rulesUnsupportedHint, BuyRulesRefusal } from '../sdk/buy_rules.js';
 import { redactDeep } from '../sdk/redact.js';
 import { serverError } from './errors.js';
@@ -28,22 +27,32 @@ import { validateMetadata, saveMetadata, loadMetadata, loadImage, publicMetadata
 import { StudioAuth, StudioAuthError, parseAllowlist } from '../sdk/studio_auth.js';
 
 const argv = process.argv.slice(2);
+/** Vercel sets VERCEL=1. The hosted site is read-only on devnet: no key file exists there, so none is loaded, and only
+ *  GET routes run (launching, trading and token edits stay on the operator's machine). */
+const HOSTED = process.env.VERCEL === '1';
 const PORT = Number(process.env.PORT ?? 5175);
 const UI = uiModeFromArgs(argv);   // --web: serve the new front end from web/dist (build it first)
-assertUiBuilt(UI);
+if (!HOSTED) assertUiBuilt(UI);   // hosted: the CDN serves web/dist
 const content = JSON.parse(readFileSync('research/page_content.json', 'utf8'));
 // AC-30: refuse to start if anything mainnet-like is configured.
 for (const v of [process.env.DEVNET_RPC, process.env.LOCAL_RPC]) if (v) assertNotMainnet(v);
 
-const c = await resolveCluster(parseClusterArg(argv));
+const c = await resolveCluster(HOSTED ? 'devnet' : parseClusterArg(argv));
 const lp = new Launchpad(c);
-const deployer = loadOrCreate(c.name, deployerName(c.name));
-const launchKey = loadOrCreate(c.name, 'launch');   // 8.3: separate throwaway launch key (devnet/local only)
-const wallets: Record<string, ReturnType<typeof loadOrCreate>> = { A: loadOrCreate(c.name, 'buyerA'), B: loadOrCreate(c.name, 'buyerB') };
-let commit = 'unknown'; try { commit = execSync('git rev-parse --short HEAD').toString().trim(); } catch {}
+const deployer = HOSTED ? null : loadOrCreate(c.name, deployerName(c.name));
+const launchKey = HOSTED ? null : loadOrCreate(c.name, 'launch');   // 8.3: separate throwaway launch key (devnet/local only)
+const wallets: Record<string, ReturnType<typeof loadOrCreate>> = HOSTED ? {} : { A: loadOrCreate(c.name, 'buyerA'), B: loadOrCreate(c.name, 'buyerB') };
+let commit = process.env.HOOKD_COMMIT ?? 'unknown';
+if (!process.env.HOOKD_COMMIT) try { commit = execSync('git rev-parse --short HEAD').toString().trim(); } catch {}
+/** The lift authority is the deployer key locally; hosted (no keys), it is read from the hook's Global account. */
+let chainLiftAuthority: Promise<string> | null = null;
+const liftAuthority = (): string | Promise<string> => deployer ? deployer.publicKey.toBase58()
+  : (chainLiftAuthority ??= readHookAuthorities(c.connection, lp.hook.programId).then(a => a.liftAuthority ?? 'none', e => { chainLiftAuthority = null; throw e; }));
+/** Host only: an RPC URL can carry an API key in its query string. */
+const rpcHost = (u: string) => { try { return new URL(u).host; } catch { return 'unknown'; } };
 
-// Ship the SAME cap math to the browser (AC-2): bundle sdk/capMath.ts.
-const capMathJs = buildSync({ entryPoints: ['sdk/capMath.ts'], bundle: true, format: 'esm', write: false, target: 'es2020' }).outputFiles[0].text;
+// Ship the SAME cap math to the browser (AC-2): sdk/capMath.ts, bundled on first request.
+let capMathJs: string | null = null;
 
 async function switchHistory(mint: PublicKey) {
   const out: any[] = []; const seen = new Set<string>();
@@ -195,15 +204,17 @@ const send = (res: http.ServerResponse, code: number, obj: any, type = 'applicat
   if (type === 'application/json') obj = redactDeep(obj);   // FW-17: every JSON body is public; all strings (keys too) are redacted
   res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(type === 'application/json' ? JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) : obj); };
 
-http.createServer(async (req, res) => {
+/** The site's one request listener; app/vercel.ts hands Vercel's requests to it (read-only when hosted). */
+export const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', 'http://x');
+    if (HOSTED && req.method !== 'GET') return send(res, 403, { error: 'this hosted site is read-only: launching, trading and token edits are not available here' });
     // ticket 8.5b: the listing, /api/token and /api/trade serve registry mints only (app/site_registry.ts); the registry
     // is read once per request, before any local-record lookup or chain access
     const routed = await siteRoute(url.pathname, req.method ?? 'GET', () => body(req), {
       cluster: c.name,
       launches: () => listLaunches(c.name),
-      meta: listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: c.url, programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: deployer.publicKey.toBase58(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listing.map(l => ({ mint: l.mint, pool: l.pool, time: l.time })), studio: studio.status() }),
+      meta: async listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: rpcHost(c.url), programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: await liftAuthority(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listing.map(l => ({ mint: l.mint, pool: l.pool, time: l.time })), studio: studio.status() }),
       token: mint => tokenView(mint, walletKey(url.searchParams.get('owner'))),
       // server-signed test-wallet trades: open on local, studio-only elsewhere (gate before hosting; flagged in the studio PR)
       trade: (b, rec) => { if (c.name !== 'local') { const who = studioCheck(req); if ('code' in who) return Promise.resolve(who as Reply); } return trade(b, rec); },
@@ -237,10 +248,10 @@ http.createServer(async (req, res) => {
       const who = studioCheck(req); if ('code' in who) return send(res, who.code, who.body);   // studio only
       const p = parseLaunchBody(await body(req));
       if ('error' in p) return send(res, 400, p);
-      await lp.ensureGlobal(deployer, deployer.publicKey);
-      await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);   // 8.3: launches are signed by the launch key, never the admin
+      await lp.ensureGlobal(deployer!, deployer!.publicKey);
+      await lp.ensureLaunchAuthority(deployer!, launchKey!.publicKey);   // 8.3: launches are signed by the launch key, never the admin
       let rec;
-      try { rec = await lp.launch(deployer, p.opts, launchKey); }
+      try { rec = await lp.launch(deployer!, p.opts, launchKey!); }
       catch (e: any) { const hint = p.opts.rules && rulesUnsupportedHint(String(e?.message ?? e)); if (hint) return send(res, 400, { error: hint }); throw e; }
       if (p.meta) saveMetadata(c.name, rec.mint, p.meta);
       return send(res, 200, createReply(rec));   // ticket 8.5b: registered: false + note; the registry is never written
@@ -257,10 +268,10 @@ http.createServer(async (req, res) => {
       // there is no session wallet) the connected wallet the page names in the request
       const owner = studio.open ? walletKey(b.owner) : walletKey(who.wallet);
       if (!owner) return send(res, 400, { error: studio.open ? 'owner must be the connected wallet address (open studio)' : 'the studio session wallet is not a valid key' });
-      await lp.ensureGlobal(deployer, deployer.publicKey);
-      await lp.ensureLaunchAuthority(deployer, launchKey.publicKey);
+      await lp.ensureGlobal(deployer!, deployer!.publicKey);
+      await lp.ensureLaunchAuthority(deployer!, launchKey!.publicKey);
       try {
-        const built = await buildUserLaunch(lp, launchRelay, deployer, launchKey, owner, p.opts);
+        const built = await buildUserLaunch(lp, launchRelay, deployer!, launchKey!, owner, p.opts);
         if (p.meta) pendingLaunchMeta.set(built.mint, p.meta);   // saved only if the launch confirms
         return send(res, 200, built);
       } catch (e: any) {
@@ -284,8 +295,12 @@ http.createServer(async (req, res) => {
         throw e;
       }
     }
-    if (url.pathname === '/capMath.js') return send(res, 200, capMathJs, 'text/javascript');
+    if (url.pathname === '/capMath.js') {
+      capMathJs ??= (await import('esbuild')).buildSync({ entryPoints: ['sdk/capMath.ts'], bundle: true, format: 'esm', write: false, target: 'es2020' }).outputFiles[0].text;
+      return send(res, 200, capMathJs, 'text/javascript');
+    }
     const st = staticReply(url.pathname, UI);   // app/static.ts: classic page or, with --web, the new UI (web/dist)
     return send(res, st.code, st.body, st.type);
   } catch (e: any) { return send(res, 500, serverError(e)); }   // FW-17: the console line is redacted too (app/errors.ts)
-}).listen(PORT, '127.0.0.1', () => console.log(`launch page [${c.label}${UI === 'web' ? ', new UI' : ''}] http://127.0.0.1:${PORT}  program ${lp.hook.programId.toBase58()}`));
+});
+if (!HOSTED) server.listen(PORT, '127.0.0.1', () => console.log(`launch page [${c.label}${UI === 'web' ? ', new UI' : ''}] http://127.0.0.1:${PORT}  program ${lp.hook.programId.toBase58()}`));

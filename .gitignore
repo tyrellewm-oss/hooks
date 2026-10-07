@@ -61,3 +61,6 @@ artifacts/
 
 # local simulation: deployed devnet program bytecode (scripts/sim/programs.ts)
 .sim-programs/
+
+# Vercel: project link and the prebuilt output (scripts/vercel_build.ts)
+.vercel/
