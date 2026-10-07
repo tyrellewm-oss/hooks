@@ -9,6 +9,23 @@ A launchpad prototype on Solana **devnet**:
 - The transfer-hook program (`programs/trenches-hook`, program id `4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y`) enforces one rule on the curve: **each receiving token account can hold at most X% of supply, and X only rises** (it can't be tightened, only lifted).
 - A minimal launch page (`app/`) with a pre-trade checklist, a rules-and-risks block and a "Why did my trade fail?" explainer, plus an SDK (`sdk/`), scripts and tests.
 
+## Run it on your PC (one click)
+Double-click `start-hookd.cmd` in the repo folder (Windows), or run `node scripts/start.mjs` (macOS/Linux). Then open **http://127.0.0.1:5176**. It:
+- checks Node (20.19+ or 22.12+; Node 22 LTS recommended), pnpm and git, and says in plain words what to install if one is missing;
+- shows what changed: the latest commits on your branch, and other GitHub branches with work that is not on it yet; then pulls your branch (fast-forward only, never overwrites your edits);
+- installs packages when the lockfiles change;
+- checks the devnet setup read-only: the admin key `deployer.json` and `launch.json` (in `.devnet-keys/` or `DEVNET_KEY_DIR`) against the live program's authorities, which listed tokens have launch records on this PC (`launches/devnet/`), and the RPC;
+- starts the backend (5175), the site (5176) and the chart indexer, with coloured, prefixed output and logs in `logs/`; opens the browser;
+- keeps following the branch every 30 s: site changes reload the page, backend changes restart the backend (not while the studio is open: a restart during a launch could lose it), package changes reinstall;
+- allows one launcher per folder, and stops everything it started on Ctrl+C or when its window is closed.
+
+Without the admin key or a working devnet RPC it runs the site with **sample tokens** and says so. Options: `--demo`, `--live`, `--preview` (the built site served by the backend on 5175, as it would be hosted), `--check` (only the checks), `--no-follow`, `--no-indexer`, `--no-browser`. Settings go in `.env` (created from `.env.example` on first run, gitignored): `DEVNET_RPC` (a private devnet URL; the public one rate-limits token pages; `.devnet-keys/helius_rpc.txt` is used when set), `DEVNET_KEY_DIR`, `STUDIO_WALLETS`. The launcher's own checks are read-only and it never deploys, airdrops or runs the keeper; the backend it starts sends devnet transactions only when you act on the site (trades you sign in your wallet; with `STUDIO_WALLETS` set, studio launches, which the admin key pays for).
+
+Live data needs three private things that are not in git and only exist on the machine that made the launches: `.devnet-keys/deployer.json` (+ `launch.json`), `launches/devnet/*.json` (+ `metadata/devnet/`), and a devnet RPC URL. Move keys only privately (never by email or chat), and keep them out of OneDrive/Dropbox folders (`DEVNET_KEY_DIR` can point anywhere outside the repo).
+
+## Hosted preview (Vercel)
+`vercel.json` deploys the site with **sample data** (fixture mode, with a "Preview: sample data" banner on every page): import the GitHub repo in Vercel and deploy, no settings needed. It cannot show live devnet tokens: those need the backend (`app/server.ts`), which reads the devnet keys and launch records from disk and is not a Vercel app. Live hosting needs a backend server with its own keys first (see the hosting notes in docs/go_live_readiness_2026-10-06.md).
+
 ## Status (as of 2026-10-04 ICT)
 - **DEVNET LIVE** (2026-10-04 ICT): the program is deployed on devnet at [`4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y`](https://explorer.solana.com/address/4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y?cluster=devnet) (devnet only, throwaway upgrade key). One test launch ran on devnet from launch to DAMM v2 migration: cap hit, sells, graduation, post-migration buy. Every tx is linked in [`launch_log.md`](launch_log.md).
 - Devnet program sha256: `02d402bc2e2db90d69c6eb7155483364d7afca1cc500c010a90e5de36927bead` (release build of commit `f8803e8`; the program dumped from devnet has the same sha256).

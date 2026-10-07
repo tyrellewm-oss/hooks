@@ -12,6 +12,8 @@
     "demo": "node --import tsx scripts/dbc_flow.ts demo",
     "lift-demo": "node --import tsx scripts/dbc_flow.ts lift-demo",
     "page": "node --import tsx app/server.ts",
+    "start": "node scripts/start.mjs",
+    "index": "node --import tsx scripts/indexer.ts",
     "e2e": "node --import tsx tests/e2e/page.e2e.ts",
     "qa-schedule": "node --import tsx scripts/qa_schedule.ts"
   },
