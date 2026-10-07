@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { api } from './lib/api';
+import { api, FIXTURE_MODE } from './lib/api';
 import { navigate, usePath, usePoll } from './lib/hooks';
 import { setQuery, setTheme, useQuery, useTheme } from './lib/ui';
 import { HOOKD_X_URL, hookdChartUrl } from './lib/links';
@@ -89,6 +89,7 @@ export function App() {
             <WalletButton />
           </div>
         </header>
+        {FIXTURE_MODE && <p className="sample-banner" role="note"><b>Preview</b> Sample data: these tokens, trades and wallets are not real.</p>}
         <main><Guard what="this page">{page}</Guard></main>
       </div>
     </div>

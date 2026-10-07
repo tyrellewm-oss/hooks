@@ -23,6 +23,9 @@ Without the admin key or a working devnet RPC it runs the site with **sample tok
 
 Live data needs three private things that are not in git and only exist on the machine that made the launches: `.devnet-keys/deployer.json` (+ `launch.json`), `launches/devnet/*.json` (+ `metadata/devnet/`), and a devnet RPC URL. Move keys only privately (never by email or chat), and keep them out of OneDrive/Dropbox folders (`DEVNET_KEY_DIR` can point anywhere outside the repo).
 
+## Hosted preview (Vercel)
+`vercel.json` deploys the site with **sample data** (fixture mode, with a "Preview: sample data" banner on every page): import the GitHub repo in Vercel and deploy, no settings needed. It cannot show live devnet tokens: those need the backend (`app/server.ts`), which reads the devnet keys and launch records from disk and is not a Vercel app. Live hosting needs a backend server with its own keys first (see the hosting notes in docs/go_live_readiness_2026-10-06.md).
+
 ## Status (as of 2026-10-04 ICT)
 - **DEVNET LIVE** (2026-10-04 ICT): the program is deployed on devnet at [`4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y`](https://explorer.solana.com/address/4e59SgUgH6D8BaKbpq3CDRjdAJgoZg3Xm4tgzawpEA6Y?cluster=devnet) (devnet only, throwaway upgrade key). One test launch ran on devnet from launch to DAMM v2 migration: cap hit, sells, graduation, post-migration buy. Every tx is linked in [`launch_log.md`](launch_log.md).
 - Devnet program sha256: `02d402bc2e2db90d69c6eb7155483364d7afca1cc500c010a90e5de36927bead` (release build of commit `f8803e8`; the program dumped from devnet has the same sha256).

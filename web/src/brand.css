@@ -10,6 +10,10 @@ body {
   background-attachment: fixed;
 }
 .sidebar { background: var(--bg); }
+/* sample-data mode (fixtures, the hosted preview): say so on every page, so fake tokens are never mistaken for real ones */
+.sample-banner { margin: 0 var(--page-gutter); padding: 8px 14px; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; text-align: center;
+  font-size: 12.5px; color: var(--amber-text); background: var(--amber-soft); --c: 7px; clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c)); }
+.sample-banner b { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
 
 /* ---------- the cut corner, clipped. --c (the cut) and --bd (the colour of the drawn diagonal edge) are registered so
    they transition: on hover the clip, the diagonal edge lines and the straight borders move together. */
