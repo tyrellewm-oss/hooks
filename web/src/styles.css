@@ -334,12 +334,30 @@ details > summary::-webkit-details-marker { display: none; }
 .gm-stat + .gm-stat { border-left: 1px solid var(--card-border); }
 .gm-stat:last-child { padding-right: 0; }
 .gm-stat .big-num { font-size: 20px; }
-.gm-desc { flex-basis: 100%; margin: 2px 0 0; padding-top: 10px; border-top: 1px solid var(--card-border); }
+/* header foot: description, then the token's socials and where to look it up (search on X, GMGN, DEX Screener) */
+.gm-foot { flex-basis: 100%; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--card-border); }
+.gm-desc { margin: 0; }
+.gm-links { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; min-height: 30px; }
+.mk-links { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.mk-link { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid var(--line); color: var(--text-2); font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
+.soc-icons { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.soc { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); color: var(--text-2); }
+.soc-icons.sm { gap: 4px; margin-left: auto; flex-wrap: nowrap; }
+.tcard .ca > :first-child { flex: none; white-space: nowrap; }
+.soc-icons.sm .soc { width: 22px; height: 22px; border-color: transparent; background: var(--panel); color: var(--text-3); }
 .clamp-1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 560px; }
 .feed-scroll { max-height: 480px; overflow: auto; }
 .feed-scroll thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }
 .sticky .phases { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-@media (max-width: 760px) { .gm-stats { margin-left: 0; width: 100%; justify-content: space-between; } .gm-stat { padding: 2px 12px; } .gm-stat:first-child { padding-left: 0; } .clamp-1 { max-width: 100%; } }
+@media (max-width: 760px) { .gm-stats { margin-left: 0; width: 100%; justify-content: space-between; } .gm-stat { padding: 2px 12px; } .gm-stat:first-child { padding-left: 0; } .clamp-1 { max-width: 100%; } .mk-links { margin-left: 0; } }
 .skeleton { background: var(--panel-2); border-radius: var(--r-inner); min-height: 14px; animation: pulse 1.2s ease-in-out infinite; }
+/* a card still reading its chain numbers: the figures row and an empty meter, at their loaded heights */
+.figs-skel .figs { height: 23.25px; align-items: center; }
+.figs-skel .skeleton { min-height: 0; }
+.tcard .ca { min-height: 22px; }
+/* studio form: the social links two (or three) to a row where they fit */
+.soc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 12px; }
+.chip .d.reading { background: var(--text-4); animation: pulse 1.2s ease-in-out infinite; }
+.strip-skel { cursor: default; }
 @keyframes pulse { 50% { opacity: 0.5; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } .tcard, .sidebar, .dd-wrap, .dd-chev, .dd-body { transition: none; } }

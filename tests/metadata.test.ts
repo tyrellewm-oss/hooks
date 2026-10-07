@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { validateMetadata, saveMetadata, loadMetadata, loadImage, publicMetadata, sniffImage, MetadataRefusal, MAX_IMAGE_BYTES } from '../sdk/metadata.ts';
+import { validateMetadata, saveMetadata, loadMetadata, loadImage, publicMetadata, sniffImage, MetadataRefusal, MAX_IMAGE_BYTES, SOCIAL_HOSTS } from '../sdk/metadata.ts';
+import { SOCIALS } from '../web/src/lib/socials.ts';
 import { siteRoute } from '../app/site_registry.ts';
 
 const MINT = 'So11111111111111111111111111111111111111112';
@@ -33,6 +34,24 @@ test('links: https only, no credentials, X and Telegram on their own hosts', () 
     ['x', 'https://evil.example/x.com', /x\.com or twitter\.com/], ['telegram', 'https://t.me.evil.example/a', /t\.me/], ['website', 'https://e.org/' + 'a'.repeat(300), /at most/],
   ] as const) assert.throws(() => validateMetadata({ [k]: v }), re as RegExp, `${k}=${v}`);
   assert.equal(validateMetadata({ website: '' }).website, null);
+});
+
+test('socials: Discord, TikTok, Instagram and YouTube on their own hosts; older records read as null', () => {
+  const ok = validateMetadata({ discord: 'https://discord.gg/abc', tiktok: 'https://www.tiktok.com/@a', instagram: 'https://instagram.com/a', youtube: 'https://youtu.be/xyz' });
+  assert.deepEqual([ok.discord, ok.tiktok, ok.instagram, ok.youtube], ['https://discord.gg/abc', 'https://www.tiktok.com/@a', 'https://instagram.com/a', 'https://youtu.be/xyz']);
+  for (const [k, v, re] of [
+    ['discord', 'https://discord.evil.example/x', /discord\.gg or discord\.com/], ['tiktok', 'https://tiktok.com.evil.example/a', /tiktok\.com/],
+    ['instagram', 'http://instagram.com/a', /https/], ['youtube', 'https://evil.example/youtube.com', /youtube\.com/],
+  ] as const) assert.throws(() => validateMetadata({ [k]: v }), re as RegExp, `${k}=${v}`);
+  assert.equal(validateMetadata({ discord: '' }).discord, null);
+  // a record saved before these fields existed
+  const pub = publicMetadata({ description: 'old', website: null, x: 'https://x.com/a', telegram: null, image: null, updatedAt: '2026-01-01T00:00:00.000Z' }, MINT)!;
+  assert.deepEqual([pub.x, pub.discord, pub.tiktok, pub.instagram, pub.youtube], ['https://x.com/a', null, null, null, null]);
+});
+
+test('socials: the site form checks the same hosts as the server', () => {
+  const site = Object.fromEntries(SOCIALS.filter(s => s.hosts).map(s => [s.key, s.hosts]));
+  assert.deepEqual(site, Object.fromEntries(Object.entries(SOCIAL_HOSTS).map(([k, v]) => [k, [...v]])));
 });
 
 test('description: length limit, control characters stripped, site forbidden words refused', () => {

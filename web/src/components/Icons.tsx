@@ -33,3 +33,12 @@ export const IconTrophy = (p: { size?: number }) => <I {...p}><path className="d
 /** The X (Twitter) mark, filled like the original. */
 export const IconX = (p: { size?: number }) => <I {...p}><path fill="currentColor" stroke="none" d="M18.24 2.25h3.31l-7.23 8.26 8.5 11.24h-6.65l-5.21-6.82-5.97 6.82H1.68l7.73-8.84L1.25 2.25h6.83l4.71 6.23zm-1.16 17.52h1.83L7.08 4.13H5.12z" /></I>;
 export const IconChart = (p: { size?: number }) => <I {...p}><path d="M4 4v16h16" /><path d="M7.5 15l3.5-4 3 2.5 5-6.5" /><path d="M15.5 7h3.5v3.5" /></I>;
+// Social marks as line icons (paths after Tabler Icons, MIT), same grid and stroke as the rest.
+export const IconGlobe = (p: { size?: number }) => <I {...p}><circle cx="12" cy="12" r="9" /><path d="M3.6 9h16.8M3.6 15h16.8M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18" /></I>;
+export const IconTelegram = (p: { size?: number }) => <I {...p}><path d="M15 10l-4 4 6 6 4-16-18 7 4 2 2 6 3-4" /></I>;
+export const IconDiscord = (p: { size?: number }) => <I {...p}><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><path d="M15.5 17c0 1 1.5 3 2 3 1.5 0 2.83-1.67 3.5-3 .67-1.67.5-5.83-1.5-11.5-1.46-1.02-3-1.34-4.5-1.5l-.97 1.92a11.9 11.9 0 0 0-4.06 0L9 4c-1.5.16-3.04.48-4.5 1.5-2 5.67-2.17 9.83-1.5 11.5.67 1.33 2 3 3.5 3 .5 0 2-2 2-3" /><path d="M7 16.5c3.5 1 6.5 1 10 0" /></I>;
+export const IconTiktok = (p: { size?: number }) => <I {...p}><path d="M21 7.92v4.03a9.95 9.95 0 0 1-5-1.95v4.5a6.5 6.5 0 1 1-8-6.33v4.33a2.5 2.5 0 1 0 4 2V3h4.08A6 6 0 0 0 21 7.92z" /></I>;
+export const IconInstagram = (p: { size?: number }) => <I {...p}><rect x="4" y="4" width="16" height="16" rx="4" /><circle cx="12" cy="12" r="3" /><path d="M16.5 7.5v.01" /></I>;
+export const IconYoutube = (p: { size?: number }) => <I {...p}><rect x="2" y="4" width="20" height="16" rx="4" /><path d="M10 9l5 3-5 3z" /></I>;
+/** Candles, for DEX Screener. */
+export const IconCandles = (p: { size?: number }) => <I {...p}><path d="M7 3.5v3M7 15.5v5M17 3.5v5M17 17.5v3" /><rect x="5" y="6.5" width="4" height="9" rx="1" /><rect x="15" y="8.5" width="4" height="9" rx="1" /></I>;

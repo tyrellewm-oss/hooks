@@ -12,7 +12,9 @@ export interface Meta {
   commit: string;
   liftAuthority: string;
   wallets: Record<string, string>;
-  launches: { mint: string; pool: string; time: string }[];
+  /** registry tokens; name, symbol and image come from the local records, so a list can draw each card before its
+   *  chain read arrives (older servers send mint, pool and time only) */
+  launches: { mint: string; pool: string; time: string; name?: string | null; symbol?: string | null; image?: string | null }[];
   /** studio sign-in (sdk/studio_auth.ts): required = sign in to create or edit details; configured = an allowlist exists */
   studio?: { required: boolean; configured: boolean };
   /** the server also sends page_content.json; the UI imports it directly instead */
@@ -86,9 +88,14 @@ export interface SwitchEvent {
   link: string;
 }
 
-/** Studio-entered token details (sdk/metadata.ts publicMetadata): image is a URL, never bytes */
-export interface TokenMetadata { description: string; website: string | null; x: string | null; telegram: string | null; image: string | null; updatedAt: string }
-export interface MetadataInput { description: string; website: string; x: string; telegram: string; image?: { data: string } | null }
+/** Studio-entered token details (sdk/metadata.ts publicMetadata): image is a URL, never bytes. The newer social links
+ *  are optional because an older server doesn't send them. */
+export interface TokenMetadata {
+  description: string; website: string | null; x: string | null; telegram: string | null;
+  discord?: string | null; tiktok?: string | null; instagram?: string | null; youtube?: string | null;
+  image: string | null; updatedAt: string;
+}
+export interface MetadataInput { description: string; website: string; x: string; telegram: string; discord: string; tiktok: string; instagram: string; youtube: string; image?: { data: string } | null }
 
 /** The optional hooks a launch can turn on (sdk/buy_rules.ts). Shares are bps of supply; 0 = off. */
 export interface BuyRulesInput { maxBuyBps: number; maxPerSlotBps: number; windowSlots: string; potEvery: number; potMinBps: number; cooldownSlots: number }
@@ -109,6 +116,8 @@ export interface TokenView {
   /** the connected browser wallet, when requested with ?owner= */
   wallet?: { owner: string; tokens: string; sol: number } | null;
   switchHistory: SwitchEvent[];
+  /** the quick read for lists (?view=card): switch history and test-wallet balances were not read, so both are empty */
+  partial?: boolean;
   explorer: { mint: string; pool: string | null; program: string };
 }
 

@@ -10,7 +10,8 @@ import { CapRamp } from '../components/CapRamp';
 import { hookList, optionalHookList, creatorLockInfo, FLYWHEEL_SPLIT, POT_SHARE_PCT, ordinal, windowText } from '../lib/hookInfo';
 import { Dropdown, RulesAndRisks, SwitchHistory, TokenDetails } from '../components/Disclosures';
 import { Addr, CurveProgress, Guard, Link, PhasePill, PhaseStepper, Skeleton, Stat } from '../components/bits';
-import { TokenImage, TokenLinks, DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
+import { TokenImage, TokenLinksBar, DetailsForm, emptyDetails, toInput, detailsError, type DetailsState } from '../components/TokenDetails';
+import { peekCard } from '../lib/cards';
 import { PriceCard, TradesFeed } from '../components/Market';
 import { StudioGate } from '../components/StudioGate';
 import { IconBack } from '../components/Icons';
@@ -21,10 +22,14 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
   const { address } = useWallet();   // include the connected wallet's balances in the view
   const live = usePoll(() => api.token(mint, address), POLL_MS, `${mint}:${address ?? ''}`);
   const now = useNow(1000);
-  const view = live.data;
+  // Opened from a list: draw at once from the list's quick read; the switch history follows with the full read.
+  const seed = live.data ? undefined : peekCard(mint);
+  const view = live.data ?? seed?.view ?? null;
+  const partial = !live.data;
+  const fetchedAt = live.data ? live.fetchedAt : seed?.at ?? 0;
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<'trades' | 'cap' | 'rules'>('trades');
-  const vars = useMemo(() => (view ? (pageVars(meta, view) as Record<string, string>) : null), [meta, view]);
+  const vars = useMemo(() => (view ? ({ ...pageVars(meta, view), ...(partial ? { SWITCH_HISTORY: 'still being read' } : {}) } as Record<string, string>) : null), [meta, view, partial]);
 
   if (!view) {
     if (live.error) {
@@ -41,7 +46,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
   }
 
   const st = view.status;
-  const slot = estimateSlot(st.slot, live.fetchedAt, now);
+  const slot = estimateSlot(st.slot, fetchedAt, now);
   const phase = phaseOf(view, slot);
   const graduated = isGraduated(view);
   const cap = liveCap(view, slot);
@@ -49,7 +54,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
   const elapsed = elapsedSlots(st, slot);
   const feeNow = curveFeePctAt(view.fee, elapsed);
   const capPct = cap === null ? null : pctOf(Number((cap * BigInt(BPS_DENOM)) / BigInt(st.supply)));
-  const stale = now - live.fetchedAt > POLL_MS * 2.5;
+  const stale = !partial && now - live.fetchedAt > POLL_MS * 2.5;
 
   return (
     <div className="stack">
@@ -73,7 +78,6 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
             </div>
             <div className="row small" style={{ marginTop: 5, gap: 10, flexWrap: 'wrap' }}>
               <span className="faint"><Addr value={st.mint} href={view.explorer.mint || null} n={5} /></span>
-              {view.metadata && <TokenLinks m={view.metadata} />}
               <button className="ghost small" onClick={() => setEditing(true)}>{view.metadata ? 'Edit details' : 'Add details (studio)'}</button>
             </div>
           </div>
@@ -92,7 +96,10 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
             <CurveProgress reserve={view.pool?.quoteReserveSol ?? null} threshold={view.fee?.migrationQuoteThresholdSol ?? view.launch?.migrationQuoteThresholdSol ?? null} graduated={graduated} />
           </div>
         </div>
-        {view.metadata?.description && <p className="gm-desc small muted clamp-1">{view.metadata.description}</p>}
+        <div className="gm-foot">
+          {view.metadata?.description && <p className="gm-desc small muted clamp-1">{view.metadata.description}</p>}
+          <TokenLinksBar mint={st.mint} metadata={view.metadata} mainnet={meta.cluster !== 'DEVNET' && meta.cluster !== 'LOCAL'} />
+        </div>
       </div>
       {editing && <EditDetails meta={meta} mint={st.mint} ticker={view.launch?.symbol} metadata={view.metadata ?? null} onClose={() => setEditing(false)} onSaved={live.refresh} />}
 
@@ -130,12 +137,12 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
 
         {/* right: the token's hooks live, phases under it, then the stacked info sections */}
         <div className="sticky stack" style={{ marginTop: 0 }}>
-          <LiveHooks meta={meta} capText={graduated ? 'ended' : capPct ?? 'no cap'} feeText={graduated ? 'ended' : feeNow === null ? 'n/a' : `~${feeNow}%`} switchUses={view.switchHistory.length} graduated={graduated} rules={view.rules ?? null} creatorLock={view.launch?.creatorLock ?? null} slot={slot} />
+          <LiveHooks meta={meta} capText={graduated ? 'ended' : capPct ?? 'no cap'} feeText={graduated ? 'ended' : feeNow === null ? 'n/a' : `~${feeNow}%`} switchUses={partial ? null : view.switchHistory.length} graduated={graduated} rules={view.rules ?? null} creatorLock={view.launch?.creatorLock ?? null} slot={slot} />
           {view.rules && view.rules.potEvery > 0 && <PotCard mint={mint} rules={view.rules} graduated={graduated} />}
           <Dropdown title="Phase" aside={<PhasePill phase={phase} />} defaultOpen>
             <PhaseStepper phase={phase} />
           </Dropdown>
-          <SwitchHistory view={view} />
+          <SwitchHistory view={view} reading={partial} />
           <TokenDetails view={view} />
           {/* AC-25 anchor while the full block lives in its tab: one line, always visible on the page */}
           <div className="small faint rules-line">
@@ -182,7 +189,7 @@ function EditDetails({ meta, mint, ticker, metadata, onClose, onSaved }: { meta:
 
 /** The four hooks, plus any optional ones this token launched with, with this token's live state; links to the hooks
  *  page for the diagrams. */
-function LiveHooks({ meta, capText, feeText, switchUses, graduated, rules, creatorLock, slot }: { meta: Meta; capText: string; feeText: string; switchUses: number; graduated: boolean; rules: RulesView | null; creatorLock: { pct: number; slots: number } | null; slot: bigint }) {
+function LiveHooks({ meta, capText, feeText, switchUses, graduated, rules, creatorLock, slot }: { meta: Meta; capText: string; feeText: string; switchUses: number | null; graduated: boolean; rules: RulesView | null; creatorLock: { pct: number; slots: number } | null; slot: bigint }) {
   // max buy and the per-slot limit apply for their window (0 = until graduation); the hook is gone after graduation
   const inWindow = !!rules && !graduated && (rules.windowSlots === '0' || slot <= BigInt(rules.launchSlot) + BigInt(rules.windowSlots));
   const ruleState = (pct: string) => (graduated ? 'ended' : inWindow ? pct : 'window over');
@@ -195,7 +202,7 @@ function LiveHooks({ meta, capText, feeText, switchUses, graduated, rules, creat
     lock: creatorLock ? (graduated ? 'unlocking after graduation' : `${creatorLock.pct}% locked`) : '',
     cap: capText,
     fee: feeText,
-    switch: switchUses ? `used ${switchUses}×` : 'never used',
+    switch: switchUses === null ? 'reading…' : switchUses ? `used ${switchUses}×` : 'never used',
     burn: graduated ? `${FLYWHEEL_SPLIT.buybackPct}% of fees` : 'after graduation',
   };
   return (

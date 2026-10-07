@@ -11,7 +11,8 @@ import { defaultSchedule, scheduleJson, resolveSchedule } from '../sdk/schedules
 import { loadOrCreate, deployerName } from '../sdk/keys.js';
 import { Launchpad, listLaunches, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration, resolveCreatorLock, CreatorLockRefusal, dammV2MigrationConfigFor, type CreatorLock } from '../sdk/launch.js';
 import { validate, RELEASE_LIMITS, type Step } from '../sdk/capMath.js';
-import { parseRestrictionsLifted, decodeRules, readHookAuthorities, type BuyRules } from '../sdk/hook.js';
+import { decodeRules, readHookAuthorities, type BuyRules } from '../sdk/hook.js';
+import { switchHistoryReader } from './switch_history.js';
 import { parseBuyRules, buyRulesBps, rulesUnsupportedHint, BuyRulesRefusal } from '../sdk/buy_rules.js';
 import { redactDeep } from '../sdk/redact.js';
 import { serverError } from './errors.js';
@@ -54,20 +55,9 @@ const rpcHost = (u: string) => { try { return new URL(u).host; } catch { return 
 // Ship the SAME cap math to the browser (AC-2): sdk/capMath.ts, bundled on first request.
 let capMathJs: string | null = null;
 
-async function switchHistory(mint: PublicKey) {
-  const out: any[] = []; const seen = new Set<string>();
-  for (const addr of [lp.hook.liftPda(mint), lp.hook.globalPda()]) {
-    const sigs = await c.connection.getSignaturesForAddress(addr, { limit: 50 }, 'confirmed').catch(() => []);
-    for (const s of sigs) {
-      if (s.err || seen.has(s.signature)) continue; seen.add(s.signature);
-      const tx = await c.connection.getTransaction(s.signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
-      for (const e of parseRestrictionsLifted(tx?.meta?.logMessages ?? [])) {
-        if (e.scope === 0 || e.mint.equals(mint)) out.push({ scope: e.scopeName, oldMinCapBps: e.oldFloorBps, newMinCapBps: e.newFloorBps, lifted: e.lifted, slot: e.slot.toString(), signer: e.signer.toBase58(), link: explorerTx(s.signature, c.name) });
-      }
-    }
-  }
-  return out.sort((a, b) => Number(BigInt(b.slot) - BigInt(a.slot)));
-}
+/** AC-29 switch history (app/switch_history.ts): cached per transaction, read a few at a time. */
+const readSwitchHistory = switchHistoryReader(c.connection, { link: sig => explorerTx(sig, c.name) });
+const switchHistory = (mint: PublicKey) => readSwitchHistory(mint, [lp.hook.liftPda(mint), lp.hook.globalPda()]);
 async function feeInfo(config: PublicKey) {
   const cfg: any = await lp.dbc.state.getPoolConfig(config);
   const bf = cfg.poolFees.baseFee;
@@ -122,15 +112,20 @@ function studioCheck(req: http.IncomingMessage): { wallet: string } | Reply {
 /** A wallet address from a query/body value, or null (never throws). */
 function walletKey(v: unknown): PublicKey | null { try { return typeof v === 'string' && v.length >= 32 && v.length <= 44 ? new PublicKey(v) : null; } catch { return null; } }
 
-async function tokenView(mintStr: string, owner: PublicKey | null = null) {
+/** card = the listing's read: no switch-history scan and no test-wallet balances (marked partial). */
+async function tokenView(mintStr: string, owner: PublicKey | null = null, card = false) {
   const mint = new PublicKey(mintStr);
   const rec = listLaunches(c.name).find(l => l.mint === mintStr);
-  const st = await lp.status(mint);
-  const fee = rec ? await feeInfo(new PublicKey(rec.config)) : null;
+  // independent chain reads, side by side
+  const [st, fee, p, rules] = await Promise.all([
+    lp.status(mint),
+    rec ? feeInfo(new PublicKey(rec.config)) : null,
+    rec ? lp.dbc.state.getPool(new PublicKey(rec.pool)).then((x: any) => x.poolState) : null,
+    rulesView(mint),
+  ]);
   const bal: Record<string, string> = {};
-  for (const [k, w] of Object.entries(wallets)) bal[k] = (await lp.tokenBalance(mint, w.publicKey)).toString();
-  let pool: any = null;
-  if (rec) { const p: any = ((await lp.dbc.state.getPool(new PublicKey(rec.pool))) as any).poolState; pool = { quoteReserveSol: Number(p.quoteReserve.toString()) / LAMPORTS_PER_SOL, isMigrated: Number(p.isMigrated) === 1, curveComplete: st.transferHookProgram === null }; }
+  if (!card) for (const [k, w] of Object.entries(wallets)) bal[k] = (await lp.tokenBalance(mint, w.publicKey)).toString();
+  const pool = p ? { quoteReserveSol: Number(p.quoteReserve.toString()) / LAMPORTS_PER_SOL, isMigrated: Number(p.isMigrated) === 1, curveComplete: st.transferHookProgram === null } : null;
   // Fee config shown on the page = what the launch used (launch record); fields older records lack come from the on-chain DBC config.
   const feeConfig = rec ? { startBps: rec.fee?.startBps, endBps: rec.fee?.endBps, durationSlots: rec.fee?.durationSlots,
     migrationFeeOption: (rec.fee as any)?.migrationFeeOption ?? fee?.migrationFeeOption, creatorTradingFeePercentage: (rec.fee as any)?.creatorTradingFeePercentage ?? fee?.creatorTradingFeePercentage,
@@ -138,7 +133,7 @@ async function tokenView(mintStr: string, owner: PublicKey | null = null) {
     percentageSupplyOnMigration: (rec.fee as any)?.percentageSupplyOnMigration ?? DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION } : null;
   // the connected browser wallet, when the page passes ?owner=<pubkey>: its token balance and SOL (read only)
   const wallet = owner ? { owner: owner.toBase58(), tokens: (await lp.tokenBalance(mint, owner)).toString(), sol: (await c.connection.getBalance(owner, 'confirmed')) / LAMPORTS_PER_SOL } : null;
-  return { status: st, launch: rec, rules: await rulesView(mint), metadata: publicMetadata(loadMetadata(c.name, mintStr), mintStr), fee, feeConfig, pool, balances: bal, wallet, switchHistory: await switchHistory(mint), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
+  return { status: st, launch: rec, rules, metadata: publicMetadata(loadMetadata(c.name, mintStr), mintStr), fee, feeConfig, pool, balances: bal, wallet, switchHistory: card ? [] : await switchHistory(mint), ...(card ? { partial: true } : {}), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
 }
 
 /** The token's optional hooks (rules PDA), or null for a token launched without them. Shares are bps of supply. */
@@ -214,8 +209,8 @@ export const server = http.createServer(async (req, res) => {
     const routed = await siteRoute(url.pathname, req.method ?? 'GET', () => body(req), {
       cluster: c.name,
       launches: () => listLaunches(c.name),
-      meta: async listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: rpcHost(c.url), programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: await liftAuthority(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listing.map(l => ({ mint: l.mint, pool: l.pool, time: l.time })), studio: studio.status() }),
-      token: mint => tokenView(mint, walletKey(url.searchParams.get('owner'))),
+      meta: async listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: rpcHost(c.url), programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: await liftAuthority(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listing.map(l => ({ mint: l.mint, pool: l.pool, time: l.time, name: l.name ?? null, symbol: l.symbol ?? null, image: publicMetadata(loadMetadata(c.name, l.mint), l.mint)?.image ?? null })), studio: studio.status() }),
+      token: mint => tokenView(mint, walletKey(url.searchParams.get('owner')), url.searchParams.get('view') === 'card'),
       // server-signed test-wallet trades: open on local, studio-only elsewhere (gate before hosting; flagged in the studio PR)
       trade: (b, rec) => { if (c.name !== 'local') { const who = studioCheck(req); if ('code' in who) return Promise.resolve(who as Reply); } return trade(b, rec); },
       build,

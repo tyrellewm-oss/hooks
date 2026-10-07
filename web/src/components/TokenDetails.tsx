@@ -1,13 +1,18 @@
 // Token image (studio upload, else the generated art) and the studio form for image, description and links.
 // The server re-validates everything (sdk/metadata.ts); the checks here only give early feedback.
 import { useEffect, useRef, useState } from 'react';
+import type { ComponentType } from 'react';
 import type { MetadataInput, TokenMetadata } from '../lib/types';
+import { SOCIALS, socialLinks, marketLinks, type SocialKey } from '../lib/socials';
 import { TokenArt } from './TokenArt';
+import { IconGlobe, IconX, IconTelegram, IconDiscord, IconTiktok, IconInstagram, IconYoutube, IconSearch, IconChart, IconCandles } from './Icons';
 
-export function TokenImage({ mint, ticker, metadata, showTicker = true }: { mint: string; ticker?: string; metadata?: TokenMetadata | null; showTicker?: boolean }) {
+/** metadata: the token's details once read (null = none); until then `image` (the listing's) stands in. */
+export function TokenImage({ mint, ticker, metadata, image, showTicker = true }: { mint: string; ticker?: string; metadata?: TokenMetadata | null; image?: string | null; showTicker?: boolean }) {
+  const src = metadata !== undefined ? metadata?.image ?? null : image ?? null;
   const [broken, setBroken] = useState(false);
-  useEffect(() => setBroken(false), [metadata?.image]);
-  if (metadata?.image && !broken) return <img src={metadata.image} alt={ticker ? `${ticker} image` : 'token image'} onError={() => setBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />;
+  useEffect(() => setBroken(false), [src]);
+  if (src && !broken) return <img src={src} alt={ticker ? `${ticker} image` : 'token image'} loading="lazy" decoding="async" onError={() => setBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />;
   return <TokenArt seed={mint} ticker={ticker} showTicker={showTicker} />;
 }
 
@@ -19,16 +24,19 @@ const httpsOk = (v: string, hosts?: string[]) => {
   catch { return 'not a valid link'; }
 };
 
-export interface DetailsState { description: string; website: string; x: string; telegram: string; image?: { data: string; preview: string } | null }
-export const emptyDetails = (m?: TokenMetadata | null): DetailsState => ({ description: m?.description ?? '', website: m?.website ?? '', x: m?.x ?? '', telegram: m?.telegram ?? '' });
+type LinkFields = Record<SocialKey, string>;
+export interface DetailsState extends LinkFields { description: string; image?: { data: string; preview: string } | null }
+export const emptyDetails = (m?: TokenMetadata | null): DetailsState =>
+  ({ description: m?.description ?? '', ...(Object.fromEntries(SOCIALS.map((x) => [x.key, m?.[x.key] ?? ''])) as LinkFields) });
 export function toInput(d: DetailsState): MetadataInput {
-  const out: MetadataInput = { description: d.description.trim(), website: d.website.trim(), x: d.x.trim(), telegram: d.telegram.trim() };
+  const out = { description: d.description.trim(), ...(Object.fromEntries(SOCIALS.map((x) => [x.key, d[x.key].trim()])) as LinkFields) } as MetadataInput;
   if (d.image !== undefined) out.image = d.image ? { data: d.image.data } : null;
   return out;
 }
 export function detailsError(d: DetailsState): string | null {
   if (d.description.length > 280) return 'Description: at most 280 characters.';
-  return (httpsOk(d.website) && `Website: ${httpsOk(d.website)}`) || (httpsOk(d.x, ['x.com', 'twitter.com']) && `X: ${httpsOk(d.x, ['x.com', 'twitter.com'])}`) || (httpsOk(d.telegram, ['t.me']) && `Telegram: ${httpsOk(d.telegram, ['t.me'])}`) || null;
+  for (const x of SOCIALS) { const e = httpsOk(d[x.key].trim(), x.hosts ?? undefined); if (e) return `${x.label}: ${e}`; }
+  return null;
 }
 
 export function DetailsForm({ value, onChange, currentImage, mint, ticker }: { value: DetailsState; onChange: (v: DetailsState) => void; currentImage?: string | null; mint: string; ticker?: string }) {
@@ -64,18 +72,49 @@ export function DetailsForm({ value, onChange, currentImage, mint, ticker }: { v
       <label className="field"><span className="spread"><span>Description</span><span className="faint num">{value.description.length}/280</span></span>
         <textarea rows={3} maxLength={280} value={value.description} onChange={(e) => set({ description: e.target.value })} placeholder="What this test token is for" />
       </label>
-      <label className="field"><span>Website</span><input value={value.website} onChange={(e) => set({ website: e.target.value })} placeholder="https://example.org" /></label>
-      <div className="grid-2" style={{ gap: 12 }}>
-        <label className="field"><span>X</span><input value={value.x} onChange={(e) => set({ x: e.target.value })} placeholder="https://x.com/handle" /></label>
-        <label className="field"><span>Telegram</span><input value={value.telegram} onChange={(e) => set({ telegram: e.target.value })} placeholder="https://t.me/group" /></label>
+      <label className="field"><span>Website</span><input type="url" inputMode="url" value={value.website} onChange={(e) => set({ website: e.target.value })} placeholder={SOCIALS[0].placeholder} /></label>
+      <div className="soc-grid">
+        {SOCIALS.slice(1).map((x) => (
+          <label key={x.key} className="field"><span>{x.label}</span><input type="url" inputMode="url" value={value[x.key]} onChange={(e) => set({ [x.key]: e.target.value })} placeholder={x.placeholder} /></label>
+        ))}
       </div>
     </div>
   );
 }
 
-/** Links row for the token page (rel=noopener/noreferrer; links were validated as https on the server). */
-export function TokenLinks({ m }: { m: TokenMetadata }) {
-  const links = [['Website', m.website], ['X', m.x], ['Telegram', m.telegram]].filter(([, u]) => u) as [string, string][];
+const SOCIAL_ICON: Record<SocialKey, ComponentType<{ size?: number }>> = { website: IconGlobe, x: IconX, telegram: IconTelegram, discord: IconDiscord, tiktok: IconTiktok, instagram: IconInstagram, youtube: IconYoutube };
+const MARKET_ICON = { xsearch: IconSearch, gmgn: IconChart, dex: IconCandles } as const;
+// links were validated as https on the server; never pass the page as referrer, never vouch for them
+const OUT = { target: '_blank', rel: 'noopener noreferrer nofollow' } as const;
+
+/** On a card only the first few fit: X, Telegram and the website lead; the token page shows them all. */
+const CARD_ORDER: SocialKey[] = ['x', 'telegram', 'website', 'discord', 'tiktok', 'instagram', 'youtube'];
+
+/** The token's socials as icon links (token page; on cards, `max` of them). */
+export function SocialIcons({ m, size = 'md', max }: { m: TokenMetadata | null | undefined; size?: 'sm' | 'md'; max?: number }) {
+  let links = socialLinks(m);
+  if (max !== undefined) links = [...links].sort((a, b) => CARD_ORDER.indexOf(a.key) - CARD_ORDER.indexOf(b.key)).slice(0, max);
   if (!links.length) return null;
-  return <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>{links.map(([l, u]) => <a key={l} className="pill plain" href={u} target="_blank" rel="noopener noreferrer nofollow">{l} ↗</a>)}</div>;
+  return (
+    <span className={`soc-icons ${size}`}>
+      {links.map(({ key, label, href }) => { const Icon = SOCIAL_ICON[key]; return <a key={key} className="soc" href={href} {...OUT} aria-label={label} title={label}><Icon size={size === 'sm' ? 13 : 15} /></a>; })}
+    </span>
+  );
+}
+
+/** Token page: the token's socials, then where to look it up by its mint (search on X, GMGN, DEX Screener). */
+export function TokenLinksBar({ mint, metadata, mainnet }: { mint: string; metadata: TokenMetadata | null | undefined; mainnet: boolean }) {
+  const hasSocials = socialLinks(metadata).length > 0;
+  return (
+    <div className="gm-links">
+      {hasSocials ? <SocialIcons m={metadata} /> : <span className="small faint">No socials added yet</span>}
+      <span className="mk-links">
+        {marketLinks(mint).map(({ key, label, href }) => {
+          const Icon = MARKET_ICON[key];
+          const note = key === 'xsearch' ? 'Posts on X that mention this token\'s mint address' : !mainnet ? `${label} lists mainnet tokens only, so this test token isn't there yet` : `This token on ${label}`;
+          return <a key={key} className="mk-link" href={href} {...OUT} title={note}><Icon size={14} /><span>{label}</span></a>;
+        })}
+      </span>
+    </div>
+  );
 }

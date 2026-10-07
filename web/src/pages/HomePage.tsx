@@ -4,27 +4,25 @@ import { useMemo, type ReactNode } from 'react';
 import type { Meta, PublicKeeper, TokenView } from '../lib/types';
 import { api } from '../lib/api';
 import { navigate, useNow, usePoll } from '../lib/hooks';
+import { useCards } from '../lib/cards';
 import { pctOf, BPS_DENOM, approxDuration } from '../lib/shared';
 import { estimateSlot, isGraduated, liveCap } from '../lib/token';
 import { hookList, FLYWHEEL_SPLIT } from '../lib/hookInfo';
-import { Link } from '../components/bits';
+import { Link, Skeleton } from '../components/bits';
 import { TokenImage } from '../components/TokenDetails';
 import { IconArrow, IconCheck, IconFlame } from '../components/Icons';
 
 interface Tok { mint: string; view: TokenView; capPct: string | null; progress: number; graduated: boolean }
 
-async function loadTokens(meta: Meta): Promise<{ at: number; views: { mint: string; view: TokenView }[] }> {
-  const res = await Promise.allSettled(meta.launches.map((l) => api.token(l.mint)));
-  return { at: Date.now(), views: meta.launches.flatMap((l, i) => (res[i].status === 'fulfilled' ? [{ mint: l.mint, view: (res[i] as PromiseFulfilledResult<TokenView>).value }] : [])) };
-}
-
 export function HomePage({ meta }: { meta: Meta }) {
-  const list = usePoll(() => loadTokens(meta), 30000, `home:${meta.launches.map((l) => l.mint).join(',')}`);
+  // the same quick per-token reads as the tokens page (shared, so either page opens the other warm)
+  const cards = useCards(useMemo(() => meta.launches.map((l) => l.mint), [meta.launches]), 30_000);
   const fw = usePoll(() => api.flywheel(), 60000, 'home:flywheel');
   const now = useNow(10000);
+  const allRead = meta.launches.every((l) => cards.has(l.mint));
 
-  const toks: Tok[] = useMemo(() => (list.data?.views ?? []).map(({ mint, view }) => {
-    const slot = estimateSlot(view.status.slot, list.data!.at, now);
+  const toks: Tok[] = useMemo(() => meta.launches.flatMap((l) => { const c = cards.get(l.mint); return c?.view ? [{ mint: l.mint, view: c.view, at: c.at }] : []; }).map(({ mint, view, at }) => {
+    const slot = estimateSlot(view.status.slot, at, now);
     const cap = liveCap(view, slot);
     const graduated = isGraduated(view);
     const threshold = view.fee?.migrationQuoteThresholdSol ?? view.launch?.migrationQuoteThresholdSol ?? 0;
@@ -34,10 +32,21 @@ export function HomePage({ meta }: { meta: Meta }) {
       capPct: cap === null ? null : pctOf(Number((cap * BigInt(BPS_DENOM)) / BigInt(view.status.supply))),
       progress: graduated ? 100 : threshold ? Math.min(100, (reserve / threshold) * 100) : 0,
     };
-  }), [list.data, now]);
+  }), [meta.launches, cards, now]);
 
-  const closest = toks.filter((t) => !t.graduated).sort((a, b) => b.progress - a.progress).slice(0, 5);
+  // five rows to match the burns list: tokens on a curve by progress, then the latest graduates fill any gap
+  const launched = (t: Tok) => Date.parse(t.view.launch?.time ?? '') || 0;
+  const closest = [
+    ...toks.filter((t) => !t.graduated).sort((a, b) => b.progress - a.progress),
+    ...toks.filter((t) => t.graduated).sort((a, b) => launched(b) - launched(a)),
+  ].slice(0, 5);
   const burns = (fw.data?.keepers ?? []).flatMap((k) => k.burns.map((b) => ({ ...b, k }))).sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 5);
+  // drawn from the listing at once (art and ticker); each card's status fills in as its read lands
+  const marquee: MqItem[] = meta.launches.map((l) => {
+    const t = toks.find((x) => x.mint === l.mint);
+    return { mint: l.mint, symbol: t?.view.launch?.symbol ?? l.symbol ?? 'TOKEN', image: l.image ?? null, metadata: t?.view.metadata,
+      status: !t ? '' : t.graduated ? 'graduated' : t.capPct ? `cap ${t.capPct}` : 'no cap' };
+  });
   const s = meta.defaultSchedule;
   const capStart = pctOf(s.steps[0]?.maxBps ?? 0), capEnd = pctOf(s.steps[s.steps.length - 1]?.maxBps ?? 0);
 
@@ -53,7 +62,7 @@ export function HomePage({ meta }: { meta: Meta }) {
       </section>
 
       <div className="bento">
-        <Tile to="/tokens" label="Tokens" className="span-2"><TokenMarquee toks={toks} /></Tile>
+        <Tile to="/tokens" label="Tokens" className="span-2"><TokenMarquee items={marquee} /></Tile>
         <Tile to="/hooks" label="Hooks" className="span-2"><HookRows meta={meta} /></Tile>
         <Tile to="/hooks#hook-cap" label="How the cap works">
           <div className="tile-pad">
@@ -96,15 +105,15 @@ export function HomePage({ meta }: { meta: Meta }) {
         <section>
           <div className="section-head"><h2>Closest to graduation</h2><Link to="/tokens" className="small link">All tokens</Link></div>
           <div className="list-card">
-            {!list.data ? <ListEmpty text="Reading tokens…" /> : closest.length === 0 ? <ListEmpty text="No tokens on a curve right now." /> : closest.map((t) => (
+            {!allRead ? <ListSkeleton /> : closest.length === 0 ? <ListEmpty text="No tokens yet." /> : closest.map((t) => (
               <Link key={t.mint} to={`/token/${t.mint}`} className="list-row">
                 <span className="lr-thumb"><TokenImage mint={t.mint} ticker={t.view.launch?.symbol} metadata={t.view.metadata} showTicker={false} /></span>
                 <span className="lr-main">
                   <b>{t.view.launch?.symbol ?? 'TOKEN'}</b>
                   <span className="small faint">{t.view.launch?.name}</span>
                 </span>
-                <span className="lr-meter"><span className="meter"><span className="fill" style={{ width: `${t.progress}%` }} /></span><span className="small num faint">{Math.round(t.progress)}%</span></span>
-                <span className="lr-side small num">{t.capPct ? `cap ${t.capPct}` : 'no cap'}</span>
+                <span className="lr-meter"><span className={`meter ${t.graduated ? 'grad' : ''}`}><span className="fill" style={{ width: `${t.progress}%` }} /></span><span className="small num faint">{Math.round(t.progress)}%</span></span>
+                <span className={`lr-side small num ${t.graduated ? 'grad' : ''}`}>{t.graduated ? 'graduated' : t.capPct ? `cap ${t.capPct}` : 'no cap'}</span>
               </Link>
             ))}
           </div>
@@ -112,7 +121,7 @@ export function HomePage({ meta }: { meta: Meta }) {
         <section>
           <div className="section-head"><h2>Latest burns</h2><Link to="/transparency" className="small link">All keeper logs</Link></div>
           <div className="list-card">
-            {!fw.data ? <ListEmpty text={fw.error ? "Couldn't read the keeper logs." : 'Reading keeper logs…'} /> : burns.length === 0 ? <ListEmpty text="No burns yet: buybacks start after a token graduates." /> : burns.map((b) => (
+            {!fw.data ? (fw.error ? <ListEmpty text="Couldn't read the keeper logs." /> : <ListSkeleton />) : burns.length === 0 ? <ListEmpty text="No burns yet: buybacks start after a token graduates." /> : burns.map((b) => (
               <a key={b.sig} href={b.link || undefined} target="_blank" rel="noreferrer" className="list-row">
                 <span className="lr-ico"><IconFlame size={16} /></span>
                 <span className="lr-main">
@@ -138,10 +147,13 @@ function Tile({ to, label, className = '', children }: { to: string; label: stri
   );
 }
 
+interface MqItem { mint: string; symbol: string; image: string | null; metadata: TokenView['metadata'] | undefined; status: string }
 /** Four columns of token cards drifting up and down (repeated so the loop is seamless). */
-function TokenMarquee({ toks }: { toks: Tok[] }) {
-  if (toks.length === 0) return <div className="tile-pad faint small">Reading tokens…</div>;
-  const base = toks.length >= 4 ? toks : Array.from({ length: 4 }, (_, i) => toks[i % toks.length]);
+function TokenMarquee({ items }: { items: MqItem[] }) {
+  if (items.length === 0) return <div className="tile-pad faint small">No tokens yet.</div>;
+  // the same number of cards in every column (tokens repeat to fill), so no column runs out and shows a gap
+  const per = Math.ceil(items.length / 4);
+  const base = Array.from({ length: per * 4 }, (_, i) => items[i % items.length]);
   const cols = [0, 1, 2, 3].map((c) => base.filter((_, i) => i % 4 === c));
   return (
     <div className="marquee" aria-hidden="true">
@@ -149,10 +161,10 @@ function TokenMarquee({ toks }: { toks: Tok[] }) {
         <div key={c} className={`mq-col ${c % 2 ? 'down' : 'up'}`} style={{ animationDuration: `${26 + c * 4}s` }}>
           {[...col, ...col, ...col, ...col].map((t, i) => (
             <div key={i} className="mq-card">
-              <div className="mq-art"><TokenImage mint={t.mint} ticker={t.view.launch?.symbol} metadata={t.view.metadata} showTicker={false} /></div>
+              <div className="mq-art"><TokenImage mint={t.mint} ticker={t.symbol} metadata={t.metadata} image={t.image} showTicker={false} /></div>
               <div className="mq-meta">
-                <b>{t.view.launch?.symbol ?? 'TOKEN'}</b>
-                <span className="num">{t.graduated ? 'graduated' : t.capPct ? `cap ${t.capPct}` : 'no cap'}</span>
+                <b>{t.symbol}</b>
+                <span className="num">{t.status}</span>
               </div>
             </div>
           ))}
@@ -193,6 +205,14 @@ function MiniRamp({ steps }: { steps: number[] }) {
 }
 
 const ListEmpty = ({ text }: { text: string }) => <div className="small faint" style={{ padding: '18px 16px' }}>{text}</div>;
+/** Five placeholder rows the height of real ones, so the lists don't jump when their data lands. */
+const ListSkeleton = () => (
+  <div aria-hidden="true">
+    {Array.from({ length: 5 }, (_, i) => (
+      <div key={i} className="list-row"><Skeleton h={36} w={36} /><div className="lr-main" style={{ gap: 8 }}><Skeleton h={12} w="40%" /><Skeleton h={10} w="60%" /></div></div>
+    ))}
+  </div>
+);
 const fmtTokens = (s: string) => { const n = Number(s); return Number.isFinite(n) ? (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : Math.trunc(n).toString()) : s; };
 const tickerOf = (k: PublicKeeper) => k.name.replace(/^[a-z]+-/, '').toUpperCase();
 const ago = (iso: string) => { const t = Date.parse(iso); if (!Number.isFinite(t)) return ''; const s = Math.max(0, (Date.now() - t) / 1000); return s < 3600 ? `${Math.round(s / 60)}m` : s < 86400 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`; };

@@ -7,6 +7,7 @@ import { parseBuyRules, BuyRulesRefusal } from '../../../sdk/buy_rules';
 import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, SwitchEvent, BuiltSwap, FlywheelReply, PublicKeeper, TradesReply, IndexedTrade, Candle, MetadataInput, TokenMetadata, RulesView, PotWinner } from './types';
 import type { Api } from './api';
 import { ApiError } from './errors';
+import { SOCIAL_HOSTS } from './socials';
 
 const DECIMALS = 6;
 const UNIT = 10n ** BigInt(DECIMALS);
@@ -39,6 +40,11 @@ const SIMS: Sim[] = [
     rules: { maxBuyBps: 0, maxPerSlotBps: 0, windowSlots: '0', potEvery: 100, potMinBps: 1, cooldownSlots: 0, buyCount: 341 } },
   { mint: fakeKey('FixtureGraduatedMint'), pool: fakeKey('FixturePooD'), config: fakeKey('FixtureCfgD'), name: 'Fixture Graduated', symbol: 'TGRAD',
     launchedMsAgo: 3 * 3600_000, graduated: true, reserveSol: 0.2, balances: { A: tokens(9_000_000), B: tokens(41_000_000) }, switchHistory: [], raisedFloorBps: 0 },
+  { mint: fakeKey('FixtureSLowMint'), pool: fakeKey('FixturePooE'), config: fakeKey('FixtureCfgE'), name: 'Fixture Slow', symbol: 'TSLOW',
+    launchedMsAgo: 12 * 60_000, graduated: false, reserveSol: 0.117, balances: { A: tokens(2_000_000), B: 0n }, switchHistory: [], raisedFloorBps: 0,
+    rules: { maxBuyBps: 50, maxPerSlotBps: 150, windowSlots: '1500', potEvery: 0, potMinBps: 0, cooldownSlots: 25, buyCount: 0 } },
+  { mint: fakeKey('FixtureEarLyGradMint'), pool: fakeKey('FixturePooF'), config: fakeKey('FixtureCfgF'), name: 'Fixture First', symbol: 'TFIRST',
+    launchedMsAgo: 26 * 3600_000, graduated: true, reserveSol: 0.2, balances: { A: tokens(1_000_000), B: tokens(6_000_000) }, switchHistory: [], raisedFloorBps: 0 },
 ];
 
 const FEE = { mode: 'linear fee scheduler', cliffPct: 50, endPct: 1, periods: 10, periodSlots: 15, totalSlots: 150, collectFeeMode: 0, migrationFeeOption: 0, creatorTradingFeePercentage: 0, migrationQuoteThresholdSol: 0.2 };
@@ -101,7 +107,11 @@ const find = (mint: string) => {
   if (!s) throw new ApiError('unknown token', 404);
   return s;
 };
-const META = new Map<string, TokenMetadata>([[SIMS[1].mint, { description: 'Fixture token for UI work. Studio-entered details show here.', website: 'https://example.org', x: 'https://x.com/example', telegram: null, image: null, updatedAt: new Date(T0).toISOString() }]]);
+const NO_LINKS = { website: null, x: null, telegram: null, discord: null, tiktok: null, instagram: null, youtube: null };
+const META = new Map<string, TokenMetadata>([
+  [SIMS[1].mint, { ...NO_LINKS, description: 'Fixture token for UI work. Studio-entered details show here.', website: 'https://example.org', x: 'https://x.com/example', telegram: 'https://t.me/example', discord: 'https://discord.gg/example', tiktok: 'https://www.tiktok.com/@example', instagram: 'https://www.instagram.com/example', youtube: 'https://www.youtube.com/@example', image: null, updatedAt: new Date(T0).toISOString() }],
+  [SIMS[3].mint, { ...NO_LINKS, description: 'A graduated fixture token.', x: 'https://x.com/example', telegram: 'https://t.me/example', image: null, updatedAt: new Date(T0).toISOString() }],
+]);
 /** Fixture studio: any connected wallet may sign in (demo only; the real server checks STUDIO_WALLETS). */
 const STUDIO_NONCES = new Set<string>(), STUDIO_SESSIONS = new Set<string>();
 const LAUNCHES = new Map<string, CreateRequest>();
@@ -182,11 +192,12 @@ export const fixtureApi: Api = {
       defaultSchedule: { id: BALANCED.id, name: BALANCED.name, label: BALANCED.label, steps, uncappedAfter: BALANCED.uncappedAfter.toString() },
       cluster: 'DEVNET', rpc: 'fixture mode (simulated, no RPC)', programId: PROGRAM_ID, commit: 'fixture', liftAuthority: fakeKey('FixtureLiftAuthority'),
       wallets: { A: fakeKey('FixtureTestWaLLetA'), B: fakeKey('FixtureTestWaLLetB') },
-      launches: SIMS.map((s) => ({ mint: s.mint, pool: s.pool, time: new Date(T0 - s.launchedMsAgo).toISOString() })),
+      launches: SIMS.map((s) => ({ mint: s.mint, pool: s.pool, time: new Date(T0 - s.launchedMsAgo).toISOString(), name: s.name, symbol: s.symbol, image: META.get(s.mint)?.image ?? null })),
       studio: { required: true, configured: true },
     };
   },
   async token(mint, owner) { await latency(); return view(find(mint), owner); },
+  async cardView(mint) { await latency(); return { ...view(find(mint)), balances: {}, switchHistory: [], partial: true }; },
   async trade(mint, wallet, side: Side, amount): Promise<TradeResult> {
     await latency(); await latency();
     return exec(find(mint), wallet, side, amount, false);
@@ -216,7 +227,7 @@ export const fixtureApi: Api = {
   },
   async saveMetadata(mint, m: MetadataInput): Promise<TokenMetadata> {
     await latency(); find(mint);
-    for (const [k, host] of [['website', null], ['x', ['x.com', 'twitter.com']], ['telegram', ['t.me']]] as const) {
+    for (const [k, host] of [['website', null], ...SOCIAL_HOSTS] as const) {
       const v = (m as any)[k]; if (!v) continue;
       let u: URL; try { u = new URL(v); } catch { throw new ApiError(`${k}: not a valid link`, 400); }
       if (u.protocol !== 'https:') throw new ApiError(`${k}: must start with https://`, 400);
@@ -225,7 +236,8 @@ export const fixtureApi: Api = {
     if (m.description.length > 280) throw new ApiError('description: at most 280 characters', 400);
     const prev = META.get(mint);
     const image = m.image === null ? null : m.image ? `data:image/png;base64,${m.image.data}` : prev?.image ?? null;
-    const out: TokenMetadata = { description: m.description.trim(), website: m.website || null, x: m.x || null, telegram: m.telegram || null, image, updatedAt: new Date().toISOString() };
+    const out: TokenMetadata = { description: m.description.trim(), website: m.website || null, x: m.x || null, telegram: m.telegram || null,
+      discord: m.discord || null, tiktok: m.tiktok || null, instagram: m.instagram || null, youtube: m.youtube || null, image, updatedAt: new Date().toISOString() };
     META.set(mint, out); return out;
   },
   async trades(mint, interval): Promise<TradesReply> {

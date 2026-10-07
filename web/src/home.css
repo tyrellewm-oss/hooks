@@ -1,6 +1,6 @@
 /* Home page: centred hero, a bento grid of live preview tiles, two short lists. Theme tokens only. */
 .home { max-width: 1160px; margin: 0 auto; }
-.home-hero { text-align: center; padding: 34px 0 30px; }
+.home-hero { text-align: center; padding: 34px 0 64px; }
 .home-hero h1 { font-size: clamp(32px, 5vw, 52px); line-height: 1.06; letter-spacing: -0.035em; font-weight: 500; }
 .home-hero h1 span { color: var(--text-3); }
 .home-hero p { color: var(--text-3); max-width: 540px; margin: 18px auto 0; font-size: 16px; line-height: 1.65; }
@@ -21,10 +21,10 @@
 .tile-big { font-size: 34px; font-weight: 500; letter-spacing: -0.03em; margin: 6px 0 2px; }
 .tile-kicker { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); margin-bottom: 12px; }
 @media (max-width: 960px) { .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tile, .tile.span-2 { grid-column: span 1; } .tile.span-2 { grid-column: span 2; } }
-@media (max-width: 600px) { .bento { grid-template-columns: minmax(0, 1fr); } .tile, .tile.span-2 { grid-column: span 1; } .home-hero { padding: 18px 0 22px; } }
+@media (max-width: 600px) { .bento { grid-template-columns: minmax(0, 1fr); } .tile, .tile.span-2 { grid-column: span 1; } .home-hero { padding: 18px 0 44px; } }
 
 /* tokens tile: drifting columns */
-.marquee { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 0 12px; -webkit-mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent); mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent); }
+.marquee { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 10px; padding: 0 12px; -webkit-mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent); mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent); }
 .mq-col { display: flex; flex-direction: column; gap: 10px; animation: mq-up 30s linear infinite; }
 .mq-col.down { animation-name: mq-down; }
 @keyframes mq-up { from { transform: translateY(0); } to { transform: translateY(-50%); } }
@@ -72,7 +72,8 @@
 /* lists */
 .home-lists { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; margin-top: 10px; }
 @media (max-width: 860px) { .home-lists { grid-template-columns: minmax(0, 1fr); } }
-.list-card { background: var(--card); border: 1px solid var(--card-border); border-radius: var(--r-card); overflow: hidden; }
+.home-lists > section { display: flex; flex-direction: column; }
+.list-card { flex: 1; background: var(--card); border: 1px solid var(--card-border); border-radius: var(--r-card); overflow: hidden; }
 .list-row { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--card-border); transition: background 0.15s ease; }
 .list-row:last-child { border-bottom: 0; }
 .list-row:hover { background: var(--hover); }
@@ -85,6 +86,7 @@
 .lr-meter { display: flex; align-items: center; gap: 8px; width: 34%; }
 .lr-meter .meter { flex: 1; }
 .lr-side { flex: none; color: var(--text-2); min-width: 64px; text-align: right; }
+.lr-side.grad { color: var(--green); }
 @media (max-width: 480px) { .lr-meter { display: none; } }
 
 @media (prefers-reduced-motion: reduce) { .mq-col, .hr-row { animation: none; } }

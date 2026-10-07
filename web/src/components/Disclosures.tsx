@@ -43,12 +43,13 @@ export function Dropdown({ title, aside, defaultOpen, children }: { title: strin
 }
 
 /** AC-29: every RestrictionsLifted event for this token (and global ones). */
-export function SwitchHistory({ view }: { view: TokenView }) {
+/** reading: the page was drawn from a list's quick read and the history hasn't arrived yet. */
+export function SwitchHistory({ view, reading = false }: { view: TokenView; reading?: boolean }) {
   const h = view.switchHistory;
   return (
-    <Dropdown title="Lift-only switch history" aside={<span className="pill">{h.length ? `${h.length} use${h.length > 1 ? 's' : ''}` : 'none'}</span>}>
+    <Dropdown title="Lift-only switch history" aside={<span className="pill">{reading ? 'reading' : h.length ? `${h.length} use${h.length > 1 ? 's' : ''}` : 'none'}</span>}>
       <p className="small muted">The admin switch can only raise or remove the cap, never lower or re-enable it. Every use emits an on-chain RestrictionsLifted event, listed here.</p>
-      {h.length === 0 ? <p className="small faint" style={{ margin: 0 }}>No uses for this token.</p> : (
+      {reading ? <p className="small faint" style={{ margin: 0 }}>Reading the switch history…</p> : h.length === 0 ? <p className="small faint" style={{ margin: 0 }}>No uses for this token.</p> : (
         <div style={{ overflowX: 'auto' }}>
           <table className="small">
             <thead><tr><th>Scope</th><th>Change</th><th>Slot</th><th>Signer</th><th>Tx</th></tr></thead>

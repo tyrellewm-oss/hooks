@@ -16,8 +16,19 @@ export const FORBIDDEN = /\bsafe\b|\bsecure\b|(^|[^n])audited|anti-bundle|antibu
 export type ImageType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
 const EXT: Record<ImageType, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
 
-export interface TokenMetadata { description: string; website: string | null; x: string | null; telegram: string | null; image: { type: ImageType; bytes: number; file: string } | null; updatedAt: string }
-export interface MetadataInput { description?: unknown; website?: unknown; x?: unknown; telegram?: unknown; image?: unknown }
+/** The social links a token can carry and the hosts each must be on (the website takes any https link). The site's
+ *  form checks the same list (web/src/lib/socials.ts; tests/metadata.test.ts keeps them equal). */
+export const SOCIAL_HOSTS = {
+  x: ['x.com', 'twitter.com'], telegram: ['t.me'], discord: ['discord.gg', 'discord.com'], tiktok: ['tiktok.com', 'vm.tiktok.com'],
+  instagram: ['instagram.com'], youtube: ['youtube.com', 'youtu.be', 'm.youtube.com'],
+} as const;
+export type Social = keyof typeof SOCIAL_HOSTS;
+const SOCIAL_LABEL: Record<Social, string> = { x: 'X link', telegram: 'Telegram link', discord: 'Discord link', tiktok: 'TikTok link', instagram: 'Instagram link', youtube: 'YouTube link' };
+type SocialLinks = Record<Social, string | null>;
+
+/** Stored details. Records saved before a social existed lack its field (read as null). */
+export interface TokenMetadata extends Partial<SocialLinks> { description: string; website: string | null; x: string | null; telegram: string | null; image: { type: ImageType; bytes: number; file: string } | null; updatedAt: string }
+export interface MetadataInput { description?: unknown; website?: unknown; x?: unknown; telegram?: unknown; discord?: unknown; tiktok?: unknown; instagram?: unknown; youtube?: unknown; image?: unknown }
 export class MetadataRefusal extends Error { constructor(m: string) { super(m); this.name = 'MetadataRefusal'; } }
 
 /** Image type from the file's own bytes (never from a name or a client-sent type). SVG is never accepted. */
@@ -42,7 +53,7 @@ function url(v: unknown, field: string, hosts?: string[]): string | null {
   return u.toString();
 }
 
-export interface ValidMetadata { description: string; website: string | null; x: string | null; telegram: string | null; image: { type: ImageType; data: Buffer } | null | undefined }
+export interface ValidMetadata extends SocialLinks { description: string; website: string | null; image: { type: ImageType; data: Buffer } | null | undefined }
 
 /** Validate studio input. image: undefined = keep the current one, null = remove, { data: base64 } = replace. */
 export function validateMetadata(i: MetadataInput): ValidMetadata {
@@ -62,8 +73,12 @@ export function validateMetadata(i: MetadataInput): ValidMetadata {
     if (!type) throw new MetadataRefusal('image: PNG, JPEG, WebP or GIF only');
     image = { type, data };
   }
-  return { description, website: url(i.website, 'website'), x: url(i.x, 'X link', ['x.com', 'twitter.com']), telegram: url(i.telegram, 'Telegram link', ['t.me']), image };
+  const socials = Object.fromEntries((Object.keys(SOCIAL_HOSTS) as Social[]).map(k => [k, url(i[k], SOCIAL_LABEL[k], [...SOCIAL_HOSTS[k]])])) as SocialLinks;
+  return { description, website: url(i.website, 'website'), ...socials, image };
 }
+
+/** Every social, null where unset (or missing from an older record). */
+const socialsOf = (m: Partial<SocialLinks>): SocialLinks => Object.fromEntries((Object.keys(SOCIAL_HOSTS) as Social[]).map(k => [k, m[k] ?? null])) as SocialLinks;
 
 const dirFor = (cluster: ClusterName, dir = METADATA_DIR) => join(dir, cluster);
 export function loadMetadata(cluster: ClusterName, mint: string, dir = METADATA_DIR): TokenMetadata | null {
@@ -93,7 +108,7 @@ export function saveMetadata(cluster: ClusterName, mint: string, v: ValidMetadat
     writeFileSync(join(d, file + '.tmp'), v.image.data); renameSync(join(d, file + '.tmp'), join(d, file));
     image = { type: v.image.type, bytes: v.image.data.length, file };
   }
-  const meta: TokenMetadata = { description: v.description, website: v.website, x: v.x, telegram: v.telegram, image, updatedAt: new Date().toISOString() };
+  const meta: TokenMetadata = { description: v.description, website: v.website, ...socialsOf(v), image, updatedAt: new Date().toISOString() };
   const f = join(d, `${mint}.json`);
   writeFileSync(f + '.tmp', JSON.stringify(meta, null, 2)); renameSync(f + '.tmp', f);
   return meta;
@@ -102,5 +117,5 @@ export function saveMetadata(cluster: ClusterName, mint: string, v: ValidMetadat
 /** What the page gets: details plus an image URL (never the bytes; the image route serves those). */
 export function publicMetadata(m: TokenMetadata | null, mint: string) {
   if (!m) return null;
-  return { description: m.description, website: m.website, x: m.x, telegram: m.telegram, image: m.image ? `/api/token/${mint}/image?v=${encodeURIComponent(m.updatedAt)}` : null, updatedAt: m.updatedAt };
+  return { description: m.description, website: m.website, ...socialsOf(m), image: m.image ? `/api/token/${mint}/image?v=${encodeURIComponent(m.updatedAt)}` : null, updatedAt: m.updatedAt };
 }

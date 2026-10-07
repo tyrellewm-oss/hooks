@@ -10,6 +10,8 @@ export const FIXTURE_MODE = import.meta.env.MODE === 'fixtures';
 export interface Api {
   meta(): Promise<Meta>;
   token(mint: string, owner?: string | null): Promise<TokenView>;
+  /** the quick read for lists: no switch-history scan, no test-wallet balances (partial: true) */
+  cardView(mint: string): Promise<TokenView>;
   /** server-signed demo trade with throwaway test wallet A/B */
   trade(mint: string, wallet: string, side: Side, amount: string): Promise<TradeResult>;
   /** AC-21: unsigned swap for the user's wallet (simulated); the wallet signs, then walletSubmit relays it */
@@ -46,6 +48,7 @@ const post = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'cont
 const httpApi: Api = {
   meta: () => call<Meta>('/api/meta'),
   token: (mint, owner) => call<TokenView>(`/api/token/${encodeURIComponent(mint)}${owner ? `?owner=${encodeURIComponent(owner)}` : ''}`),
+  cardView: (mint) => call<TokenView>(`/api/token/${encodeURIComponent(mint)}?view=card`),
   trade: (mint, wallet, side, amount) => call<TradeResult>('/api/trade', post({ mint, wallet, side, amount })),
   walletBuild: (mint, owner, side, amount, opts) => call<BuiltSwap>('/api/wallet/build', post({ mint, owner, side, amount, ...opts })),
   walletSubmit: (tx) => call<TradeResult>('/api/wallet/submit', post({ tx })),
