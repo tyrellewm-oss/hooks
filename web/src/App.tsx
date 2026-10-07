@@ -89,7 +89,9 @@ export function App() {
             <WalletButton />
           </div>
         </header>
-        {FIXTURE_MODE && <p className="sample-banner" role="note"><b>Preview</b> Sample data: these tokens, trades and wallets are not real.</p>}
+        {FIXTURE_MODE
+          ? <p className="sample-banner" role="note"><b>Preview</b> Sample data: these tokens, trades and wallets are not real.</p>
+          : <p className="sample-banner" role="note" id="top-banner"><b>UNAUDITED EXPERIMENT — DEVNET</b> <span id="badge">DEVNET TEST - no real value</span></p>}
         <main><Guard what="this page">{page}</Guard></main>
       </div>
     </div>
