@@ -2,7 +2,8 @@
 # branch you are on from GitHub every few seconds; Vite reloads the open page when pulled files change.
 # Start it by double-clicking scripts\dev-sync.cmd, or from a terminal in the repo:
 #   scripts\dev-sync.cmd          sample tokens (fixtures)      -> http://127.0.0.1:5176
-#   scripts\dev-sync.cmd -Live    real devnet data; needs the page server on 5175 (pnpm page -- --cluster devnet --web)
+#   scripts\dev-sync.cmd -Live    real devnet data; needs the backend on 5175 (pnpm page -- --cluster devnet, no --web)
+# For the whole project (backend, site, charts, restarts) use start-hookd.cmd in the repo folder instead.
 # Stop it with Ctrl+C. It only ever fast-forwards: your own commits and edits are never overwritten.
 param([switch]$Live, [int]$Every = 15)
 
