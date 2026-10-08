@@ -166,6 +166,62 @@ describe('the rule (AC-1, AC-6, AC-7)', () => {
   });
 });
 
+describe('per-owner cap (G6)', () => {
+  // supply holder -> any token account (buy stand-in)
+  const send = (s: ReturnType<typeof setup>, dst: PublicKey, amt: bigint) =>
+    s.env.send([s.env.transferIx(s.mint, s.decimals, s.env.ata(s.mint, s.curve.publicKey), dst, s.curve.publicKey, amt)], [s.env.payer, s.curve]);
+
+  test('one owner with a second token account cannot hold 2x the cap (old AC-6 bypass closed)', () => {
+    const s = setup(); const w = wallet(s); const extra = s.env.extraTokenAccount(s.mint, w.publicKey);
+    assert.ok(buy(s, w, ONE_PCT).ok); // ATA: full cap
+    const r = send(s, extra, ONE_PCT);
+    assert.equal(r.ok, false); assert.equal(r.hookError, 'WalletCapExceeded');
+    const d = capHitDetails(r.logs)!; assert.equal(d.cap, 0n); assert.equal(d.balance, ONE_PCT);
+    assert.equal(s.env.balance(extra), 0n);
+  });
+  test('non-ATA account is refused even 1 base unit, at every capped step', () => {
+    const s = setup(); const w = wallet(s); const extra = s.env.extraTokenAccount(s.mint, w.publicKey); const L = s.cfg.launchSlot;
+    assert.equal(send(s, extra, 1n).hookError, 'WalletCapExceeded');
+    s.env.warp(L + 150n); assert.equal(send(s, extra, 1n).hookError, 'WalletCapExceeded');
+    s.env.warp(L + UNCAPPED - 1n); assert.equal(send(s, extra, 1n).hookError, 'WalletCapExceeded');
+  });
+  test('owner cannot move tokens from their ATA into their own second account while capped', () => {
+    const s = setup(); const w = wallet(s); const extra = s.env.extraTokenAccount(s.mint, w.publicKey);
+    assert.ok(buy(s, w, ONE_PCT).ok);
+    const ata = getAssociatedTokenAddressSync(s.mint, w.publicKey, true, TOKEN_2022);
+    const r = s.env.send([s.env.transferIx(s.mint, s.decimals, ata, extra, w.publicKey, ONE_PCT / 2n)], [s.env.payer, w]);
+    assert.equal(r.hookError, 'WalletCapExceeded');
+  });
+  test('after the ramp (no cap), a non-ATA account receives normally', () => {
+    const s = setup(); const w = wallet(s); const extra = s.env.extraTokenAccount(s.mint, w.publicKey);
+    s.env.warp(s.cfg.launchSlot + UNCAPPED);
+    assert.ok(send(s, extra, 10n * ONE_PCT).ok);
+  });
+  test('after a mint lift, a non-ATA account receives normally', () => {
+    const s = setup(); const w = wallet(s); const extra = s.env.extraTokenAccount(s.mint, w.publicKey);
+    assert.ok(s.env.send([s.env.hook.liftMintCap(s.admin.publicKey, s.mint)], [s.admin]).ok);
+    assert.ok(send(s, extra, 10n * ONE_PCT).ok);
+  });
+  test('a raise applies to the ATA only; non-ATA stays at 0', () => {
+    const s = setup(); const w = wallet(s); const extra = s.env.extraTokenAccount(s.mint, w.publicKey);
+    assert.ok(s.env.send([s.env.hook.raiseMintCap(s.admin.publicKey, s.mint, 300)], [s.admin]).ok);
+    assert.ok(buy(s, w, 3n * ONE_PCT).ok);
+    assert.equal(send(s, extra, 1n).hookError, 'WalletCapExceeded');
+  });
+  test('non-ATA vault owned by the DBC pool authority stays exempt (sells never blocked)', () => {
+    const s = setup(); const vault = s.env.extraTokenAccount(s.mint, DBC_POOL_AUTHORITY);
+    assert.ok(send(s, vault, 90n * ONE_PCT).ok);
+  });
+  test('non-ATA vault owned by the DAMM v2 pool authority stays exempt', () => {
+    const s = setup(); const vault = s.env.extraTokenAccount(s.mint, DAMM_V2_POOL_AUTHORITY);
+    assert.ok(send(s, vault, 30n * ONE_PCT).ok);
+  });
+  test('two different wallets each still get their own full cap (per owner, not global)', () => {
+    const s = setup(); const a = wallet(s); const b = wallet(s);
+    assert.ok(buy(s, a, ONE_PCT).ok); assert.ok(buy(s, b, ONE_PCT).ok);
+  });
+});
+
 describe('hook correctness checklist (AC-9)', () => {
   test('direct Execute call (not via Token-2022) -> NotTransferring', () => {
     const s = setup(); const w = wallet(s); assert.ok(buy(s, w, 10n).ok);

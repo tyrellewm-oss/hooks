@@ -36,7 +36,7 @@ No instruction moves tokens or SOL except rent at init. The hook makes no CPI.
 | T4 | Admin tightens the rule | Not possible: config is immutable, the switch only goes upward or lifts, and every use emits `RestrictionsLifted` (tested) |
 | T5 | Program upgrade changes the rules | **Open.** The upgrade authority can replace the code. Devnet: throwaway key. Mainnet plan (out of scope): multisig plus timelock, or make immutable after verification |
 | T6 | Test build on devnet (short ramps) | Release build has test-slots OFF. `test_slots_build` is stored in each config, and `view_schedule` logs `build: profile=release min_step_slots=10 min_ramp_slots=150`. `scripts/qa_schedule.ts` compares the deployed bytes with the release `.so` |
-| T7 | Evading the cap | **Accepted / disclosed.** The cap is per *token account*: one owner with several token accounts, or many wallets, can hold more (QA H-2). The copy must say so (Research owns the copy) |
+| T7 | Evading the cap | **Partly closed (G6).** One owner with several token accounts no longer holds more: while capped, only the owner's associated token account has the cap allowance, other accounts have cap 0 (`tests/hook.test.ts`, "per-owner cap (G6)"). **Still accepted / disclosed:** many wallets can hold more (QA H-2). The copy must say so (Research owns the copy) |
 | T8 | Missing or corrupted global PDA blocks all transfers (QA M-4) | Global is created before any mint config (enforced: mint init needs the global authority signature). Program-owned, never closed |
 | T9 | Griefing by pre-funding a PDA | `create_pda_once` handles pre-funded system accounts (tested) |
 | T10 | Arithmetic overflow | u128 internally, saturating ops, proptests (QA: 9 properties × 1M cases); TS mirror saturates too (L-1 fixed) |

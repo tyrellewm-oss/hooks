@@ -1,8 +1,10 @@
 //! trenches-hook: DEVNET-ONLY, UNAUDITED experiment.
 //!
-//! A Token-2022 transfer hook with exactly ONE rule: a rising per-token-account cap
+//! A Token-2022 transfer hook with exactly ONE rule: a rising per-owner cap
 //! while the token is on the Meteora DBC bonding curve.
-//! - Checks only the DESTINATION token account's post-transfer balance.
+//! - Checks only the DESTINATION token account's post-transfer balance. The cap
+//!   allowance belongs to the owner's associated token account; any other token
+//!   account of the mint has cap 0 while the cap is active (G6).
 //! - Never checks the source. Exempt destinations (DBC pool vaults via the DBC
 //!   pool authority, DAMM v2 pool authority; no manual exemptions) always pass,
 //!   so selling back into the curve is never blocked by this program.
@@ -260,6 +262,9 @@ pub mod trenches_hook {
         let exempt = is_exempt(cfg, &dest_owner);
         let slot = Clock::get()?.slot;
         let cap = cap_math::effective_cap(&cfg.cap_config(), &ctx.accounts.lift.to_lift(), ctx.accounts.global.lifted, slot);
+        // G6 per-owner cap: while a cap is active, the whole allowance belongs to the owner's ATA.
+        // Any other token account of this mint has cap 0, so one owner can't multiply the cap across accounts.
+        let cap = cap.map(|c| if is_owner_ata(&ctx.accounts.destination_token.key(), &dest_owner, &mint_key) { c } else { 0 });
         match cap_math::decide(exempt, cap, dest_balance) {
             cap_math::Decision::Allow => Ok(()),
             cap_math::Decision::Reject { cap } => {
@@ -349,6 +354,16 @@ pub fn is_exempt(cfg: &MintConfig, dest_owner: &Pubkey) -> bool {
     *dest_owner == DBC_POOL_AUTHORITY
         || *dest_owner == DAMM_V2_POOL_AUTHORITY
         || cfg.exempt_owners[..(cfg.exempt_count as usize).min(MAX_EXEMPT)].contains(dest_owner) // always empty since QA H-1 fix
+}
+
+/// True if `token_account` is `owner`'s Token-2022 associated token account for `mint`.
+/// Token-2022 ATAs carry ImmutableOwner, so the owner can't be reassigned to dodge this.
+pub fn is_owner_ata(token_account: &Pubkey, owner: &Pubkey, mint: &Pubkey) -> bool {
+    let (ata, _) = Pubkey::find_program_address(
+        &[owner.as_ref(), spl_token_2022::ID.as_ref(), mint.as_ref()],
+        &ASSOCIATED_TOKEN_PROGRAM_ID,
+    );
+    *token_account == ata
 }
 
 pub fn extra_metas() -> Result<Vec<ExtraAccountMeta>> {

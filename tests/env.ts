@@ -5,6 +5,7 @@ import {
   ExtensionType, getMintLen, createInitializeTransferHookInstruction, createInitializeMintInstruction,
   getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction, createMintToInstruction,
   createSetAuthorityInstruction, AuthorityType, createTransferCheckedInstruction, unpackAccount,
+  getAccountLen, createInitializeAccount3Instruction,
 } from '@solana/spl-token';
 import { HookClient, TOKEN_2022, DEFAULT_PROGRAM_ID, hookErrorFromLogs, BPF_UPGRADEABLE } from '../sdk/hook.js';
 
@@ -100,6 +101,18 @@ export class Env {
       if (!r.ok) throw new Error('ata failed ' + r.logs.join('\n'));
     }
     return a;
+  }
+  /** A second, non-ATA token account of `mint` owned by `owner` (G6 tests: the cap allowance is the ATA's only). */
+  extraTokenAccount(mint: PublicKey, owner: PublicKey) {
+    const acc = Keypair.generate();
+    const len = getAccountLen([ExtensionType.TransferHookAccount]);
+    const rent = this.svm.minimumBalanceForRentExemption(BigInt(len));
+    const r = this.send([
+      SystemProgram.createAccount({ fromPubkey: this.payer.publicKey, newAccountPubkey: acc.publicKey, space: len, lamports: Number(rent), programId: TOKEN_2022 }),
+      createInitializeAccount3Instruction(acc.publicKey, mint, owner, TOKEN_2022),
+    ], [this.payer, acc]);
+    if (!r.ok) throw new Error('extraTokenAccount failed ' + r.logs.join('\n'));
+    return acc.publicKey;
   }
   balance(a: PublicKey): bigint {
     const acc = this.svm.getAccount(a);

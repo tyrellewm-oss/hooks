@@ -20,7 +20,7 @@ A launchpad prototype on Solana **devnet**:
 Wording follows the page copy (`research/page_content.md`, v0-devnet-2026-10-04e, Research), which is what the page shows to users.
 
 1. **Unaudited experiment, devnet only.** Internal and volunteer review only, no paid audit. DEVNET TEST: no real value. Not an investment.
-2. **The cap is per token account, not per wallet.** A single wallet may own several token accounts, and anyone can split across wallets, so this slows snipers down but does not stop them.
+2. **The cap is per wallet (owner), not per person.** While the cap is active, only the wallet's associated token account gets the cap allowance; any other token account of the mint has a cap of 0 (G6, branch `feat/g6-per-owner-cap`, pending King's approval). Anyone can still split across several wallets, so this slows snipers down but does not stop them.
 3. **The cap ends at graduation or after the ramp (`uncapped_after`), whichever comes first.** When the curve completes (graduation), Meteora DBC removes the hook and the token becomes a plain Token-2022 token on DAMM v2 with no cap. After that, including buys from the pool right after migration, there is no cap.
 4. **Selling back into the curve is never blocked by the rule.** The pool vault and the graduation (migration) path are exempt from the cap.
 5. **Admin power.** Program upgrades are controlled by the upgrade key (on devnet: a throwaway devnet test key). The same key has one switch that can only lift the rule (raise or remove the cap), never add or tighten it. Every use of the switch emits an on-chain `RestrictionsLifted` event and is announced (announcement channel TBD; the page lists the switch history).

@@ -19,6 +19,9 @@ pub const DBC_POOL_AUTHORITY: Pubkey = pubkey!("FhVo3mqL8PW5pH5U2CN4XE33DokiyZnU
 pub const DAMM_V2_PROGRAM_ID: Pubkey = pubkey!("cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG");
 /// DAMM v2 pool authority = PDA(["pool_authority"], DAMM v2). Owner of DAMM v2 vaults (migration target).
 pub const DAMM_V2_POOL_AUTHORITY: Pubkey = pubkey!("HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC");
+/// SPL Associated Token Account program. G6: while the cap is active, only the owner's ATA
+/// (PDA([owner, Token-2022, mint], ATA program)) gets the cap allowance.
+pub const ASSOCIATED_TOKEN_PROGRAM_ID: Pubkey = pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
 #[cfg(test)]
 mod tests {

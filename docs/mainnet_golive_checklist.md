@@ -16,7 +16,7 @@ This checklist describes what a go-live **would** need. Every transaction below 
 | G3 | Verifiable build: `solana-verify build` hash == deployed hash (README "Verifiable build") | agents + King | not run (disk) |
 | G4 | **Spec + `KING:` approval for an unsigned-mainnet-tx tool.** It reverses the "no mainnet code path" rule, so it needs its own ticket: what it builds, how QA compares the message bytes, where the unsigned bytes go, and tests that it can never sign or send. Until then, items T1–T9 are a paper list | Agent A spec, Agent B review, King approval | not started |
 | G5 | Mainnet pins in code, behind G4: hook program id (`HOOK_PROGRAM_ID_PINS.mainnet`), DBC signer, partner config pin, `keeper/registry.json` mainnet list. The DAMM v2 migration config pin `7F6dnUcR…` already exists | agents (PR), King approves | not started |
-| G6 | Final page-copy review (Research) and the per-token-account vs per-owner cap decision | King / Research | open |
+| G6 | Final page-copy review (Research) and the per-token-account vs per-owner cap decision. Per-owner implemented on `feat/g6-per-owner-cap` (LOCAL tests pass); needs King's decision and Research's copy update | King / Research | open |
 | G7 | Monitoring and the R4 stop rule: who watches the keeper, the alerts, and who can pause it | King | open |
 
 ## 1. Decisions King must make first (no defaults; agents don't guess)
@@ -54,7 +54,7 @@ The post-check runs read-only after it lands.
 Not on the list: `lift_global`, `lift_mint_cap`, `raise_mint_cap`, `set_launch_authority` and `rotate_admin`. These are emergency or rotation actions only. Each one is a separate, explicit King decision.
 
 ## 3. Known limits to accept or fix before go-live (from the merged tickets)
-- **Cap is per token account, not per wallet** (README design limit 2); post-graduation buys are uncapped (design limit 3).
+- **Cap is per wallet, not per person** (README design limit 2): several wallets can still split; post-graduation buys are uncapped (design limit 3).
 - **#5 price source:** with a single-pool token, Jupiter prices from our own pool, so it catches a stale or broken read, not a pump. A pump held for the whole 30-min window gets through (the defence is the window plus the max per run). min_out per spec §3.7 was confirmed by King. Missing or stale sampler → refuse, then pause after the warm-up ceiling.
 - **8.3:** a devnet launch is refused until the devnet Global is migrated (fail closed). The same applies on mainnet: T4 before T6.
 - **8.3b:** `rotate_admin` does not rotate the BPF upgrade authority.
