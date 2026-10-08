@@ -38,7 +38,7 @@ export function PriceCard({ mint }: { mint: string }) {
         </div>
       </div>
       {!d ? (live.error ? <div className="notice red small">{live.error.message}</div> : <div className="skeleton" style={{ height: 340 }} />)
-        : !d.indexed ? <div className="notice small">No trades indexed yet. The indexer fills this in: <code>node --import tsx scripts/indexer.ts loop --cluster devnet</code></div>
+        : !d.indexed ? <div className="notice small">No trade history yet. The chart fills in once the site's trade indexer has read this token.</div>
         : d.candles.length === 0 ? <div className="notice small">No trades yet.</div>
         : <Candles candles={d.candles} interval={d.interval} />}
       {d?.updatedAt && <div className="small faint" style={{ marginTop: 8 }}>Indexed from the chain · updated {ago(Date.parse(d.updatedAt) / 1000)} ago · curve and post-graduation pool</div>}
