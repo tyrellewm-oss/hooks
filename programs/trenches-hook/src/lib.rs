@@ -264,10 +264,15 @@ pub mod trenches_hook {
         let cap = cap_math::effective_cap(&cfg.cap_config(), &ctx.accounts.lift.to_lift(), ctx.accounts.global.lifted, slot);
         // G6 per-owner cap: while a cap is active, the whole allowance belongs to the owner's ATA.
         // Any other token account of this mint has cap 0, so one owner can't multiply the cap across accounts.
-        let cap = cap.map(|c| if is_owner_ata(&ctx.accounts.destination_token.key(), &dest_owner, &mint_key) { c } else { 0 });
+        // Skipped for exempt destinations (sells into the pool), which always pass.
+        let not_ata = !exempt && cap.is_some() && !is_owner_ata(&ctx.accounts.destination_token.key(), &dest_owner, &mint_key);
+        let cap = if not_ata { Some(0) } else { cap };
         match cap_math::decide(exempt, cap, dest_balance) {
             cap_math::Decision::Allow => Ok(()),
             cap_math::Decision::Reject { cap } => {
+                if not_ata {
+                    msg!("G6: destination is not the owner's associated token account; only that account can receive while the cap is active");
+                }
                 let next = cap_math::next_change(&cfg.cap_config(), slot);
                 msg!(
                     "WalletCapExceeded: token_account={} owner={} balance={} cap={} slot={} next_change={:?}",

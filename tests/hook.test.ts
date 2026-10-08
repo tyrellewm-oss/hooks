@@ -3,7 +3,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { Keypair, PublicKey, TransactionInstruction } from '@solana/web3.js';
-import { getAssociatedTokenAddressSync } from '@solana/spl-token';
+import { getAssociatedTokenAddressSync, createSetAuthorityInstruction, AuthorityType } from '@solana/spl-token';
 import { Env } from './env.js';
 import { DBC_POOL_AUTHORITY, DAMM_V2_POOL_AUTHORITY, TOKEN_2022, decodeMintConfig, decodeLift, decodeGlobal, parseRestrictionsLifted, capHitDetails, toCapConfig } from '../sdk/hook.js';
 import { capAt } from '../sdk/capMath.js';
@@ -177,7 +177,28 @@ describe('per-owner cap (G6)', () => {
     const r = send(s, extra, ONE_PCT);
     assert.equal(r.ok, false); assert.equal(r.hookError, 'WalletCapExceeded');
     const d = capHitDetails(r.logs)!; assert.equal(d.cap, 0n); assert.equal(d.balance, ONE_PCT);
+    assert.ok(r.logs.some(l => l.includes("G6: destination is not the owner's associated token account")), r.logs.join('\n'));
     assert.equal(s.env.balance(extra), 0n);
+  });
+  test('an ordinary cap hit on the ATA does not log the G6 reason', () => {
+    const s = setup(); const w = wallet(s);
+    const r = buy(s, w, ONE_PCT + 1n);
+    assert.equal(r.hookError, 'WalletCapExceeded');
+    assert.ok(!r.logs.some(l => l.includes('G6:')), r.logs.join('\n'));
+  });
+  test('reassigning a second account to a fresh owner does not give it an allowance', () => {
+    const s = setup(); const w = wallet(s); const fresh = wallet(s);
+    const extra = s.env.extraTokenAccount(s.mint, w.publicKey);
+    const reassign = createSetAuthorityInstruction(extra, w.publicKey, AuthorityType.AccountOwner, fresh.publicKey, [], TOKEN_2022);
+    assert.ok(s.env.send([reassign], [s.env.payer, w]).ok);
+    assert.equal(send(s, extra, 1n).hookError, 'WalletCapExceeded');
+    assert.ok(send(s, s.env.ata(s.mint, fresh.publicKey), ONE_PCT).ok); // the fresh owner's real ATA still has its cap
+  });
+  test('an ATA cannot be reassigned to another owner (ImmutableOwner)', () => {
+    const s = setup(); const w = wallet(s); const other = wallet(s);
+    const ata = s.env.ata(s.mint, w.publicKey);
+    const r = s.env.send([createSetAuthorityInstruction(ata, w.publicKey, AuthorityType.AccountOwner, other.publicKey, [], TOKEN_2022)], [s.env.payer, w]);
+    assert.equal(r.ok, false);
   });
   test('non-ATA account is refused even 1 base unit, at every capped step', () => {
     const s = setup(); const w = wallet(s); const extra = s.env.extraTokenAccount(s.mint, w.publicKey); const L = s.cfg.launchSlot;
@@ -215,6 +236,46 @@ describe('per-owner cap (G6)', () => {
   test('non-ATA vault owned by the DAMM v2 pool authority stays exempt', () => {
     const s = setup(); const vault = s.env.extraTokenAccount(s.mint, DAMM_V2_POOL_AUTHORITY);
     assert.ok(send(s, vault, 30n * ONE_PCT).ok);
+  });
+  test('an off-curve owner (PDA) gets the full cap in its ATA; its second account gets 0', () => {
+    const s = setup(); const [pda] = PublicKey.findProgramAddressSync([Buffer.from('g6-test')], Keypair.generate().publicKey);
+    assert.equal(PublicKey.isOnCurve(pda.toBytes()), false);
+    assert.ok(send(s, s.env.ata(s.mint, pda), ONE_PCT).ok);
+    assert.equal(send(s, s.env.extraTokenAccount(s.mint, pda), 1n).hookError, 'WalletCapExceeded');
+  });
+  test('random buys / moves / sells across ATAs and second accounts match the per-owner model (400 cases)', () => {
+    const s = setup(); const L = s.cfg.launchSlot;
+    let ctr = 0; const rnd = (n: number): number => { ctr += 1; return Number((BigInt(ctr) * 2654435761n + 99991n) % 1000003n) % n; };
+    const owners = Array.from({ length: 4 }, () => wallet(s));
+    const accts = owners.flatMap(o => [
+      { owner: o, key: s.env.ata(s.mint, o.publicKey), ata: true },
+      { owner: o, key: s.env.extraTokenAccount(s.mint, o.publicKey), ata: false },
+    ]);
+    const vault = s.env.extraTokenAccount(s.mint, DBC_POOL_AUTHORITY);
+    const curveAta = s.env.ata(s.mint, s.curve.publicKey);
+    let slot = L; let landed = 0, refused = 0;
+    for (let i = 0; i < 400; i++) {
+      slot += BigInt(rnd(5)); if (slot > L + UNCAPPED + 20n) slot = L + UNCAPPED + 20n; s.env.warp(slot);
+      const cap = capAt(toCapConfig(s.cfg), slot);   // null = no cap
+      const dst = accts[rnd(accts.length)]; const kind = rnd(3);
+      let src: PublicKey, signer: Keypair, toVault = false;
+      if (kind === 0) { src = curveAta; signer = s.curve; }                                  // buy stand-in
+      else { const from = accts.filter(a => s.env.balance(a.key) > 0n)[0]; if (!from) continue; src = from.key; signer = from.owner; toVault = kind === 2; } // move or sell
+      const target = toVault ? vault : dst.key;
+      if (src.equals(target)) continue;
+      const srcBal = s.env.balance(src); const amt = BigInt(1 + rnd(200)) * ONE_PCT / 100n; if (amt > srcBal) continue;
+      const post = s.env.balance(target) + amt;
+      const want = toVault || cap === null || post <= (dst.ata ? cap : 0n);
+      const r = s.env.send([s.env.transferIx(s.mint, s.decimals, src, target, signer.publicKey, amt)], [s.env.payer, signer]);
+      assert.equal(r.ok, want, `case ${i}: ${toVault ? 'sell' : dst.ata ? 'ATA' : 'second'} amt=${amt} post=${post} cap=${cap} ${r.logs.slice(-3).join(' | ')}`);
+      if (!r.ok) assert.equal(r.hookError, 'WalletCapExceeded');
+      r.ok ? landed++ : refused++;
+      if (cap !== null) for (const o of owners) {   // invariant: while capped, no owner holds more than one cap in total
+        const total = accts.filter(a => a.owner === o).reduce((t, a) => t + s.env.balance(a.key), 0n);
+        assert.ok(total <= cap || slot < L, `owner over one cap at case ${i}: ${total} > ${cap}`);
+      }
+    }
+    assert.ok(landed > 50 && refused > 20, `too few of each outcome: landed=${landed} refused=${refused}`);
   });
   test('two different wallets each still get their own full cap (per owner, not global)', () => {
     const s = setup(); const a = wallet(s); const b = wallet(s);
