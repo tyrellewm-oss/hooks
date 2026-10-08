@@ -109,7 +109,7 @@ export function TokensPage({ meta }: { meta: Meta }) {
         </>
       )}
 
-      <div className="section-head"><h2>All launches</h2><span className="small faint">{meta.cluster.toLowerCase()} · registry tokens only</span></div>
+      <div className="section-head"><h2>All launches</h2><span className="small faint">{meta.cluster.toLowerCase()} · {meta.launch?.mode === 'open' ? 'every launch' : 'registry tokens only'}</span></div>
       <div className="row" style={{ flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
         <div className="tabs" role="tablist" aria-label="Stage">
           {(['all', ...PHASES.map((p) => p.id)] as Filter[]).map((f) => (
@@ -124,7 +124,7 @@ export function TokensPage({ meta }: { meta: Meta }) {
         </div>
       </div>
 
-      {rows.length === 0 ? <Empty /> : shown.length === 0 ? (
+      {rows.length === 0 ? <Empty open={meta.launch?.mode === 'open'} /> : shown.length === 0 ? (
         allLoaded
           ? <div className="card empty"><h2>No tokens match</h2><p className="small faint" style={{ marginTop: 6 }}>Try another stage or search.</p></div>
           : <div className="tgrid">{Array.from({ length: Math.min(4, rows.length) }, (_, i) => <Skeleton key={i} h={300} />)}</div>
@@ -175,12 +175,12 @@ function TokenCard({ r }: { r: Derived }) {
   );
 }
 
-function Empty() {
+function Empty({ open }: { open: boolean }) {
   return (
     <div className="card empty">
       <h2>No test tokens are listed yet</h2>
-      <p className="small faint" style={{ margin: '6px auto 16px', maxWidth: 440 }}>The page lists mints in keeper/registry.json that have a local launch record. A new launch appears here once it's added to the registry.</p>
-      <button className="primary" onClick={() => navigate('/create')}>Open the studio launch tool <IconArrow size={16} /></button>
+      <p className="small faint" style={{ margin: '6px auto 16px', maxWidth: 440 }}>{open ? 'Every launch from this site shows up here a few seconds after it lands.' : "The page lists mints in keeper/registry.json that have a local launch record. A new launch appears here once it's added to the registry."}</p>
+      <button className="primary" onClick={() => navigate('/create')}>{open ? 'Launch a token' : 'Open the studio launch tool'} <IconArrow size={16} /></button>
     </div>
   );
 }
