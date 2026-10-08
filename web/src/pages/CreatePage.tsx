@@ -1,8 +1,12 @@
-// Studio launch tool (no public self-serve). Same validation as the program (validate + RELEASE_LIMITS, AC-4) before
-// anything is sent; the server validates again. A new mint stays off the listing until it's added to the registry.
+// The launch tool. Open launch (meta.launch.mode 'open', sdk/launch_open.ts): any connected wallet launches and pays; it
+// approves twice (the curve config, then the launch) and the server only co-signs. Otherwise the studio flow: a studio
+// wallet signs in first. Same validation as the program (validate + RELEASE_LIMITS, AC-4) before anything is sent; the
+// server validates again.
 import { useMemo, useState, type ReactNode } from 'react';
-import type { BuyRulesInput, CreateReply, Meta, StepJson } from '../lib/types';
+import type { BuyRulesInput, CreateReply, Meta, OpenLaunchReply, StepJson } from '../lib/types';
 import { api } from '../lib/api';
+import { navigate } from '../lib/hooks';
+import { WalletButton } from '../components/WalletButton';
 import { useWallet, signTransaction, hexToBytes, bytesToHex } from '../lib/wallet';
 import { validate, RELEASE_LIMITS, STRICT, BALANCED, LOOSE, LOCAL_DEMO, pctOf, approxDuration, type NamedSchedule, type ScheduleError } from '../lib/shared';
 import { CapRamp } from '../components/CapRamp';
@@ -61,12 +65,16 @@ const rowsOf = (s: NamedSchedule): Row[] => s.steps.map((x) => ({ offset: x.slot
 
 export function CreatePage({ meta }: { meta: Meta }) {
   const { ok: studioAccess, required: studioRequired, session: studioSession } = useStudioAccess(meta.studio?.required ?? false);
+  // open launch: no studio sign-in; the connected wallet pays and signs
+  const open = meta.launch?.mode === 'open';
+  const thr = meta.launch?.thresholdSol;
+  const firstName = open ? '' : 'Hookd Test', firstSymbol = open ? '' : 'TTEST';
   const presets = meta.cluster === 'LOCAL' ? [LOCAL_DEMO, BALANCED, STRICT, LOOSE] : [BALANCED, STRICT, LOOSE];
   const [preset, setPreset] = useState(presets[0].id);
   const [rows, setRows] = useState<Row[]>(rowsOf(presets[0]));
   const [unc, setUnc] = useState(presets[0].uncappedAfter.toString());
-  const [name, setName] = useState('Hookd Test');
-  const [symbol, setSymbol] = useState('TTEST');
+  const [name, setName] = useState(firstName);
+  const [symbol, setSymbol] = useState(firstSymbol);
   const [threshold, setThreshold] = useState('1');
   const bw = useWallet();
   const [step, setStep] = useState('');
@@ -77,6 +85,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
   const extrasOn = (Object.keys(extras.on) as OptionalHookId[]).filter((k) => extras.on[k]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CreateReply | null>(null);
+  const [launched, setLaunched] = useState<OpenLaunchReply | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const pick = (id: string) => {
@@ -97,7 +106,9 @@ export function CreatePage({ meta }: { meta: Meta }) {
   }, [rows, unc]);
 
   const nameErr = !name.trim() ? 'Enter a name.' : !/^[A-Z0-9]{2,10}$/.test(symbol) ? 'Ticker: 2 to 10 letters or digits.' : detailsError(details);
-  const curveErr = !(Number(threshold) > 0) ? 'Threshold must be above 0 SOL.' : !(Number.isInteger(Number(onMigration)) && +onMigration >= 1 && +onMigration <= 49) ? 'Supply to the pool at graduation: 1 to 49%.' : null;
+  const curveErr = !(Number(threshold) > 0) ? 'Threshold must be above 0 SOL.'
+    : open && thr && !(Number(threshold) >= thr.min && Number(threshold) <= thr.max) ? `Graduation threshold: ${thr.min} to ${thr.max} SOL.`
+    : !(Number.isInteger(Number(onMigration)) && +onMigration >= 1 && +onMigration <= 49) ? 'Supply to the pool at graduation: 1 to 49%.' : null;
   const formErr = nameErr ?? curveErr;
   const selected = presets.find((p) => p.id === preset);
 
@@ -117,15 +128,44 @@ export function CreatePage({ meta }: { meta: Meta }) {
   const goId = (id: string) => go(STEPS.findIndex((x) => x.id === id));
   const stateOf = (i: number) => (i === at ? 'now' : i > seen ? 'todo' : STEPS[i].err ? 'warn' : 'done');
   const reset = () => {
-    pick(presets[0].id); setName('Hookd Test'); setSymbol('TTEST'); setThreshold('1'); setOnMigration('20');
-    setDetails(emptyDetails()); setExtras(emptyExtras()); setResult(null); setError(null); setAt(0); setSeen(0);
+    pick(presets[0].id); setName(firstName); setSymbol(firstSymbol); setThreshold('1'); setOnMigration('20');
+    setDetails(emptyDetails()); setExtras(emptyExtras()); setResult(null); setLaunched(null); setError(null); setAt(0); setSeen(0);
   };
 
   async function create() {
     if (!('steps' in check) || formErr || extrasCheck.err) return;
-    setBusy(true); setError(null); setResult(null);
-    const req = { name: name.trim(), symbol, steps: check.steps!, uncappedAfter: unc.trim(), thresholdSol: Number(threshold), percentageSupplyOnMigration: Number(onMigration), metadata: toInput(details), ...(extrasCheck.rules ? { rules: extrasCheck.rules } : {}), ...(extrasCheck.lock ? { creatorLockPct: extrasCheck.lock.pct, creatorLockSlots: extrasCheck.lock.slots } : {}) };
+    setBusy(true); setError(null); setResult(null); setLaunched(null);
+    const opts = { name: name.trim(), symbol, steps: check.steps!, uncappedAfter: unc.trim(), thresholdSol: Number(threshold), percentageSupplyOnMigration: Number(onMigration), ...(extrasCheck.rules ? { rules: extrasCheck.rules } : {}), ...(extrasCheck.lock ? { creatorLockPct: extrasCheck.lock.pct, creatorLockSlots: extrasCheck.lock.slots } : {}) };
+    const req = { ...opts, metadata: toInput(details) };
     try {
+      if (open) {
+        // open launch: approve 1 = the curve config, approve 2 = the launch; the details go with the last step only
+        if (!bw.address) { setError('Connect a wallet first.'); return; }
+        const owner = bw.address;
+        let configMade = false;
+        const sign = async (hex: string): Promise<string | null> => {
+          try { return bytesToHex(await signTransaction(hexToBytes(hex))); }
+          catch (e) {
+            const m = errText(e);
+            setError(/reject|denied|cancel/i.test(m) ? `You declined in the wallet. Nothing was launched${configMade ? ' (the curve config was created: about 0.006 devnet SOL)' : ''}.` : m);
+            return null;
+          }
+        };
+        setStep('Preparing…');
+        const s1 = await api.openConfig({ ...opts, owner });
+        setStep('Approve 1 of 2 in your wallet: the curve config…');
+        const configTx = await sign(s1.configTx); if (!configTx) return;
+        setStep('Creating the curve config…');
+        const s2 = await api.openBuild({ ...opts, owner, configTx, ticket: s1.ticket });
+        configMade = true;
+        setStep('Approve 2 of 2 in your wallet: the launch…');
+        const poolTx = await sign(s2.poolTx); if (!poolTx) return;
+        setStep('Launching…');
+        const out = await api.openSubmit(poolTx, meta.launch?.details ? req.metadata : undefined);
+        setLaunched(out);
+        if (!out.detailsNote) navigate(`/token/${out.mint}`);
+        return;
+      }
       if (bw.address) {
         // AC-21: the launch tx is signed in the connected wallet; the server co-signs with the launch key (8.3)
         setStep('Preparing the launch…');
@@ -146,16 +186,16 @@ export function CreatePage({ meta }: { meta: Meta }) {
   const blocking = STEPS.findIndex((s) => s.err);
   const capRange = 'err' in check ? null : `${pctOf(check.steps![0].maxBps)} → ${pctOf(check.steps![check.steps!.length - 1].maxBps)}`;
   return (
-    <div className={`stack launch-page${studioAccess ? '' : ' launch-entry'}`}>
+    <div className={`stack launch-page${open || studioAccess ? '' : ' launch-entry'}`}>
       <div className="launch-heading-row">
       <section className="wiz-head">
-        <div className="small faint wiz-kicker">Studio launch · {meta.cluster.toLowerCase()}</div>
+        <div className="small faint wiz-kicker">{open ? 'Launch' : 'Studio launch'} · {meta.cluster.toLowerCase()}</div>
         <h1>Launch a token</h1>
         <p className="muted">Six short steps. Everything is fixed at launch, except the cap, which can only be lifted later.</p>
       </section>
-      {studioAccess && studioRequired && studioSession && <StudioSessionControls wallet={studioSession.wallet} />}
+      {!open && studioAccess && studioRequired && studioSession && <StudioSessionControls wallet={studioSession.wallet} />}
       </div>
-      <StudioGate meta={meta} variant="launch" showSession={false}>
+      <StudioGate meta={meta} variant="launch" showSession={false} bypass={open}>
       <div className="wiz-bar">
         <ol className="wiz-steps" aria-label="Launch steps">
           {STEPS.map((s, i) => {
@@ -231,8 +271,12 @@ export function CreatePage({ meta }: { meta: Meta }) {
                 <label className="field"><span>Ticker</span><input value={symbol} maxLength={10} onChange={(e) => setSymbol(e.target.value.toUpperCase())} /></label>
               </div>
               <div className="wiz-sep" />
-              <div className="small faint" style={{ marginBottom: 10 }}>Image, description and links are optional and can be edited after launch.</div>
-              <DetailsForm value={details} onChange={setDetails} mint={symbol || 'new'} ticker={symbol} />
+              {open && !meta.launch?.details
+                ? <div className="small faint">Image, description and links can't be saved on this site yet. Your token launches with its name and ticker, and the generated art.</div>
+                : <>
+                    <div className="small faint" style={{ marginBottom: 10 }}>Image, description and links are optional and can be edited after launch{open ? ' by the wallet that launched it' : ''}.</div>
+                    <DetailsForm value={details} onChange={setDetails} mint={symbol || 'new'} ticker={symbol} />
+                  </>}
             </div>
           )}
 
@@ -257,7 +301,12 @@ export function CreatePage({ meta }: { meta: Meta }) {
                 <ReviewRow k="Optional hooks" v={extrasSummary(extras, extrasCheck)} edit={() => goId('extras')} />
                 <ReviewRow k="Cap" v={capRange ? `${capRange}, no cap after ${approxDuration(unc)} · ${selected ? selected.name : 'custom'}` : 'needs attention'} edit={() => goId('cap')} />
                 <ReviewRow k="Graduates at" v={`${threshold} SOL · ${onMigration}% of supply to the pool`} edit={() => goId('curve')} />
-                <ReviewRow k="Signed by" v={bw.address ? `your wallet (${bw.address.slice(0, 4)}…${bw.address.slice(-4)}) + the ${meta.cluster.toLowerCase()} launch key` : `the server's throwaway ${meta.cluster.toLowerCase()} keys (connect a wallet to sign it yourself)`} />
+                {open
+                  ? <>
+                      <ReviewRow k="Paid and signed by" v={bw.address ? `your wallet (${bw.address.slice(0, 4)}…${bw.address.slice(-4)}): two approvals, the curve config, then the launch. The site's launch key co-signs.` : 'your wallet: connect it below'} />
+                      <ReviewRow k="Cost" v={`about 0.02 ${meta.cluster.toLowerCase()} SOL in account rent and fees; keep at least ${meta.launch?.minSol ?? 0.05} SOL in the wallet`} />
+                    </>
+                  : <ReviewRow k="Signed by" v={bw.address ? `your wallet (${bw.address.slice(0, 4)}…${bw.address.slice(-4)}) + the ${meta.cluster.toLowerCase()} launch key` : `the server's throwaway ${meta.cluster.toLowerCase()} keys (connect a wallet to sign it yourself)`} />}
               </div>
               {blocking >= 0 && <div className="notice red small" style={{ marginTop: 14 }}>Step {blocking + 1} ({STEPS[blocking].label}) needs attention: {STEPS[blocking].err}</div>}
               {studioRequired && studioSession && bw.address && studioSession.wallet !== bw.address && (
@@ -265,8 +314,17 @@ export function CreatePage({ meta }: { meta: Meta }) {
                   Your wallet is on a different account ({bw.address.slice(0, 4)}…{bw.address.slice(-4)}) than the one signed in to the studio ({studioSession.wallet.slice(0, 4)}…{studioSession.wallet.slice(-4)}). The launch is built for the signed-in wallet — switch back to it in your wallet, or sign in again with this one.
                 </div>
               )}
-              <button className="primary block" style={{ marginTop: 16 }} disabled={busy || !!formErr || 'err' in check || !!extrasCheck.err} onClick={create}>{busy ? step || 'Creating… (2 transactions)' : `Launch on ${meta.cluster.toLowerCase()}`}</button>
+              {open && !bw.address
+                ? <div className="wiz-connect" style={{ marginTop: 16 }}><WalletButton primary /><span className="small faint">Connect the wallet that will launch and pay ({meta.cluster.toLowerCase()} SOL: faucet.solana.com).</span></div>
+                : <button className="primary block" style={{ marginTop: 16 }} disabled={busy || !!formErr || 'err' in check || !!extrasCheck.err} onClick={create}>{busy ? step || 'Creating… (2 transactions)' : `Launch on ${meta.cluster.toLowerCase()}`}</button>}
               {error && <div className="notice red small" style={{ marginTop: 12 }}>{error}</div>}
+              {launched && (
+                <div className="notice green small" style={{ marginTop: 12 }}>
+                  <b>Launched.</b> Mint <Addr value={launched.mint} n={6} /> · <a href={launched.link} target="_blank" rel="noreferrer">transaction</a><br />
+                  {launched.detailsNote && <>{launched.detailsNote}<br /></>}
+                  <Link to={`/token/${launched.mint}`}>Open the token page</Link>
+                </div>
+              )}
               {result && (
                 <div className="notice green small" style={{ marginTop: 12 }}>
                   <b>Created.</b> Mint <Addr value={result.mint} n={6} /><br />
@@ -295,7 +353,7 @@ export function CreatePage({ meta }: { meta: Meta }) {
         </aside>
       </div>
       </StudioGate>
-      {!studioAccess && <div className="launch-entry-link"><Link to="/hooks">Explore the hooks <IconArrow size={14} /></Link></div>}
+      {!(open || studioAccess) && <div className="launch-entry-link"><Link to="/hooks">Explore the hooks <IconArrow size={14} /></Link></div>}
     </div>
   );
 }

@@ -89,7 +89,7 @@ test('server: create and token-details edits check the studio session first', ()
   assert.match(create, /^[^\n]*\{\n\s*const who = studioCheck\(req\); if \('code' in who\) return send\(res, who\.code, who\.body\);/, 'first line of /api/create');
   assert.ok(create.indexOf('studioCheck(req)') < create.indexOf('await body(req)'), 'before the body is read');
   assert.match(src, /metadata: \(mint, b\) => \{ const who = studioCheck\(req\); if \('code' in who\) return who;/, 'token-details edit');
-  assert.match(src, /new StudioAuth\(parseAllowlist\(process\.env\.STUDIO_WALLETS\), c\.label, c\.name === 'local'\)/, 'open only on a local cluster');
+  assert.match(src, /new StudioAuth\(parseAllowlist\(process\.env\.STUDIO_WALLETS\), c\.label, c\.name === 'local'[,)]/, 'open only on a local cluster');
   assert.match(src, /studio\.require\(req\.headers\['x-studio-session'\]\)/, 'session from the header, not a cookie');
 });
 

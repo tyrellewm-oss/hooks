@@ -281,4 +281,26 @@ export const fixtureApi: Api = {
     LAUNCHES.delete(txHex);
     return { mint: fakeKey('FixtureNew' + req.symbol), pool: fakeKey('FixtureNewPooL'), registered: false as const, note: 'not registered: add to keeper/registry.json', sig: fakeSig(), link: '' };
   },
+  // open launch (simulated): the same three steps; the stand-in transactions are never signed by a real wallet
+  async openConfig(req: CreateRequest) {
+    await latency(); checkRules(req);
+    const configTx = Array.from(fakeSig(), (ch) => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+    LAUNCHES.set(configTx, req);
+    return { configTx, config: fakeKey('FixtureNewCfg'), owner: req.owner ?? '', ticket: `${Date.now() + 75_000}.${'0'.repeat(64)}`, expiresInMs: 75_000 };
+  },
+  async openBuild(req) {
+    await latency(); await latency();
+    if (!LAUNCHES.has(req.configTx)) throw new ApiError('refusing: the launch ticket does not match (simulated)', 400);
+    LAUNCHES.delete(req.configTx);
+    const poolTx = Array.from(fakeSig(), (ch) => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+    LAUNCHES.set(poolTx, req);
+    return { poolTx, owner: req.owner ?? '', mint: fakeKey('FixtureNew' + req.symbol), config: fakeKey('FixtureNewCfg'), pool: fakeKey('FixtureNewPooL'), createConfig: fakeSig(), lastValidBlockHeight: 1, expiresInMs: 75_000 };
+  },
+  async openSubmit(poolTx: string) {
+    await latency();
+    const req = LAUNCHES.get(poolTx);
+    if (!req) throw new ApiError("refusing: this launch isn't co-signed by this site's launch key (simulated)", 400);
+    LAUNCHES.delete(poolTx);
+    return { ok: true as const, owner: req.owner ?? '', mint: fakeKey('FixtureNew' + req.symbol), config: fakeKey('FixtureNewCfg'), pool: fakeKey('FixtureNewPooL'), sig: fakeSig(), link: '', sentHere: true, detailsNote: 'sample data: nothing is saved' };
+  },
 };

@@ -66,7 +66,7 @@ test('server: rules parsed in parseLaunchBody (both launch routes), hint on an o
   }
   // read alongside the token's other chain reads, returned in the view
   assert.match(src, /lp\.status\(mint\),[\s\S]{0,200}rulesView\(mint\),\s*\]\);/);
-  assert.match(src, /return \{ status: st, launch: rec, rules, /);
+  assert.match(src, /return \{ status: st, launch(: rec)?, rules, /);   // launch: the record, or built from the chain for a launch found there
 });
 
 test('creator lock: whole percents 1-10 with a duration; bad values are CreatorLockRefusal, off is null', async () => {

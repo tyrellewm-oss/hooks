@@ -1,5 +1,5 @@
 // Data source: the real backend (app/server.ts via the Vite proxy), or the simulated one in fixture mode.
-import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, BuiltSwap, FlywheelReply, TradesReply, MetadataInput, TokenMetadata , BuiltLaunch, LaunchSubmitReply } from './types';
+import type { Meta, TokenView, TradeResult, Side, CreateRequest, CreateReply, BuiltSwap, FlywheelReply, TradesReply, MetadataInput, TokenMetadata , BuiltLaunch, LaunchSubmitReply, OpenConfigStep, OpenPoolStep, OpenLaunchReply } from './types';
 import { fixtureApi } from './fixtures';
 import { ApiError } from './errors';
 import { studioToken, clearStudioSession } from './studio';
@@ -21,6 +21,11 @@ export interface Api {
   /** AC-21 studio launch: the server builds and co-signs, the connected wallet signs, launchSubmit relays */
   launchBuild(req: CreateRequest): Promise<BuiltLaunch>;
   launchSubmit(txHex: string): Promise<LaunchSubmitReply>;
+  /** open launch (any wallet; sdk/launch_open.ts): config -> build -> submit. The connected wallet signs the config tx,
+   *  then the launch tx; the server co-signs and relays. Token details go with the submit. */
+  openConfig(req: CreateRequest): Promise<OpenConfigStep>;
+  openBuild(req: CreateRequest & { configTx: string; ticket: string }): Promise<OpenPoolStep>;
+  openSubmit(poolTx: string, metadata?: MetadataInput): Promise<OpenLaunchReply>;
   flywheel(): Promise<FlywheelReply>;
   studioChallenge(wallet: string): Promise<{ nonce: string; message: string; expiresInMs: number }>;
   studioSession(wallet: string, nonce: string, signature: string): Promise<{ token: string; wallet: string; expiresInMs: number }>;
@@ -55,6 +60,9 @@ const httpApi: Api = {
   create: (req) => call<CreateReply>('/api/create', post(req)),
   launchBuild: (req) => call<BuiltLaunch>('/api/studio/launch/build', post(req)),
   launchSubmit: (txHex) => call<LaunchSubmitReply>('/api/studio/launch/submit', post({ tx: txHex })),
+  openConfig: (req) => call<OpenConfigStep>('/api/launch/config', post(req)),
+  openBuild: (req) => call<OpenPoolStep>('/api/launch/build', post(req)),
+  openSubmit: (poolTx, metadata) => call<OpenLaunchReply>('/api/launch/submit', post({ poolTx, ...(metadata ? { metadata } : {}) })),
   flywheel: () => call<FlywheelReply>('/api/flywheel'),
   studioChallenge: (wallet) => call('/api/studio/challenge?wallet=' + encodeURIComponent(wallet)),
   studioSession: (wallet, nonce, signature) => call('/api/studio/session', post({ wallet, nonce, signature })),

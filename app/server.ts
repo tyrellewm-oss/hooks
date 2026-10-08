@@ -5,11 +5,12 @@
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { Keypair, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { utils as anchorUtils } from '@coral-xyz/anchor';
 import { resolveCluster, parseClusterArg, explorerAddr, explorerTx, assertNotMainnet } from '../sdk/cluster.js';
 import { defaultSchedule, scheduleJson, resolveSchedule } from '../sdk/schedules.js';
 import { loadOrCreate, deployerName } from '../sdk/keys.js';
-import { Launchpad, listLaunches, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration, resolveCreatorLock, CreatorLockRefusal, dammV2MigrationConfigFor, type CreatorLock } from '../sdk/launch.js';
+import { Launchpad, listLaunches, gateHook, DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION, resolvePercentageSupplyOnMigration, resolveCreatorLock, CreatorLockRefusal, dammV2MigrationConfigFor, type CreatorLock } from '../sdk/launch.js';
 import { validate, RELEASE_LIMITS, type Step } from '../sdk/capMath.js';
 import { decodeRules, readHookAuthorities, type BuyRules } from '../sdk/hook.js';
 import { switchHistoryReader } from './switch_history.js';
@@ -24,12 +25,18 @@ import { StudioLaunchRelay, buildUserLaunch, submitUserLaunch, LaunchUserRefusal
 import { staticReply, uiModeFromArgs, assertUiBuilt } from './static.js';
 import { loadPublicKeepers } from './flywheel_public.js';
 import { readIndex, candles, dammPoolFor } from '../sdk/indexer.js';
-import { validateMetadata, saveMetadata, loadMetadata, loadImage, publicMetadata, MetadataRefusal } from '../sdk/metadata.js';
+import { validateMetadata, MetadataRefusal } from '../sdk/metadata.js';
 import { StudioAuth, StudioAuthError, parseAllowlist } from '../sdk/studio_auth.js';
+import { buildOpenConfig, buildOpenPool, submitOpenPool, derivedKey, OpenLaunchRefusal, OPEN_LAUNCH_MIN_LAMPORTS } from '../sdk/launch_open.js';
+import { ChainLaunches, type ChainLaunch } from '../sdk/chain_launches.js';
+import { detailsStoreFor } from '../sdk/details_store.js';
+import type { LaunchRecord } from '../sdk/launch.js';
 
 const argv = process.argv.slice(2);
-/** Vercel sets VERCEL=1. The hosted site is read-only on devnet: no key file exists there, so none is loaded, and only
- *  GET routes run (launching, trading and token edits stay on the operator's machine). */
+/** Vercel sets VERCEL=1. The hosted site runs on devnet with no key file: the deployer and the test wallets are never
+ *  there. Its one key is the launch key, from the HOOKD_LAUNCH_KEY secret; with it, anyone can launch from their own
+ *  wallet (open launch, sdk/launch_open.ts). Every other write (server-signed launches and trades) stays on the
+ *  operator's machine: hosted, only the open-launch routes, studio sign-in and token-details saves take a POST. */
 const HOSTED = process.env.VERCEL === '1';
 const PORT = Number(process.env.PORT ?? 5175);
 const UI = uiModeFromArgs(argv);   // --web: serve the new front end from web/dist (build it first)
@@ -41,8 +48,37 @@ for (const v of [process.env.DEVNET_RPC, process.env.LOCAL_RPC]) if (v) assertNo
 const c = await resolveCluster(HOSTED ? 'devnet' : parseClusterArg(argv));
 const lp = new Launchpad(c);
 const deployer = HOSTED ? null : loadOrCreate(c.name, deployerName(c.name));
-const launchKey = HOSTED ? null : loadOrCreate(c.name, 'launch');   // 8.3: separate throwaway launch key (devnet/local only)
+// 8.3: the separate launch key (devnet/local throwaway). Hosted it comes from the HOOKD_LAUNCH_KEY secret; there it can
+// only approve launches (the launching wallet pays for everything), never administer the hook or pay.
+const launchKey = HOSTED ? keyFromSecret(process.env.HOOKD_LAUNCH_KEY) : loadOrCreate(c.name, 'launch');
+/** Open launch: any wallet launches and pays, the server co-signs. Hosted: on whenever the launch key is configured.
+ *  Locally: HOOKD_OPEN_LAUNCH=1 (the studio flow stays the default there). */
+const OPEN_LAUNCH = !!launchKey && (HOSTED || process.env.HOOKD_OPEN_LAUNCH === '1');
+const ticketKey = OPEN_LAUNCH ? derivedKey(launchKey!, 'open-launch-ticket-v1') : null;
 const wallets: Record<string, ReturnType<typeof loadOrCreate>> = HOSTED ? {} : { A: loadOrCreate(c.name, 'buyerA'), B: loadOrCreate(c.name, 'buyerB') };
+/** A keypair from a secret env value (the key file's JSON array of 64 bytes, or base58). Unset -> null. A malformed value
+ *  stops the server at start; the error never repeats the value. */
+function keyFromSecret(v: string | undefined): Keypair | null {
+  const s = v?.trim(); if (!s) return null;
+  let bytes: Uint8Array;
+  try { bytes = s.startsWith('[') ? Uint8Array.from(JSON.parse(s)) : anchorUtils.bytes.bs58.decode(s); }
+  catch { throw new Error("HOOKD_LAUNCH_KEY is not a keypair (expected the key file's JSON array, or base58)"); }
+  if (bytes.length !== 64) throw new Error('HOOKD_LAUNCH_KEY is not a 64-byte keypair');
+  try { return Keypair.fromSecretKey(bytes); } catch { throw new Error("HOOKD_LAUNCH_KEY is not a valid keypair (its public half doesn't match)"); }
+}
+/** The fee claimer + leftover receiver of every open-launch config: HOOKD_PARTNER if set, else the deployer (locally the
+ *  key itself; hosted, the hook's upgrade authority on chain, which is the devnet deployer). The same partner as the
+ *  studio launches, so the keeper's claim key collects their fees too. */
+let partnerKey: Promise<PublicKey> | null = null;
+const partner = (): Promise<PublicKey> => (partnerKey ??= (async () => {
+  if (process.env.HOOKD_PARTNER) return new PublicKey(process.env.HOOKD_PARTNER);
+  if (deployer) return deployer.publicKey;
+  const a = await readHookAuthorities(c.connection, (await gateHook(lp)).programId);
+  if (!a.upgradeAuthority) throw new Error('no partner key: the hook upgrade authority is unknown and HOOKD_PARTNER is not set');
+  return new PublicKey(a.upgradeAuthority);
+})().catch((e) => { partnerKey = null; throw e; }));
+/** Token details (image, description, links): Vercel Blob when BLOB_READ_WRITE_TOKEN is set, else files (read-only hosted). */
+const details = detailsStoreFor(c.name, process.env, HOSTED);
 let commit = process.env.HOOKD_COMMIT ?? 'unknown';
 if (!process.env.HOOKD_COMMIT) try { commit = execSync('git rev-parse --short HEAD').toString().trim(); } catch {}
 /** The lift authority is the deployer key locally; hosted (no keys), it is read from the hook's Global account. */
@@ -65,7 +101,31 @@ async function feeInfo(config: PublicKey) {
   const periods = Number(bf.firstFactor); const freq = Number(bf.secondFactor.toString()); const red = Number(bf.thirdFactor.toString());
   const mode = Number(bf.baseFeeMode);
   const end = mode === 0 ? cliff - (periods * red) / 1e7 : cliff * Math.pow(1 - red / 10_000, periods);
-  return { mode: mode === 0 ? 'linear fee scheduler' : mode === 1 ? 'exponential fee scheduler' : 'other', cliffPct: cliff, endPct: Math.round(end * 1000) / 1000, periods, periodSlots: freq, totalSlots: periods * freq, collectFeeMode: Number(cfg.collectFeeMode), migrationFeeOption: Number(cfg.migrationFeeOption), creatorTradingFeePercentage: Number(cfg.creatorTradingFeePercentage), migrationQuoteThresholdSol: Number(cfg.migrationQuoteThreshold.toString()) / LAMPORTS_PER_SOL };
+  // what a launch record also holds, read back from the config (a launch found on chain has no record)
+  const supply = BigInt(cfg.preMigrationTokenSupply.toString());
+  const pctOf = (x: bigint) => (supply > 0n ? Number((x * 10_000n) / supply) / 100 : 0);
+  const lv = cfg.lockedVestingConfig;
+  const locked = lv ? BigInt(lv.cliffUnlockAmount.toString()) + BigInt(lv.amountPerPeriod.toString()) * BigInt(lv.numberOfPeriod.toString()) : 0n;
+  return { mode: mode === 0 ? 'linear fee scheduler' : mode === 1 ? 'exponential fee scheduler' : 'other', cliffPct: cliff, endPct: Math.round(end * 1000) / 1000, periods, periodSlots: freq, totalSlots: periods * freq, collectFeeMode: Number(cfg.collectFeeMode), migrationFeeOption: Number(cfg.migrationFeeOption), creatorTradingFeePercentage: Number(cfg.creatorTradingFeePercentage), migrationQuoteThresholdSol: Number(cfg.migrationQuoteThreshold.toString()) / LAMPORTS_PER_SOL,
+    percentageSupplyOnMigration: Math.round(pctOf(BigInt(cfg.migrationBaseThreshold.toString()))),
+    creatorLock: locked > 0n ? { pct: Math.round(pctOf(locked)), slots: Number(lv.cliffDurationFromMigrationTime.toString()) } : null };
+}
+
+/** A token the site lists: a local launch record (registry-gated), or a launch found on chain (a user's wallet made it). */
+type SiteRec = (LaunchRecord & { source?: 'record' }) | (ChainLaunch & { source: 'chain' });
+/** Launch records carry nowIct()'s "YYYY-MM-DD HH:MM:SS ICT"; the page sorts with Date.parse, which needs ISO 8601. */
+const isoTime = (t: string | undefined) => { const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ICT$/.exec(t ?? ''); return m ? `${m[1]}T${m[2]}+07:00` : t ?? ''; };
+/** Launches found on chain (sdk/chain_launches.ts: the launch key's history). Listed without the registry when a user's
+ *  wallet created them; the operator's own launches (creator = the partner key) still need the registry, as before. */
+let launchAuthorityKey: Promise<PublicKey | null> | null = null;
+const chainLaunches = new ChainLaunches(c.connection, () => (launchAuthorityKey ??= gateHook(lp)
+  .then((g) => readHookAuthorities(c.connection, g.programId))
+  .then((a) => (a.launchAuthority ? new PublicKey(a.launchAuthority) : null))
+  .catch((e) => { launchAuthorityKey = null; throw e; })));
+async function userLaunches(want?: string): Promise<SiteRec[]> {
+  const [list, p] = await Promise.all([chainLaunches.get(want), partner().then((k) => k.toBase58(), () => null)]);
+  if (!p) return [];   // the partner is unknown (RPC trouble): list none rather than the operator's test launches
+  return list.filter((l) => l.creator !== p).map((l) => ({ ...l, source: 'chain' as const }));
 }
 
 const relay = new WalletRelay();
@@ -101,7 +161,12 @@ function parseLaunchBody(b: any): { error: string } | { opts: { name: string; sy
 }
 // Studio sign-in (sdk/studio_auth.ts): the create and token-details routes need a session from an allowlisted wallet.
 // Fails closed on devnet (no STUDIO_WALLETS -> studio closed); a local validator without a list stays open.
-const studio = new StudioAuth(parseAllowlist(process.env.STUDIO_WALLETS), c.label, c.name === 'local');
+// Open launch: every wallet may sign in, and the token-details route lets a wallet edit the tokens it created (an
+// allowlisted studio wallet: any token). Hosted, sessions are stateless (HMAC keyed from the launch key) across instances.
+const studio = new StudioAuth(parseAllowlist(process.env.STUDIO_WALLETS), c.label, c.name === 'local', Date.now,
+  OPEN_LAUNCH ? { anyWallet: true, ...(HOSTED ? { secret: derivedKey(launchKey!, 'studio-session-v1') } : {}) } : {});
+if (OPEN_LAUNCH) console.log(`launch: OPEN (any wallet launches and pays; launch key ${launchKey!.publicKey.toBase58()} co-signs); token details: ${details.kind}${details.writable ? '' : ' (read-only)'}`);
+else if (HOSTED) console.log('launch: OFF (HOOKD_LAUNCH_KEY is not set)');
 if (studio.open) console.log('studio: OPEN (local cluster, no STUDIO_WALLETS); create and token-details edits need no sign-in');
 else if (!studio.status().configured) console.log('studio: CLOSED (no STUDIO_WALLETS); create and token-details edits are refused');
 /** The studio wallet for this request, or the error reply to send. */
@@ -112,28 +177,36 @@ function studioCheck(req: http.IncomingMessage): { wallet: string } | Reply {
 /** A wallet address from a query/body value, or null (never throws). */
 function walletKey(v: unknown): PublicKey | null { try { return typeof v === 'string' && v.length >= 32 && v.length <= 44 ? new PublicKey(v) : null; } catch { return null; } }
 
-/** card = the listing's read: no switch-history scan and no test-wallet balances (marked partial). */
-async function tokenView(mintStr: string, owner: PublicKey | null = null, card = false) {
+/** card = the listing's read: no switch-history scan and no test-wallet balances (marked partial). `given` = the record
+ *  the route already found (a launch record or a launch found on chain). */
+async function tokenView(mintStr: string, owner: PublicKey | null = null, card = false, given?: SiteRec) {
   const mint = new PublicKey(mintStr);
-  const rec = listLaunches(c.name).find(l => l.mint === mintStr);
+  const rec: SiteRec | undefined = given ?? listLaunches(c.name).find(l => l.mint === mintStr);
   // independent chain reads, side by side
-  const [st, fee, p, rules] = await Promise.all([
+  const [st, fee, p, metadata, rules] = await Promise.all([
     lp.status(mint),
     rec ? feeInfo(new PublicKey(rec.config)) : null,
-    rec ? lp.dbc.state.getPool(new PublicKey(rec.pool)).then((x: any) => x.poolState) : null,
+    rec ? lp.dbc.state.getPool(new PublicKey(rec.pool)).then((x: any) => x.poolState ?? x) : null,
+    details.view(mintStr),
     rulesView(mint),
   ]);
   const bal: Record<string, string> = {};
   if (!card) for (const [k, w] of Object.entries(wallets)) bal[k] = (await lp.tokenBalance(mint, w.publicKey)).toString();
-  const pool = p ? { quoteReserveSol: Number(p.quoteReserve.toString()) / LAMPORTS_PER_SOL, isMigrated: Number(p.isMigrated) === 1, curveComplete: st.transferHookProgram === null } : null;
-  // Fee config shown on the page = what the launch used (launch record); fields older records lack come from the on-chain DBC config.
-  const feeConfig = rec ? { startBps: rec.fee?.startBps, endBps: rec.fee?.endBps, durationSlots: rec.fee?.durationSlots,
-    migrationFeeOption: (rec.fee as any)?.migrationFeeOption ?? fee?.migrationFeeOption, creatorTradingFeePercentage: (rec.fee as any)?.creatorTradingFeePercentage ?? fee?.creatorTradingFeePercentage,
-    // records made before this option existed were all built with the then hard-coded 20
-    percentageSupplyOnMigration: (rec.fee as any)?.percentageSupplyOnMigration ?? DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION } : null;
+  const pool = p ? { quoteReserveSol: Number(p.quoteReserve.toString()) / LAMPORTS_PER_SOL, isMigrated: Number(p.isMigrated) === 1, curveComplete: st.transferHookProgram === null, creator: p.creator ? new PublicKey(p.creator).toBase58() : null } : null;
+  // Fee config shown on the page = what the launch used (launch record); what a record lacks (older records, and every
+  // launch found on chain) comes from the on-chain DBC config.
+  const rf: any = rec?.source === 'chain' ? undefined : rec?.fee;
+  const feeConfig = rec ? { startBps: rf?.startBps ?? (fee ? Math.round(fee.cliffPct * 100) : undefined), endBps: rf?.endBps ?? (fee ? Math.round(fee.endPct * 100) : undefined), durationSlots: rf?.durationSlots ?? fee?.totalSlots,
+    migrationFeeOption: rf?.migrationFeeOption ?? fee?.migrationFeeOption, creatorTradingFeePercentage: rf?.creatorTradingFeePercentage ?? fee?.creatorTradingFeePercentage,
+    // records made before this option existed were all built with the then hard-coded 20; a chain launch reads its config
+    percentageSupplyOnMigration: rf?.percentageSupplyOnMigration ?? (rec.source === 'chain' ? fee?.percentageSupplyOnMigration : DEFAULT_PERCENTAGE_SUPPLY_ON_MIGRATION) } : null;
+  // a launch found on chain: the record fields the page reads, from the chain (config, hook config)
+  const launch = !rec ? null : rec.source === 'chain'
+    ? { ...rec, time: isoTime(rec.time), cluster: c.name, label: c.label, quoteMint: 'So11111111111111111111111111111111111111112', migrationQuoteThresholdSol: fee?.migrationQuoteThresholdSol ?? null, creatorLock: fee?.creatorLock ?? null, steps: st.steps ?? [], uncappedAfter: st.uncappedAfter ?? null, txs: { createPoolAndHookConfig: rec.sig } }
+    : { ...rec, time: isoTime(rec.time) };
   // the connected browser wallet, when the page passes ?owner=<pubkey>: its token balance and SOL (read only)
   const wallet = owner ? { owner: owner.toBase58(), tokens: (await lp.tokenBalance(mint, owner)).toString(), sol: (await c.connection.getBalance(owner, 'confirmed')) / LAMPORTS_PER_SOL } : null;
-  return { status: st, launch: rec, rules, metadata: publicMetadata(loadMetadata(c.name, mintStr), mintStr), fee, feeConfig, pool, balances: bal, wallet, switchHistory: card ? [] : await switchHistory(mint), ...(card ? { partial: true } : {}), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
+  return { status: st, launch, rules, metadata, fee, feeConfig, pool, balances: bal, wallet, switchHistory: card ? [] : await switchHistory(mint), ...(card ? { partial: true } : {}), explorer: { mint: explorerAddr(mintStr, c.name), pool: rec ? explorerAddr(rec.pool, c.name) : null, program: explorerAddr(lp.hook.programId.toBase58(), c.name) } };
 }
 
 /** The token's optional hooks (rules PDA), or null for a token launched without them. Shares are bps of supply. */
@@ -199,23 +272,117 @@ const send = (res: http.ServerResponse, code: number, obj: any, type = 'applicat
   if (type === 'application/json') obj = redactDeep(obj);   // FW-17: every JSON body is public; all strings (keys too) are redacted
   res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(type === 'application/json' ? JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) : obj); };
 
-/** The site's one request listener; app/vercel.ts hands Vercel's requests to it (read-only when hosted). */
+// ---- open launch (sdk/launch_open.ts): any wallet launches from the page and pays; the server only co-signs
+/** The graduation threshold a public launch may pick (SOL in the curve). */
+const OPEN_THRESHOLD_SOL = { min: 0.1, max: 100 } as const;
+/** What the page needs to know about launching here. */
+const launchInfo = () => ({ mode: OPEN_LAUNCH ? 'open' : studio.status().configured || studio.open ? 'studio' : 'closed', minSol: Number(OPEN_LAUNCH_MIN_LAMPORTS) / LAMPORTS_PER_SOL, details: details.writable, thresholdSol: OPEN_THRESHOLD_SOL });
+/** The studio's option checks (parseLaunchBody), plus what a public form needs: the wallet, a name that fits on chain and
+ *  a graduation threshold in range. */
+function parseOpenLaunch(b: any) {
+  const owner = walletKey(b?.owner); if (!owner) return { error: 'owner must be the connected wallet address' };
+  const p = parseLaunchBody(b ?? {}); if ('error' in p) return p;
+  if (Buffer.byteLength(p.opts.name) > 32 || /[\u0000-\u001f\u007f]/.test(p.opts.name)) return { error: 'name: at most 32 bytes, no control characters' };
+  const t = p.opts.migrationQuoteThresholdSol;
+  if (!(Number.isFinite(t) && t >= OPEN_THRESHOLD_SOL.min && t <= OPEN_THRESHOLD_SOL.max)) return { error: `graduation threshold: ${OPEN_THRESHOLD_SOL.min} to ${OPEN_THRESHOLD_SOL.max} SOL` };
+  return { owner, ...p };
+}
+/** The site's public address for a token's metadata URI (immutable once launched): HOOKD_PUBLIC_URL, else hosted the
+ *  project's production address (Vercel's VERCEL_PROJECT_PRODUCTION_URL) or the address the request came to. Locally
+ *  there is none, and the devnet placeholder stays. */
+function publicBase(req: http.IncomingMessage): string | null {
+  const host = (h: unknown) => { const v = String(h ?? '').split(',')[0].trim().toLowerCase(); return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(v) ? `https://${v}` : null; };
+  const env = process.env.HOOKD_PUBLIC_URL?.trim().replace(/\/+$/, '');
+  if (env) return /^https:\/\/[a-z0-9.-]+$/i.test(env) ? env : null;
+  if (!HOSTED) return null;
+  return host(process.env.VERCEL_PROJECT_PRODUCTION_URL) ?? host(req.headers['x-forwarded-host'] ?? req.headers.host);
+}
+async function openLaunchRoute(path: string, b: any, req: http.IncomingMessage): Promise<Reply> {
+  if (!OPEN_LAUNCH) return { code: 403, body: { error: 'launching from any wallet is not switched on for this server' } };
+  try {
+    if (path === '/api/launch/config' || path === '/api/launch/build') {
+      const p = parseOpenLaunch(b); if ('error' in p) return { code: 400, body: { error: p.error } };
+      if (path === '/api/launch/config') return { code: 200, body: await buildOpenConfig(lp, launchKey!.publicKey, await partner(), p.owner, p.opts, ticketKey!) };
+      const base = publicBase(req);
+      // short on purpose (/api/m/<mint>): the URI rides in the launch tx, which must stay under 1232 bytes with 8 cap steps,
+      // the optional hooks and a 32-byte name
+      return { code: 200, body: await buildOpenPool(lp, launchKey!, await partner(), p.owner, p.opts, b.configTx, b.ticket, ticketKey!, base ? (m) => `${base}/api/m/${m}` : undefined) };
+    }
+    if (path === '/api/launch/submit') {
+      let meta: ReturnType<typeof validateMetadata> | null = null;   // details given with the launch, checked before anything is sent
+      if (b?.metadata !== undefined && b?.metadata !== null) { try { meta = validateMetadata(b.metadata); } catch (e: any) { if (e instanceof MetadataRefusal) return { code: 400, body: { error: e.message } }; throw e; } }
+      const out = await submitOpenPool(lp, launchKey!.publicKey, await partner(), b?.poolTx);
+      chainLaunches.invalidate();   // list it on the next read
+      // saved by the request that landed the launch, or (a retry) when the token has no details yet; the creator can
+      // always edit them later from the token page
+      let detailsNote: string | null = null;
+      if (meta && !details.writable) detailsNote = "this server can't store token details yet, so the image and links weren't saved";
+      else if (meta) {
+        try { if (out.sentHere || !(await details.view(out.mint))) await details.save(out.mint, meta); }
+        catch (e: any) { detailsNote = `the token launched, but its details weren't saved (${String(e?.message ?? e).slice(0, 160)}); add them from the token page`; }
+      }
+      return { code: 200, body: { ...out, detailsNote } };
+    }
+    return { code: 404, body: { error: 'not found' } };
+  } catch (e: any) {
+    const hint = rulesUnsupportedHint(String(e?.message ?? e)); if (hint) return { code: 400, body: { error: hint } };
+    if (e instanceof OpenLaunchRefusal || e instanceof KeyRuleRefusal || e instanceof MintHookRefusal || e instanceof CreatorLockRefusal) return { code: 400, body: { error: e.message } };
+    throw e;
+  }
+}
+/** A listed token's record: a launch record, or a launch found on chain. */
+async function findRecord(mint: string): Promise<SiteRec | undefined> {
+  return listLaunches(c.name).find((l) => l.mint === mint) ?? (await userLaunches(mint)).find((l) => l.mint === mint);
+}
+/** Token-details edit. A studio (allowlisted) wallet edits any token; with open launch, a signed-in wallet edits only the
+ *  tokens it created (the DBC pool's creator). */
+async function saveDetails(mint: string, b: any, wallet: string): Promise<Reply> {
+  if (!details.writable) return { code: 403, body: { error: "token details can't be saved on this server yet" } };
+  if (OPEN_LAUNCH && wallet !== 'local-open' && !studio.isStudioWallet(wallet)) {
+    const rec = await findRecord(mint);
+    const creator = rec?.source === 'chain' ? rec.creator
+      : rec ? await lp.dbc.state.getPool(new PublicKey(rec.pool)).then((x: any) => { const ps = x?.poolState ?? x; return ps?.creator ? new PublicKey(ps.creator).toBase58() : null; }) : null;
+    if (!creator || creator !== wallet) return { code: 403, body: { error: 'only the wallet that launched this token can edit its details' } };
+  }
+  try { return { code: 200, body: await details.save(mint, validateMetadata(b ?? {})) }; }
+  catch (e: any) { if (e instanceof MetadataRefusal) return { code: 400, body: { error: e.message } }; throw e; }
+}
+/** The token's metadata JSON (its on-chain URI points here for launches from the hosted site): what wallets and
+ *  explorers read for the image and links. */
+async function tokenJson(mint: string, rec: SiteRec, req: http.IncomingMessage): Promise<Reply> {
+  const d = await details.view(mint);
+  const base = publicBase(req) ?? '';
+  const image = d?.image ? (d.image.startsWith('/') ? `${base}${d.image}` : d.image) : null;
+  return { code: 200, body: { name: rec.name ?? '', symbol: rec.symbol ?? '', description: d?.description ?? '', image, external_url: base ? `${base}/token/${mint}` : undefined,
+    extensions: d ? Object.fromEntries(Object.entries({ website: d.website, twitter: d.x, telegram: d.telegram, discord: d.discord, tiktok: d.tiktok, instagram: d.instagram, youtube: d.youtube }).filter(([, v]) => !!v)) : {} } };
+}
+
+/** Hosted with open launch on, the only POST routes: the three open-launch steps, studio sign-in/out (token-details edits)
+ *  and the token-details save. Everything else on the hosted site is GET. */
+const HOSTED_POST = /^\/api\/(launch\/(config|build|submit)|studio\/(session|signout)|token\/[1-9A-HJ-NP-Za-km-z]{32,44}\/metadata)$/;
+/** The site's one request listener; app/vercel.ts hands Vercel's requests to it (hosted: GET plus HOSTED_POST). */
 export const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', 'http://x');
-    if (HOSTED && req.method !== 'GET') return send(res, 403, { error: 'this hosted site is read-only: launching, trading and token edits are not available here' });
+    // hosted, the only POSTs: the open-launch steps, studio sign-in and token-details saves (open launch on)
+    if (HOSTED && req.method !== 'GET' && !(OPEN_LAUNCH && HOSTED_POST.test(url.pathname))) return send(res, 403, { error: OPEN_LAUNCH ? 'not available on the hosted site' : 'this hosted site is read-only: launching is not switched on here yet' });
     // ticket 8.5b: the listing, /api/token and /api/trade serve registry mints only (app/site_registry.ts); the registry
-    // is read once per request, before any local-record lookup or chain access
-    const routed = await siteRoute(url.pathname, req.method ?? 'GET', () => body(req), {
+    // is read once per request, before any local-record lookup or chain access. Launches a user's wallet made are found
+    // on chain and listed too (userLaunches: they carry the on-chain launch key's signature).
+    // /api/m/<mint> (a token's metadata URI, kept short) = /api/token/<mint>/metadata.json
+    const short = /^\/api\/m\/([1-9A-HJ-NP-Za-km-z]{32,44})$/.exec(url.pathname);
+    const routed = await siteRoute<SiteRec>(short ? `/api/token/${short[1]}/metadata.json` : url.pathname, req.method ?? 'GET', () => body(req), {
       cluster: c.name,
       launches: () => listLaunches(c.name),
-      meta: async listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: rpcHost(c.url), programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: await liftAuthority(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: listing.map(l => ({ mint: l.mint, pool: l.pool, time: l.time, name: l.name ?? null, symbol: l.symbol ?? null, image: publicMetadata(loadMetadata(c.name, l.mint), l.mint)?.image ?? null })), studio: studio.status() }),
-      token: mint => tokenView(mint, walletKey(url.searchParams.get('owner')), url.searchParams.get('view') === 'card'),
+      discovered: userLaunches,
+      meta: async listing => ({ defaultSchedule: scheduleJson(defaultSchedule(c.name)), cluster: c.label, rpc: rpcHost(c.url), programId: lp.hook.programId.toBase58(), commit, content, liftAuthority: await liftAuthority(), wallets: Object.fromEntries(Object.entries(wallets).map(([k, w]) => [k, w.publicKey.toBase58()])), launches: await Promise.all(listing.map(async l => ({ mint: l.mint, pool: l.pool, time: isoTime(l.time), name: l.name ?? null, symbol: l.symbol ?? null, image: (await details.view(l.mint).catch(() => null))?.image ?? null }))), studio: studio.status(), launch: launchInfo() }),
+      token: (mint, rec) => tokenView(mint, walletKey(url.searchParams.get('owner')), url.searchParams.get('view') === 'card', rec),
       // server-signed test-wallet trades: open on local, studio-only elsewhere (gate before hosting; flagged in the studio PR)
       trade: (b, rec) => { if (c.name !== 'local') { const who = studioCheck(req); if ('code' in who) return Promise.resolve(who as Reply); } return trade(b, rec); },
       build,
-      image: mint => { const im = loadImage(c.name, mint); return im ? { code: 200, body: im.data, type: im.type } : { code: 404, body: { error: 'no image' } }; },
-      metadata: (mint, b) => { const who = studioCheck(req); if ('code' in who) return who; try { return { code: 200, body: publicMetadata(saveMetadata(c.name, mint, validateMetadata(b ?? {})), mint) }; } catch (e: any) { if (e instanceof MetadataRefusal) return { code: 400, body: { error: e.message } }; throw e; } },
+      image: async mint => { const im = await details.image(mint); return im ? { code: 200, body: im.data, type: im.type } : { code: 404, body: { error: 'no image' } }; },
+      metadata: (mint, b) => { const who = studioCheck(req); if ('code' in who) return who; return saveDetails(mint, b, who.wallet); },
+      tokenJson: (mint, rec) => tokenJson(mint, rec, req),
       trades: mint => tradesView(mint, Number(url.searchParams.get('interval') ?? 300)),
       flywheel: registered => ({ cluster: c.label, ...loadPublicKeepers(c.name, registered) }),
     });
@@ -239,6 +406,8 @@ export const server = http.createServer(async (req, res) => {
         return send(res, 404, { error: 'not found' });
       } catch (e: any) { if (e instanceof StudioAuthError) return send(res, e.code, { error: e.message }); throw e; }
     }
+    // open launch (sdk/launch_open.ts): config -> build -> submit; the connected wallet pays and signs twice
+    if (url.pathname.startsWith('/api/launch/') && req.method === 'POST') { const r = await openLaunchRoute(url.pathname, await body(req), req); return send(res, r.code, r.body); }
     if (url.pathname === '/api/create' && req.method === 'POST') {
       const who = studioCheck(req); if ('code' in who) return send(res, who.code, who.body);   // studio only
       const p = parseLaunchBody(await body(req));
@@ -248,7 +417,7 @@ export const server = http.createServer(async (req, res) => {
       let rec;
       try { rec = await lp.launch(deployer!, p.opts, launchKey!); }
       catch (e: any) { const hint = p.opts.rules && rulesUnsupportedHint(String(e?.message ?? e)); if (hint) return send(res, 400, { error: hint }); throw e; }
-      if (p.meta) saveMetadata(c.name, rec.mint, p.meta);
+      if (p.meta) await details.save(rec.mint, p.meta);
       return send(res, 200, createReply(rec));   // ticket 8.5b: registered: false + note; the registry is never written
     }
     // AC-21 for the studio: the launch tx is signed in the user's own browser wallet. The server co-signs with the
@@ -283,7 +452,7 @@ export const server = http.createServer(async (req, res) => {
       try {
         const out = await submitUserLaunch(lp, launchRelay, b.tx);
         const meta = pendingLaunchMeta.get(out.record.mint);
-        if (meta) { pendingLaunchMeta.delete(out.record.mint); saveMetadata(c.name, out.record.mint, meta); }
+        if (meta) { pendingLaunchMeta.delete(out.record.mint); await details.save(out.record.mint, meta); }
         return send(res, 200, { ...createReply(out.record), sig: out.sig, link: out.link });
       } catch (e: any) {
         if (e instanceof LaunchUserRefusal || e instanceof MintHookRefusal) return send(res, 400, { error: e.message });

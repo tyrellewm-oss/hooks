@@ -17,6 +17,10 @@ export interface Meta {
   launches: { mint: string; pool: string; time: string; name?: string | null; symbol?: string | null; image?: string | null }[];
   /** studio sign-in (sdk/studio_auth.ts): required = sign in to create or edit details; configured = an allowlist exists */
   studio?: { required: boolean; configured: boolean };
+  /** launching here (app/server.ts launchInfo): 'open' = any wallet launches and pays, the server only co-signs
+   *  (sdk/launch_open.ts); 'studio' = studio wallets; 'closed'. details = token details (image, links) can be saved.
+   *  Older servers omit it. */
+  launch?: { mode: 'open' | 'studio' | 'closed'; minSol: number; details: boolean; thresholdSol: { min: number; max: number } };
   /** the server also sends page_content.json; the UI imports it directly instead */
   content?: unknown;
 }
@@ -111,7 +115,8 @@ export interface TokenView {
   metadata?: TokenMetadata | null;
   fee: FeeInfo | null;
   feeConfig: Record<string, unknown> | null;
-  pool: { quoteReserveSol: number; isMigrated: boolean; curveComplete: boolean } | null;
+  /** creator = the wallet that launched it (the DBC pool's creator) */
+  pool: { quoteReserveSol: number; isMigrated: boolean; curveComplete: boolean; creator?: string | null } | null;
   balances: Record<string, string>;
   /** the connected browser wallet, when requested with ?owner= */
   wallet?: { owner: string; tokens: string; sol: number } | null;
@@ -191,3 +196,10 @@ export interface CreateReply { mint: string; pool: string; registered: false; no
 /** AC-21 studio launch: the server-built, co-signed launch tx the connected wallet signs (hex), plus what it creates */
 export interface BuiltLaunch { tx: string; mint: string; config: string; pool: string; createConfigSig: string; simulation: string; expiresInMs: number }
 export interface LaunchSubmitReply extends CreateReply { sig: string; link: string }
+/** Open launch (sdk/launch_open.ts), step 1: the config tx the wallet signs (hex, co-signed by its config key) and the
+ *  ticket binding it to these options */
+export interface OpenConfigStep { configTx: string; config: string; owner: string; ticket: string; expiresInMs: number }
+/** step 2: the config was sent; the launch tx the wallet signs (hex, co-signed by the mint and launch keys) */
+export interface OpenPoolStep { poolTx: string; owner: string; mint: string; config: string; pool: string; createConfig: string | null; lastValidBlockHeight: number; expiresInMs: number }
+/** step 3: launched. detailsNote: why the image and links weren't saved, if they weren't */
+export interface OpenLaunchReply { ok: true; owner: string; mint: string; config: string; pool: string; sig: string; link: string; sentHere: boolean; detailsNote: string | null }

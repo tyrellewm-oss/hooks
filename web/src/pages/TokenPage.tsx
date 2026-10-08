@@ -37,7 +37,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
       return (
         <div className="card" style={{ maxWidth: 560 }}>
           <h1 style={{ fontSize: 18, marginBottom: 8 }}>{nf ? "This token isn't listed" : "Couldn't load this token"}</h1>
-          <p className="muted">{nf ? 'The page only shows tokens in the mint registry (keeper/registry.json) that have a local launch record.' : live.error.message}</p>
+          <p className="muted">{nf ? (meta.launch?.mode === 'open' ? 'No launch was found at this address on this site. A token launched a few seconds ago can take a moment to appear; this page keeps checking.' : 'The page only shows tokens in the mint registry (keeper/registry.json) that have a local launch record.') : live.error.message}</p>
           <Link to="/tokens">Back to tokens</Link>
         </div>
       );
@@ -55,6 +55,9 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
   const feeNow = curveFeePctAt(view.fee, elapsed);
   const capPct = cap === null ? null : pctOf(Number((cap * BigInt(BPS_DENOM)) / BigInt(st.supply)));
   const stale = !partial && now - live.fetchedAt > POLL_MS * 2.5;
+  // open launch: the wallet that launched the token edits its details (the server checks the same); studio: studio wallets
+  const open = meta.launch?.mode === 'open';
+  const canEdit = !open || (!!meta.launch?.details && !!address && address === view.pool?.creator);
 
   return (
     <div className="stack">
@@ -78,7 +81,7 @@ export function TokenPage({ mint, meta }: { mint: string; meta: Meta }) {
             </div>
             <div className="row small" style={{ marginTop: 5, gap: 10, flexWrap: 'wrap' }}>
               <span className="faint"><Addr value={st.mint} href={view.explorer.mint || null} n={5} /></span>
-              <button className="ghost small" onClick={() => setEditing(true)}>{view.metadata ? 'Edit details' : 'Add details (studio)'}</button>
+              {canEdit && <button className="ghost small" onClick={() => setEditing(true)}>{view.metadata ? 'Edit details' : open ? 'Add details' : 'Add details (studio)'}</button>}
             </div>
           </div>
         </div>
@@ -172,7 +175,7 @@ function EditDetails({ meta, mint, ticker, metadata, onClose, onSaved }: { meta:
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="ed-title">
         <div className="spread" style={{ marginBottom: 12 }}><h1 id="ed-title" style={{ fontSize: 18 }}>Token details</h1><button className="ghost" onClick={onClose} aria-label="Close">✕</button></div>
-        <p className="small faint">Studio tool. Shown on the token card and page. Descriptions follow the same wording rules as the site.</p>
+        <p className="small faint">{meta.launch?.mode === 'open' ? 'For the wallet that launched this token.' : 'Studio tool.'} Shown on the token card and page. Descriptions follow the same wording rules as the site.</p>
         <StudioGate meta={meta}>
         <DetailsForm value={d} onChange={setD} currentImage={metadata?.image} mint={mint} ticker={ticker} />
         {(local || err) && <div className="notice red small" role="alert" style={{ marginBottom: 12 }}>{local ?? err}</div>}

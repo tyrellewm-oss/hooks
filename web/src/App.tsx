@@ -58,7 +58,7 @@ export function App() {
         <nav className="side-nav" aria-label="Main">
           {nav('/', 'Home', <IconHome />)}
           {nav('/tokens', 'Tokens', <IconGrid />)}
-          {nav('/create', 'Studio launch', <IconPlus />)}
+          {nav('/create', m?.launch?.mode === 'open' ? 'Launch' : 'Studio launch', <IconPlus />)}
           {nav('/hooks', 'Hooks', <IconHook />)}
           {nav('/transparency', 'Transparency', <IconEye />)}
         </nav>
